@@ -30,15 +30,29 @@ enum SessionStatus {
   FORCE_LOGGED_OUT
 }
 
+enum Weekday {
+  MON
+  TUE
+  WED
+  THU
+  FRI
+  SAT
+  SUN
+}
+
 model Restaurant {
-  id        String           @id @default(cuid())
-  name      String
-  slug      String           @unique
-  email     String?
-  phone     String?
-  status    RestaurantStatus @default(ACTIVE)
-  createdAt DateTime         @default(now()) @map("created_at")
-  updatedAt DateTime         @updatedAt @map("updated_at")
+  id          String           @id @default(cuid())
+  name        String
+  slug        String           @unique
+  email       String?
+  phone       String?
+  description String?
+  logoUrl     String?          @map("logo_url")
+  currency    String?
+  timezone    String?
+  status      RestaurantStatus @default(ACTIVE)
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
 
   branches               Branch[]
   roles                  Role[]
@@ -46,6 +60,8 @@ model Restaurant {
   employees              Employee[]
   sessions               Session[]
   employeeBranchAccesses EmployeeBranchAccess[]
+  workingHours           WorkingHours[]
+  branchSettings         BranchSettings[]
 
   @@index([status])
   @@map("restaurants")
@@ -58,6 +74,12 @@ model Branch {
   code         String
   address      String?
   phone        String?
+  contactEmail String?      @map("contact_email")
+  contactPhone String?      @map("contact_phone")
+  street       String?
+  city         String?
+  state        String?
+  postalCode   String?      @map("postal_code")
   status       BranchStatus @default(ACTIVE)
   isMain       Boolean      @default(false) @map("is_main")
   createdAt    DateTime     @default(now()) @map("created_at")
@@ -66,11 +88,49 @@ model Branch {
   restaurant     Restaurant             @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
   employees      Employee[]
   branchAccesses EmployeeBranchAccess[]
+  workingHours   WorkingHours[]
+  settings       BranchSettings?
 
   @@unique([restaurantId, code])
   @@index([restaurantId])
   @@index([restaurantId, status])
   @@map("branches")
+}
+
+model WorkingHours {
+  id           String   @id @default(cuid())
+  restaurantId String   @map("restaurant_id")
+  branchId     String   @map("branch_id")
+  day          Weekday
+  openTime     String   @map("open_time")
+  closeTime    String   @map("close_time")
+  isOpen       Boolean  @default(true) @map("is_open")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  branch     Branch     @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([branchId, day])
+  @@index([restaurantId])
+  @@index([branchId])
+  @@map("working_hours")
+}
+
+model BranchSettings {
+  id           String   @id @default(cuid())
+  restaurantId String   @map("restaurant_id")
+  branchId     String   @unique @map("branch_id")
+  currency     String?
+  timezone     String?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  branch     Branch     @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@index([restaurantId])
+  @@map("branch_settings")
 }
 
 model Permission {

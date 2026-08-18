@@ -1,7 +1,8 @@
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import prisma from "../src/lib/prisma.js";
-import restaurantRepository from "../src/modules/restaurants/restaurant.repository.js";
+import branchRepository from "../src/modules/branches/branch.repository.js";
+import branchService from "../src/modules/branches/branch.service.js";
 import { NotFoundError } from "../src/shared/errors/index.js";
 
 describe("Cross-Tenant Isolation & IDOR Security Tests (Real DB & Repository)", () => {
@@ -15,33 +16,37 @@ describe("Cross-Tenant Isolation & IDOR Security Tests (Real DB & Repository)", 
 
   before(async () => {
     // 1. Create Test Fixtures in real DB
-    restaurantA = await restaurantRepository.createRestaurant({
-      name: "Test Restaurant Alpha",
-      slug: `test-alpha-${Date.now()}`,
-      email: `alpha-${Date.now()}@test.com`,
+    restaurantA = await prisma.restaurant.create({
+      data: {
+        name: "Test Restaurant Alpha",
+        slug: `test-alpha-${Date.now()}`,
+        email: `alpha-${Date.now()}@test.com`,
+      },
     });
 
     tenantContextA = {
       restaurantId: restaurantA.id,
     };
 
-    branchA = await restaurantRepository.createBranch(tenantContextA, {
+    branchA = await branchRepository.createBranch(tenantContextA, {
       name: "Alpha Main Branch",
       code: "MAIN",
       isMain: true,
     });
 
-    restaurantB = await restaurantRepository.createRestaurant({
-      name: "Test Restaurant Beta",
-      slug: `test-beta-${Date.now()}`,
-      email: `beta-${Date.now()}@test.com`,
+    restaurantB = await prisma.restaurant.create({
+      data: {
+        name: "Test Restaurant Beta",
+        slug: `test-beta-${Date.now()}`,
+        email: `beta-${Date.now()}@test.com`,
+      },
     });
 
     tenantContextB = {
       restaurantId: restaurantB.id,
     };
 
-    branchB = await restaurantRepository.createBranch(tenantContextB, {
+    branchB = await branchRepository.createBranch(tenantContextB, {
       name: "Beta Main Branch",
       code: "MAIN",
       isMain: true,
@@ -62,7 +67,7 @@ describe("Cross-Tenant Isolation & IDOR Security Tests (Real DB & Repository)", 
   });
 
   test("Tenant A can successfully access Tenant A's branch", async () => {
-    const fetchedBranch = await restaurantRepository.findBranchById(tenantContextA, branchA.id);
+    const fetchedBranch = await branchRepository.findBranchById(tenantContextA, branchA.id);
 
     assert.equal(fetchedBranch.id, branchA.id);
     assert.equal(fetchedBranch.restaurantId, restaurantA.id);
@@ -70,9 +75,12 @@ describe("Cross-Tenant Isolation & IDOR Security Tests (Real DB & Repository)", 
   });
 
   test("Tenant B attempting to access Tenant A's branch is denied with NotFoundError (404)", async () => {
+    const result = await branchRepository.findBranchById(tenantContextB, branchA.id);
+    assert.equal(result, null);
+
     await assert.rejects(
       async () => {
-        await restaurantRepository.findBranchById(tenantContextB, branchA.id);
+        await branchService.getBranchById(tenantContextB, branchA.id);
       },
       (err) => {
         return err instanceof NotFoundError && err.statusCode === 404;
