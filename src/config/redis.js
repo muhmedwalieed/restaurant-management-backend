@@ -46,6 +46,9 @@ export async function checkRedisHealth() {
     if (client.status === "wait") {
       await client.connect();
     }
+    if (client.status !== "ready") {
+      return false;
+    }
     const pingResponse = await client.ping();
     return pingResponse === "PONG";
   } catch (error) {

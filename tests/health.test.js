@@ -2,6 +2,7 @@ import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "http";
 import app from "../src/app/app.js";
+import { disconnectRedis } from "../src/config/redis.js";
 
 describe("Health Check Endpoints Tests (/health & /ready)", () => {
   let server;
@@ -19,6 +20,7 @@ describe("Health Check Endpoints Tests (/health & /ready)", () => {
   });
 
   after(async () => {
+    await disconnectRedis();
     await new Promise((resolve) => {
       server.close(resolve);
     });
