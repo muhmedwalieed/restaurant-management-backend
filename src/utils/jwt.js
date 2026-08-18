@@ -1,4 +1,5 @@
 import jwt from "jsonwebtoken";
+import { randomUUID } from "crypto";
 import env from "../config/env.js";
 
 /**
@@ -8,10 +9,17 @@ import env from "../config/env.js";
  * @returns {string} Signed JWT token
  */
 export function signAccessToken(payload, options = {}) {
-  return jwt.sign(payload, env.JWT_ACCESS_SECRET, {
-    expiresIn: env.JWT_ACCESS_EXPIRES_IN,
-    ...options,
-  });
+  return jwt.sign(
+    {
+      ...payload,
+      jti: randomUUID(),
+    },
+    env.JWT_ACCESS_SECRET,
+    {
+      expiresIn: env.JWT_ACCESS_EXPIRES_IN,
+      ...options,
+    }
+  );
 }
 
 /**
@@ -25,16 +33,23 @@ export function verifyAccessToken(token) {
 }
 
 /**
- * Signs a refresh JWT token.
+ * Signs a refresh JWT token with a unique jti nonce to enforce Token Rotation uniqueness.
  * @param {object} payload - Token payload
  * @param {object} [options] - Additional JWT sign options
  * @returns {string} Signed JWT refresh token
  */
 export function signRefreshToken(payload, options = {}) {
-  return jwt.sign(payload, env.JWT_REFRESH_SECRET, {
-    expiresIn: env.JWT_REFRESH_EXPIRES_IN,
-    ...options,
-  });
+  return jwt.sign(
+    {
+      ...payload,
+      jti: randomUUID(),
+    },
+    env.JWT_REFRESH_SECRET,
+    {
+      expiresIn: env.JWT_REFRESH_EXPIRES_IN,
+      ...options,
+    }
+  );
 }
 
 /**
