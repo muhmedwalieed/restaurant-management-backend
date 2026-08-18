@@ -6,3 +6,50 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
+enum RestaurantStatus {
+  ACTIVE
+  SUSPENDED
+  INACTIVE
+}
+
+enum BranchStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model Restaurant {
+  id        String           @id @default(cuid())
+  name      String
+  slug      String           @unique
+  email     String?
+  phone     String?
+  status    RestaurantStatus @default(ACTIVE)
+  createdAt DateTime         @default(now()) @map("created_at")
+  updatedAt DateTime         @updatedAt @map("updated_at")
+
+  branches Branch[]
+
+  @@index([status])
+  @@map("restaurants")
+}
+
+model Branch {
+  id           String       @id @default(cuid())
+  restaurantId String       @map("restaurant_id")
+  name         String
+  code         String
+  address      String?
+  phone        String?
+  status       BranchStatus @default(ACTIVE)
+  isMain       Boolean      @default(false) @map("is_main")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+
+  @@unique([restaurantId, code])
+  @@index([restaurantId])
+  @@index([restaurantId, status])
+  @@map("branches")
+}
