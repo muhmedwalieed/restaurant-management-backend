@@ -2,40 +2,47 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
-import morgan from "morgan";
 
+import env from "../config/env.js";
 import routes from "../routes/index.js";
+import healthRouter from "../routes/health.routes.js";
+import { requestIdMiddleware } from "../shared/middleware/request-id.js";
 import { notFoundHandler, errorHandler } from "../middleware/error.middleware.js";
 
 const app = express();
 
-app.use(helmet());
+// Request correlation ID middleware
+app.use(requestIdMiddleware);
 
+// Security headers & CORS
+app.use(helmet());
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || "http://localhost:5173",
+    origin: env.CLIENT_URL || "http://localhost:5173",
     credentials: true,
   })
 );
 
+// Body parsing
 app.use(express.json({ limit: "10kb" }));
 app.use(express.urlencoded({ extended: true, limit: "10kb" }));
 app.use(cookieParser());
 
-if (process.env.NODE_ENV !== "test") {
-  app.use(morgan("dev"));
-}
-
-app.get("/health", (req, res) => {
-  res.status(200).json({
-    success: true,
-    message: "Restaurant Management API is running",
-    timestamp: new Date().toISOString(),
-  });
+// HTTP Request logging with Pino (disabled in test mode to keep test logs clean)
+app.use((req, res, next) => {
+  if (env.NODE_ENV !== "test" && req.log) {
+    req.log.info({ method: req.method, url: req.url }, `HTTP ${req.method} ${req.url}`);
+  }
+  next();
 });
 
+// Root level health endpoints (/health, /ready) mounted ONLY at root /
+app.use("/", healthRouter);
+
+// API Routes mounted under /api
 app.use("/api", routes);
 
+// 404 and Error handling
 app.use(notFoundHandler);
 app.use(errorHandler);
 
