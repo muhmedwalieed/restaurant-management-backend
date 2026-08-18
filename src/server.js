@@ -56,17 +56,9 @@ const startServer = async () => {
     logger.info("Database connected successfully.");
 
     httpServer.listen(PORT, () => {
-      logger.info(`
-Restaurant Management API
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Environment : ${env.NODE_ENV}
-Port        : ${PORT}
-API         : http://localhost:${PORT}
-Health      : http://localhost:${PORT}/health
-Readiness   : http://localhost:${PORT}/ready
-Socket.IO   : enabled
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-      `);
+      logger.info(`API: http://localhost:${PORT}`);
+      logger.info(`Health: http://localhost:${PORT}/health`);
+      logger.info(`Readiness: http://localhost:${PORT}/ready`);
     });
   } catch (error) {
     logger.error({ err: error }, "Failed to start server:");
