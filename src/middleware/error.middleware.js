@@ -1,4 +1,5 @@
 import { AppError, NotFoundError } from "../shared/errors/index.js";
+import { ZodError } from "zod";
 import logger from "../config/logger.js";
 import env from "../config/env.js";
 
@@ -27,6 +28,15 @@ const errorHandler = (err, req, res, next) => {
     code = err.code;
     message = err.message;
     details = err.details || null;
+  } else if (err instanceof ZodError) {
+    statusCode = 400;
+    code = "VALIDATION_ERROR";
+    message = "Invalid request data";
+    details = err.issues.map((issue) => ({
+      field: issue.path.join("."),
+      code: issue.code,
+      message: issue.message,
+    }));
   } else if (err.name === "SyntaxError" && err.status === 400 && "body" in err) {
     statusCode = 400;
     code = "INVALID_JSON";

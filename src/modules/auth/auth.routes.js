@@ -5,6 +5,7 @@ import { registerSchema, loginSchema, refreshTokenSchema, forceLogoutSchema } fr
 import { authenticate } from "./authenticate.middleware.js";
 import { authorize } from "./authorize.middleware.js";
 import { requireTenantContext } from "../../shared/middleware/tenant-context.js";
+import { validate } from "../../shared/middleware/validate.js";
 import env from "../../config/env.js";
 
 const router = Router();
@@ -24,18 +25,15 @@ const authRateLimiter = rateLimit({
 });
 
 // Public endpoints
-router.post("/register", authRateLimiter, (req, res, next) => {
-  registerSchema.parse({ body: req.body });
+router.post("/register", authRateLimiter, validate(registerSchema), (req, res, next) => {
   authController.register(req, res, next);
 });
 
-router.post("/login", authRateLimiter, (req, res, next) => {
-  loginSchema.parse({ body: req.body });
+router.post("/login", authRateLimiter, validate(loginSchema), (req, res, next) => {
   authController.login(req, res, next);
 });
 
-router.post("/refresh", authRateLimiter, (req, res, next) => {
-  refreshTokenSchema.parse({ body: req.body });
+router.post("/refresh", authRateLimiter, validate(refreshTokenSchema), (req, res, next) => {
   authController.refresh(req, res, next);
 });
 
@@ -49,8 +47,8 @@ router.post(
   authenticate,
   requireTenantContext,
   authorize("employees.manage_roles"),
+  validate(forceLogoutSchema),
   (req, res, next) => {
-    forceLogoutSchema.parse({ body: req.body });
     authController.forceLogout(req, res, next);
   }
 );

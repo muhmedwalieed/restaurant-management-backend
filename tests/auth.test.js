@@ -48,6 +48,27 @@ describe("Auth Module Integration & E2E Tests", () => {
     await disconnectRedis();
   });
 
+  test("0. POST /api/v1/auth/register with missing restaurantSlug returns 400 VALIDATION_ERROR (not 500)", async () => {
+    const res = await fetch(`${baseUrl}/api/v1/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Invalid Owner",
+        email: `invalid-${Date.now()}@authtest.com`,
+        password: "Password123!",
+        restaurantName: "Invalid Test Restaurant",
+      }),
+    });
+
+    assert.equal(res.status, 400);
+    const body = await res.json();
+
+    assert.equal(body.success, false);
+    assert.equal(body.error.code, "VALIDATION_ERROR");
+    assert.ok(Array.isArray(body.error.details));
+    assert.ok(body.error.details.some((d) => d.field === "body.restaurantSlug"));
+  });
+
   test("1. POST /api/v1/auth/register creates Restaurant, Branch, Roles and Owner Employee (201 Created)", async () => {
     const slug = `auth-test-${Date.now()}`;
     const email = `owner-${Date.now()}@authtest.com`;

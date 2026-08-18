@@ -10,14 +10,14 @@ import {
 import { authenticate } from "../auth/authenticate.middleware.js";
 import { authorize } from "../auth/authorize.middleware.js";
 import { requireTenantContext } from "../../shared/middleware/tenant-context.js";
+import { validate } from "../../shared/middleware/validate.js";
 
 const router = Router();
 
 // Base Pipeline for all employee endpoints: authenticate -> requireTenantContext
 router.use(authenticate, requireTenantContext);
 
-router.get("/", authorize("employees.view"), (req, res, next) => {
-  employeeQuerySchema.parse({ query: req.query });
+router.get("/", authorize("employees.view"), validate(employeeQuerySchema), (req, res, next) => {
   employeeController.listEmployees(req, res, next);
 });
 
@@ -25,13 +25,11 @@ router.get("/:id", authorize("employees.view"), (req, res, next) => {
   employeeController.getEmployeeById(req, res, next);
 });
 
-router.post("/", authorize("employees.manage"), (req, res, next) => {
-  createEmployeeSchema.parse({ body: req.body });
+router.post("/", authorize("employees.manage"), validate(createEmployeeSchema), (req, res, next) => {
   employeeController.createEmployee(req, res, next);
 });
 
-router.patch("/:id", authorize("employees.manage"), (req, res, next) => {
-  updateEmployeeSchema.parse({ body: req.body });
+router.patch("/:id", authorize("employees.manage"), validate(updateEmployeeSchema), (req, res, next) => {
   employeeController.updateEmployee(req, res, next);
 });
 
@@ -45,13 +43,11 @@ const passwordChangeAuthGuard = (req, res, next) => {
   return authorize("employees.manage")(req, res, next);
 };
 
-router.patch("/:id/password", passwordChangeAuthGuard, (req, res, next) => {
-  changePasswordSchema.parse({ body: req.body });
+router.patch("/:id/password", passwordChangeAuthGuard, validate(changePasswordSchema), (req, res, next) => {
   employeeController.changePassword(req, res, next);
 });
 
-router.patch("/:id/role", authorize("employees.manage_roles"), (req, res, next) => {
-  updateRoleSchema.parse({ body: req.body });
+router.patch("/:id/role", authorize("employees.manage_roles"), validate(updateRoleSchema), (req, res, next) => {
   employeeController.updateRole(req, res, next);
 });
 
