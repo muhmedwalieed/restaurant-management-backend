@@ -37,6 +37,14 @@ const envSchema = z.object({
   JWT_REFRESH_EXPIRES_IN: z
     .string()
     .default("7d"),
+
+  REDIS_URL: z
+    .string()
+    .default("redis://localhost:6379"),
+
+  LOG_LEVEL: z
+    .enum(["debug", "info", "warn", "error", "fatal"])
+    .default("info"),
 });
 
 const parsedEnv = envSchema.safeParse(process.env);
