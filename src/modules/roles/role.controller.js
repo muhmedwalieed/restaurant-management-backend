@@ -26,7 +26,7 @@ export class RoleController {
 
   async createRole(req, res, next) {
     try {
-      const role = await roleService.createRole(req.tenantContext, req.body);
+      const role = await roleService.createRole(req.tenantContext, req.validated?.body ?? req.body ?? {});
       return sendSuccess(res, {
         statusCode: 201,
         message: "Role created successfully",
@@ -39,7 +39,7 @@ export class RoleController {
 
   async updateRole(req, res, next) {
     try {
-      const role = await roleService.updateRole(req.tenantContext, req.params.id, req.body);
+      const role = await roleService.updateRole(req.tenantContext, req.params.id, req.validated?.body ?? req.body ?? {});
       return sendSuccess(res, {
         message: "Role updated successfully",
         data: role,

@@ -11,8 +11,8 @@ export function validate(schema) {
   return (req, res, next) => {
     const data = {
       body: req.body ?? {},
-      ...(req.query && Object.keys(req.query).length > 0 ? { query: req.query } : {}),
-      ...(req.params && Object.keys(req.params).length > 0 ? { params: req.params } : {}),
+      query: req.query ?? {},
+      params: req.params ?? {},
     };
 
     const result = schema.safeParse(data);

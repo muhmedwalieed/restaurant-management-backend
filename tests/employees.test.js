@@ -136,6 +136,21 @@ describe("Employees Module Integration & Security Tests", () => {
     assert.equal(body.pagination.limit, 10);
   });
 
+  test("2a. GET /api/v1/employees without any query params returns 200 (not validation error)", async () => {
+    const res = await fetch(`${baseUrl}/api/v1/employees`, {
+      headers: {
+        Authorization: `Bearer ${ownerAToken}`,
+      },
+    });
+
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.success, true);
+    assert.ok(Array.isArray(body.data));
+    assert.equal(body.pagination.page, 1);
+    assert.equal(body.pagination.limit, 20);
+  });
+
   test("3. Cross-Tenant branchId: Tenant A cannot create employee bound to Tenant B's branch (404 Not Found)", async () => {
     const branchB = await prisma.branch.findFirst({
       where: { restaurantId: restaurantB.id, isMain: true },

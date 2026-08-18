@@ -36,7 +36,7 @@ export class EmployeeController {
 
   async createEmployee(req, res, next) {
     try {
-      const employee = await employeeService.createEmployee(req.tenantContext, req.body);
+      const employee = await employeeService.createEmployee(req.tenantContext, req.validated?.body ?? req.body ?? {});
       return sendSuccess(res, {
         statusCode: 201,
         message: "Employee created successfully",
@@ -49,7 +49,7 @@ export class EmployeeController {
 
   async updateEmployee(req, res, next) {
     try {
-      const employee = await employeeService.updateEmployee(req.tenantContext, req.params.id, req.body);
+      const employee = await employeeService.updateEmployee(req.tenantContext, req.params.id, req.validated?.body ?? req.body ?? {});
       return sendSuccess(res, {
         message: "Employee updated successfully",
         data: employee,
@@ -61,7 +61,7 @@ export class EmployeeController {
 
   async changePassword(req, res, next) {
     try {
-      const result = await employeeService.changePassword(req.tenantContext, req.params.id, req.body);
+      const result = await employeeService.changePassword(req.tenantContext, req.params.id, req.validated?.body ?? req.body ?? {});
       return sendSuccess(res, {
         message: result.message,
       });
@@ -72,7 +72,7 @@ export class EmployeeController {
 
   async updateRole(req, res, next) {
     try {
-      const employee = await employeeService.updateRole(req.tenantContext, req.params.id, req.body.roleId);
+      const employee = await employeeService.updateRole(req.tenantContext, req.params.id, (req.validated?.body ?? req.body ?? {}).roleId);
       return sendSuccess(res, {
         message: "Employee role updated successfully",
         data: employee,

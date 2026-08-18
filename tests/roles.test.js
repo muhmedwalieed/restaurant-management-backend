@@ -103,6 +103,23 @@ describe("Roles Module Integration & Security Tests", () => {
     customRole = body.data;
   });
 
+  test("2b. PATCH /api/v1/roles/:id with empty body does not crash with 500 (no-op 200)", async () => {
+    const createdBefore = await prisma.role.findFirst({
+      where: { restaurantId: restaurant.id, name: "shift supervisor" },
+    });
+
+    const res = await fetch(`${baseUrl}/api/v1/roles/${createdBefore.id}`, {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${ownerToken}`,
+      },
+    });
+
+    assert.notEqual(res.status, 500);
+    const body = await res.json();
+    assert.equal(body.success, true);
+  });
+
   test("3. System Role Protection: Attempting to modify System Role 'owner' is rejected (422 BusinessRuleError)", async () => {
     const systemOwnerRole = await prisma.role.findFirst({
       where: { restaurantId: restaurant.id, name: "owner" },

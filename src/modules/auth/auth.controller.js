@@ -4,7 +4,7 @@ import { sendSuccess } from "../../shared/utils/response.js";
 export class AuthController {
   async register(req, res, next) {
     try {
-      const data = await authService.register(req.body);
+      const data = await authService.register(req.validated?.body ?? req.body ?? {});
       return sendSuccess(res, {
         statusCode: 201,
         message: "Restaurant and owner registered successfully",
@@ -20,9 +20,10 @@ export class AuthController {
       const userAgent = req.headers["user-agent"] || "Unknown Device";
       const ipAddress = req.ip || req.socket.remoteAddress || "127.0.0.1";
 
+      const body = req.validated?.body ?? req.body ?? {};
       const data = await authService.login({
-        email: req.body.email,
-        password: req.body.password,
+        email: body.email,
+        password: body.password,
         device: userAgent,
         ipAddress,
       });
@@ -53,7 +54,7 @@ export class AuthController {
 
   async refresh(req, res, next) {
     try {
-      const token = req.body?.refreshToken || req.cookies?.refreshToken;
+      const token = (req.validated?.body ?? req.body ?? {}).refreshToken || req.cookies?.refreshToken;
       const data = await authService.refresh({ refreshToken: token });
 
       res.cookie("accessToken", data.accessToken, {
@@ -96,7 +97,7 @@ export class AuthController {
 
   async forceLogout(req, res, next) {
     try {
-      const { employeeId } = req.body;
+      const { employeeId } = req.validated?.body ?? req.body ?? {};
       await authService.forceLogout(req.tenantContext, employeeId);
 
       return sendSuccess(res, {

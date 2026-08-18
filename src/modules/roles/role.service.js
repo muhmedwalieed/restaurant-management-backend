@@ -54,7 +54,7 @@ export class RoleService {
     });
   }
 
-  async updateRole(tenantContext, id, { name, description, permissions }) {
+  async updateRole(tenantContext, id, { name, description, permissions } = {}) {
     const existing = await roleRepository.findRoleById(tenantContext, id);
     if (!existing) {
       throw new NotFoundError("Role not found");
