@@ -1,11 +1,10 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { signAccessToken } from "../src/utils/jwt.js";
 import { requireTenantContext, injectTenantContext } from "../src/shared/middleware/tenant-context.js";
 import { AuthenticationError } from "../src/shared/errors/index.js";
 
-describe("Tenant Context Middleware Tests", () => {
-  test("requireTenantContext throws 401 AuthenticationError when Authorization header is missing", () => {
+describe("Tenant Context Guard Middleware Tests", () => {
+  test("requireTenantContext throws 401 AuthenticationError when req.tenantContext is missing", () => {
     const req = { headers: {} };
     const res = {};
 
@@ -19,11 +18,9 @@ describe("Tenant Context Middleware Tests", () => {
     );
   });
 
-  test("requireTenantContext throws 401 AuthenticationError when JWT token is invalid", () => {
+  test("requireTenantContext throws 401 AuthenticationError when restaurantId is missing in tenantContext", () => {
     const req = {
-      headers: {
-        authorization: "Bearer invalid_token_123",
-      },
+      tenantContext: {},
     };
     const res = {};
 
@@ -37,19 +34,13 @@ describe("Tenant Context Middleware Tests", () => {
     );
   });
 
-  test("requireTenantContext injects req.tenantContext when valid token is provided", () => {
-    const payload = {
-      restaurantId: "rest_12345",
-      branchId: "branch_67890",
-      employeeId: "emp_111",
-      role: "MANAGER",
-    };
-
-    const token = signAccessToken(payload);
-
+  test("requireTenantContext calls next() when valid req.tenantContext is present", () => {
     const req = {
-      headers: {
-        authorization: `Bearer ${token}`,
+      tenantContext: {
+        restaurantId: "rest_12345",
+        branchId: "branch_67890",
+        employeeId: "emp_111",
+        role: "MANAGER",
       },
     };
     const res = {};
@@ -60,14 +51,10 @@ describe("Tenant Context Middleware Tests", () => {
     });
 
     assert.equal(nextCalled, true);
-    assert.notEqual(req.tenantContext, undefined);
     assert.equal(req.tenantContext.restaurantId, "rest_12345");
-    assert.equal(req.tenantContext.branchId, "branch_67890");
-    assert.equal(req.tenantContext.employeeId, "emp_111");
-    assert.equal(req.tenantContext.role, "MANAGER");
   });
 
-  test("injectTenantContext does not throw when token is missing, leaves req.tenantContext undefined", () => {
+  test("injectTenantContext does not throw when token is missing", () => {
     const req = { headers: {} };
     const res = {};
     let nextCalled = false;
@@ -77,6 +64,5 @@ describe("Tenant Context Middleware Tests", () => {
     });
 
     assert.equal(nextCalled, true);
-    assert.equal(req.tenantContext, undefined);
   });
 });

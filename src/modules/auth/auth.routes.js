@@ -1,0 +1,58 @@
+import { Router } from "express";
+import rateLimit from "express-rate-limit";
+import authController from "./auth.controller.js";
+import { registerSchema, loginSchema, refreshTokenSchema, forceLogoutSchema } from "./auth.validation.js";
+import { authenticate } from "./authenticate.middleware.js";
+import { authorize } from "./authorize.middleware.js";
+import { requireTenantContext } from "../../shared/middleware/tenant-context.js";
+import env from "../../config/env.js";
+
+const router = Router();
+
+const authRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: env.NODE_ENV === "test" ? 1000 : 10, // 10 attempts per 15 minutes in production
+  message: {
+    success: false,
+    error: {
+      code: "RATE_LIMIT_EXCEEDED",
+      message: "Too many authentication attempts, please try again after 15 minutes",
+    },
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Public endpoints
+router.post("/register", authRateLimiter, (req, res, next) => {
+  registerSchema.parse({ body: req.body });
+  authController.register(req, res, next);
+});
+
+router.post("/login", authRateLimiter, (req, res, next) => {
+  loginSchema.parse({ body: req.body });
+  authController.login(req, res, next);
+});
+
+router.post("/refresh", authRateLimiter, (req, res, next) => {
+  refreshTokenSchema.parse({ body: req.body });
+  authController.refresh(req, res, next);
+});
+
+// Authenticated endpoints
+router.post("/logout", authenticate, requireTenantContext, (req, res, next) => {
+  authController.logout(req, res, next);
+});
+
+router.post(
+  "/force-logout",
+  authenticate,
+  requireTenantContext,
+  authorize("employees.manage_roles"),
+  (req, res, next) => {
+    forceLogoutSchema.parse({ body: req.body });
+    authController.forceLogout(req, res, next);
+  }
+);
+
+export default router;
