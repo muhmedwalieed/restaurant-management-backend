@@ -40,6 +40,11 @@ enum Weekday {
   SUN
 }
 
+enum MenuStatus {
+  ACTIVE
+  INACTIVE
+}
+
 model Restaurant {
   id          String           @id @default(cuid())
   name        String
@@ -62,6 +67,9 @@ model Restaurant {
   employeeBranchAccesses EmployeeBranchAccess[]
   workingHours           WorkingHours[]
   branchSettings         BranchSettings[]
+  categories             Category[]
+  products               Product[]
+  productModifiers       ProductModifier[]
 
   @@index([status])
   @@map("restaurants")
@@ -131,6 +139,70 @@ model BranchSettings {
 
   @@index([restaurantId])
   @@map("branch_settings")
+}
+
+model Category {
+  id           String     @id @default(cuid())
+  restaurantId String     @map("restaurant_id")
+  name         String
+  description  String?
+  sortOrder    Int        @default(0) @map("sort_order")
+  status       MenuStatus @default(ACTIVE)
+  deletedAt    DateTime?  @map("deleted_at")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  products   Product[]
+
+  @@unique([restaurantId, name])
+  @@index([restaurantId])
+  @@index([restaurantId, status])
+  @@map("categories")
+}
+
+model Product {
+  id           String     @id @default(cuid())
+  restaurantId String     @map("restaurant_id")
+  categoryId   String     @map("category_id")
+  name         String
+  description  String?
+  price        Decimal    @db.Decimal(10, 2)
+  imageUrl     String?    @map("image_url")
+  isAvailable  Boolean    @default(true) @map("is_available")
+  status       MenuStatus @default(ACTIVE)
+  deletedAt    DateTime?  @map("deleted_at")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  restaurant Restaurant        @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  category   Category          @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  modifiers  ProductModifier[]
+
+  @@unique([restaurantId, name])
+  @@index([restaurantId])
+  @@index([restaurantId, categoryId])
+  @@index([restaurantId, status])
+  @@map("products")
+}
+
+model ProductModifier {
+  id           String    @id @default(cuid())
+  restaurantId String    @map("restaurant_id")
+  productId    String    @map("product_id")
+  name         String
+  priceDelta   Decimal   @default(0.00) @map("price_delta") @db.Decimal(10, 2)
+  isRequired   Boolean   @default(false) @map("is_required")
+  deletedAt    DateTime? @map("deleted_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  product    Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([restaurantId])
+  @@index([productId])
+  @@map("product_modifiers")
 }
 
 model Permission {
