@@ -9,6 +9,7 @@ export const GLOBAL_PERMISSIONS = [
   { key: "restaurants.manage", description: "Manage restaurant profile and settings" },
   { key: "branches.manage", description: "Manage branch profiles and settings" },
   { key: "menu.manage", description: "Manage restaurant categories, products, prices, and add-ons" },
+  { key: "tables.manage", description: "Manage branch tables, status, and QR codes" },
 ];
 
 /**
