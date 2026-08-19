@@ -3,7 +3,7 @@ import env from "../config/env.js";
 /**
  * List of Prisma models that are tenant-scoped and require explicit `restaurantId`.
  * Note: Restaurant is the tenant root itself.
- * Tenant-scoped models (e.g. Branch, Employee, Role, Session, etc.) possess a `restaurantId` field.
+ * Tenant-scoped models (e.g. Branch, Employee, Role, Session, WorkingHours, BranchSettings, etc.) possess a `restaurantId` field.
  */
 const TENANT_SCOPED_MODELS = new Set([
   "Branch",
@@ -12,6 +12,8 @@ const TENANT_SCOPED_MODELS = new Set([
   "RolePermission",
   "Session",
   "EmployeeBranchAccess",
+  "WorkingHours",
+  "BranchSettings",
 ]);
 
 /**
