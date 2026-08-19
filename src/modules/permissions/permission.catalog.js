@@ -8,6 +8,7 @@ export const GLOBAL_PERMISSIONS = [
   { key: "employees.manage_roles", description: "Manage roles, permissions, and role assignments" },
   { key: "restaurants.manage", description: "Manage restaurant profile and settings" },
   { key: "branches.manage", description: "Manage branch profiles and settings" },
+  { key: "menu.manage", description: "Manage restaurant categories, products, prices, and add-ons" },
 ];
 
 /**
