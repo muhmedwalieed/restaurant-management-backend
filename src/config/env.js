@@ -18,6 +18,10 @@ const envSchema = z.object({
     .url()
     .default("http://localhost:5173"),
 
+  APP_URL: z
+    .url()
+    .default("http://localhost:5000"),
+
   DATABASE_URL: z
     .string()
     .min(1),
