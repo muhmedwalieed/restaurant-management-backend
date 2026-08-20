@@ -87,4 +87,30 @@ describe("AppError Hierarchy and Error Handler Tests", () => {
     assert.ok(passedError instanceof NotFoundError);
     assert.equal(passedError.statusCode, 404);
   });
+
+  test("errorHandler translates Prisma P2003 to 409 CONFLICT_ERROR", () => {
+    const p2003Err = { code: "P2003", message: "Foreign key constraint failed" };
+    const req = { requestId: "req_p2003_test" };
+
+    let statusCode = 0;
+    let jsonBody = null;
+
+    const res = {
+      status(code) {
+        statusCode = code;
+        return this;
+      },
+      json(body) {
+        jsonBody = body;
+        return this;
+      },
+    };
+
+    errorHandler(p2003Err, req, res, () => {});
+
+    assert.equal(statusCode, 409);
+    assert.equal(jsonBody.success, false);
+    assert.equal(jsonBody.error.code, "CONFLICT_ERROR");
+    assert.equal(jsonBody.error.message, "Referenced resource does not exist or was already removed");
+  });
 });

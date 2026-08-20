@@ -215,7 +215,8 @@ describe("Order Management & KDS Module Integration Tests", () => {
       await prisma.employee.deleteMany({ where: { restaurantId: { in: ids } } });
       await prisma.rolePermission.deleteMany({ where: { restaurantId: { in: ids } } });
       await prisma.role.deleteMany({ where: { restaurantId: { in: ids } } });
-      await prisma.workingHours.deleteMany({ where: { restaurantId: { in: ids } } });
+      await prisma.customerAddress.deleteMany({ where: { restaurantId: { in: ids } } });
+      await prisma.customer.deleteMany({ where: { restaurantId: { in: ids } } });
       await prisma.branchSettings.deleteMany({ where: { restaurantId: { in: ids } } });
       await prisma.branch.deleteMany({ where: { restaurantId: { in: ids } } });
       await prisma.restaurant.deleteMany({ where: { id: { in: ids } } });
@@ -566,5 +567,108 @@ describe("Order Management & KDS Module Integration Tests", () => {
     assert.equal(res.status, 403);
     const body = await res.json();
     assert.equal(body.error.code, "AUTHORIZATION_ERROR");
+  });
+
+  test("15. customerId Validation: Creating order with non-existent customerId returns 404 NotFoundError", async () => {
+    const res = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/orders`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${ownerAToken}`,
+      },
+      body: JSON.stringify({
+        type: "DINE_IN",
+        source: "CASHIER",
+        customerId: "non_existent_cust_id_9999",
+        tableId: tableA.id,
+        items: [{ productId: productA1.id, quantity: 1 }],
+      }),
+    });
+
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.equal(body.error.code, "NOT_FOUND");
+    assert.ok(body.error.message.includes("Customer not found or access denied"));
+  });
+
+  test("16. customerId Tenant Isolation: Creating order in Tenant A with Tenant B customerId returns 404 NotFoundError", async () => {
+    // Create customer in Tenant B
+    const custB = await prisma.customer.create({
+      data: {
+        restaurantId: tenantB.id,
+        name: "Tenant B Customer Isolation Test",
+        phone: "+201099991111",
+      },
+    });
+
+    const res = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/orders`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${ownerAToken}`,
+      },
+      body: JSON.stringify({
+        type: "DINE_IN",
+        source: "CASHIER",
+        customerId: custB.id, // Belongs to Tenant B!
+        tableId: tableA.id,
+        items: [{ productId: productA1.id, quantity: 1 }],
+      }),
+    });
+
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.equal(body.error.code, "NOT_FOUND");
+  });
+
+  test("17. Valid customerId & customerPhone Auto-Link: Creating order with valid customerId or customerPhone links customer correctly (201 Created)", async () => {
+    // Create customer in Tenant A
+    const custA = await prisma.customer.create({
+      data: {
+        restaurantId: tenantA.id,
+        name: "Tenant A Valid Customer",
+        phone: "+201088882222",
+      },
+    });
+
+    // Sub-test A: Explicit customerId
+    const resId = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/orders`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${ownerAToken}`,
+      },
+      body: JSON.stringify({
+        type: "DINE_IN",
+        source: "CASHIER",
+        customerId: custA.id,
+        tableId: tableA.id,
+        items: [{ productId: productA1.id, quantity: 1 }],
+      }),
+    });
+
+    assert.equal(resId.status, 201);
+    const bodyId = await resId.json();
+    assert.equal(bodyId.data.customerId, custA.id);
+
+    // Sub-test B: customerPhone auto-link
+    const resPhone = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/orders`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${ownerAToken}`,
+      },
+      body: JSON.stringify({
+        type: "DINE_IN",
+        source: "CASHIER",
+        customerPhone: "+201088882222", // Existing customer phone!
+        tableId: tableA.id,
+        items: [{ productId: productA1.id, quantity: 1 }],
+      }),
+    });
+
+    assert.equal(resPhone.status, 201);
+    const bodyPhone = await resPhone.json();
+    assert.equal(bodyPhone.data.customerId, custA.id);
   });
 });
