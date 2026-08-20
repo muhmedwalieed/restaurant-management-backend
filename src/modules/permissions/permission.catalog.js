@@ -10,6 +10,10 @@ export const GLOBAL_PERMISSIONS = [
   { key: "branches.manage", description: "Manage branch profiles and settings" },
   { key: "menu.manage", description: "Manage restaurant categories, products, prices, and add-ons" },
   { key: "tables.manage", description: "Manage branch tables, status, and QR codes" },
+  { key: "orders.view", description: "View branch orders and order timeline history" },
+  { key: "orders.create", description: "Create new branch orders" },
+  { key: "orders.update", description: "Update order details and advance order state machine" },
+  { key: "orders.cancel", description: "Cancel active orders and record cancellation reason" },
 ];
 
 /**
