@@ -14,6 +14,10 @@ export const GLOBAL_PERMISSIONS = [
   { key: "orders.create", description: "Create new branch orders" },
   { key: "orders.update", description: "Update order details and advance order state machine" },
   { key: "orders.cancel", description: "Cancel active orders and record cancellation reason" },
+  { key: "customers.view", description: "View customer profiles, order history, and addresses" },
+  { key: "customers.create", description: "Create new customer profiles" },
+  { key: "customers.update", description: "Update customer profiles and manage addresses" },
+  { key: "customers.delete", description: "Soft-delete customer profiles" },
 ];
 
 /**
