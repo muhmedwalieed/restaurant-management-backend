@@ -1,0 +1,306 @@
+import orderRepository from "./order.repository.js";
+import branchRepository from "../branches/branch.repository.js";
+import tableRepository from "../tables/table.repository.js";
+import prisma from "../../lib/prisma.js";
+import { BusinessRuleError, NotFoundError } from "../../shared/errors/index.js";
+
+/**
+ * Validates Order State Machine Transitions (Section 25.1).
+ */
+function validateStateTransition(currentStatus, newStatus, orderType) {
+  if (currentStatus === newStatus) {
+    return; // No-op
+  }
+
+  // Terminal states cannot be changed
+  if (currentStatus === "DELIVERED" || currentStatus === "CANCELLED") {
+    throw new BusinessRuleError(`Order is in terminal state '${currentStatus}' and cannot be updated`);
+  }
+
+  const validMap = {
+    PENDING: ["CONFIRMED"],
+    CONFIRMED: ["PREPARING"],
+    PREPARING: ["READY"],
+    READY: orderType === "DELIVERY" ? ["OUT_FOR_DELIVERY"] : ["DELIVERED"],
+    OUT_FOR_DELIVERY: ["DELIVERED"],
+  };
+
+  const allowedNextStates = validMap[currentStatus] || [];
+  if (!allowedNextStates.includes(newStatus)) {
+    throw new BusinessRuleError(
+      `Invalid order state transition from '${currentStatus}' to '${newStatus}' for order type '${orderType}'`
+    );
+  }
+}
+
+export class OrderService {
+  async verifyBranchOwnership(tenantContext, branchId) {
+    const branch = await branchRepository.findBranchById(tenantContext, branchId);
+    if (!branch) {
+      throw new NotFoundError("Branch not found or access denied");
+    }
+    return branch;
+  }
+
+  async listOrders(tenantContext, branchId, { page = 1, limit = 20, status, type, source } = {}) {
+    await this.verifyBranchOwnership(tenantContext, branchId);
+    const { items, total } = await orderRepository.findOrdersByBranch(tenantContext, branchId, {
+      page,
+      limit,
+      status,
+      type,
+      source,
+    });
+
+    const totalPages = Math.ceil(total / limit) || 1;
+    return {
+      items,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+      },
+    };
+  }
+
+  async getOrderById(tenantContext, branchId, orderId) {
+    await this.verifyBranchOwnership(tenantContext, branchId);
+
+    const order = await orderRepository.findOrderById(tenantContext, branchId, orderId);
+    if (!order) {
+      throw new NotFoundError("Order not found or access denied");
+    }
+
+    return order;
+  }
+
+  /**
+   * Single Unified Order Creation Logic for ALL channels (Section 24).
+   * Supports Idempotency Key 24h caching (ADR-009).
+   */
+  async createOrder(tenantContext, branchId, payload, idempotencyKey = null) {
+    const restaurantId = tenantContext.restaurantId;
+
+    // 1. Idempotency Check (ADR-009)
+    if (idempotencyKey) {
+      const cached = await orderRepository.findIdempotencyKey(restaurantId, idempotencyKey);
+      if (cached) {
+        return {
+          isCached: true,
+          statusCode: cached.statusCode,
+          data: cached.responseBody,
+        };
+      }
+    }
+
+    // 2. Verify Branch Ownership
+    await this.verifyBranchOwnership(tenantContext, branchId);
+
+    // 3. Verify Table if provided
+    if (payload.tableId) {
+      const table = await tableRepository.findTableById(tenantContext, branchId, payload.tableId);
+      if (!table) {
+        throw new NotFoundError("Table not found in target branch");
+      }
+    }
+
+    // 4. Server-Side Price Calculation & Product Snapshots
+    let calculatedSubtotal = 0;
+    const itemSnapshots = [];
+
+    for (const itemInput of payload.items) {
+      const product = await prisma.product.findFirst({
+        where: {
+          id: itemInput.productId,
+          restaurantId,
+          isAvailable: true,
+          status: "ACTIVE",
+          deletedAt: null,
+        },
+      });
+
+      if (!product) {
+        throw new NotFoundError(`Product '${itemInput.productId}' not found or unavailable`);
+      }
+
+      const unitPrice = Number(product.price);
+      let modifiersTotal = 0;
+      const selectedModifiersList = [];
+
+      if (Array.isArray(itemInput.modifierIds) && itemInput.modifierIds.length > 0) {
+        const modifiers = await prisma.productModifier.findMany({
+          where: {
+            id: { in: itemInput.modifierIds },
+            productId: product.id,
+            restaurantId,
+            deletedAt: null,
+          },
+        });
+
+        for (const mod of modifiers) {
+          const delta = Number(mod.priceDelta);
+          modifiersTotal += delta;
+          selectedModifiersList.push({
+            id: mod.id,
+            name: mod.name,
+            priceDelta: delta,
+          });
+        }
+      }
+
+      const itemUnitPrice = unitPrice + modifiersTotal;
+      const itemSubtotal = itemUnitPrice * itemInput.quantity;
+      calculatedSubtotal += itemSubtotal;
+
+      itemSnapshots.push({
+        productId: product.id,
+        productName: product.name,
+        quantity: itemInput.quantity,
+        unitPrice: itemUnitPrice,
+        subtotal: itemSubtotal,
+        notes: itemInput.notes || null,
+        selectedModifiers: selectedModifiersList.length > 0 ? selectedModifiersList : null,
+      });
+    }
+
+    const discountAmount = payload.discountAmount ? Number(payload.discountAmount) : 0;
+    const calculatedTotal = Math.max(0, calculatedSubtotal - discountAmount);
+
+    const orderPayload = {
+      source: payload.source || "CASHIER",
+      type: payload.type || "DINE_IN",
+      tableId: payload.tableId || null,
+      customerId: payload.customerId || null,
+      couponId: payload.couponId || null,
+      subtotal: calculatedSubtotal,
+      discountAmount,
+      total: calculatedTotal,
+      notes: payload.notes || null,
+      paymentStatus: payload.paymentStatus || "PENDING",
+      paymentMethod: payload.paymentMethod || null,
+    };
+
+    // 5. Execute Order Transaction
+    const order = await orderRepository.createOrderTransaction(
+      tenantContext,
+      branchId,
+      orderPayload,
+      itemSnapshots,
+      idempotencyKey
+    );
+
+    return {
+      isCached: false,
+      statusCode: 201,
+      data: order,
+    };
+  }
+
+  /**
+   * Updates Order Status using Optimistic Locking (ADR-008 & Section 25).
+   * Atomically updates status and creates status history in a single $transaction (Section 25.3).
+   */
+  async updateOrderStatus(tenantContext, branchId, orderId, { newStatus, expectedVersion, reason }) {
+    if (newStatus === "CANCELLED") {
+      throw new BusinessRuleError("Cancellation is not allowed via status update endpoint. Use the /orders/:id/cancel endpoint");
+    }
+
+    const order = await this.getOrderById(tenantContext, branchId, orderId);
+
+    // Validate State Transition
+    validateStateTransition(order.status, newStatus, order.type);
+
+    // Execute Atomic Optimistic Update + Status History Creation
+    await orderRepository.updateOrderStatusWithHistoryTransaction(
+      tenantContext,
+      branchId,
+      orderId,
+      expectedVersion,
+      order.status,
+      newStatus,
+      tenantContext.employeeId || null,
+      reason
+    );
+
+    return this.getOrderById(tenantContext, branchId, orderId);
+  }
+
+  /**
+   * Cancels active order (Requires orders.cancel permission via cancel endpoint).
+   */
+  async cancelOrder(tenantContext, branchId, orderId, { expectedVersion, reason }) {
+    if (!reason || reason.trim().length === 0) {
+      throw new BusinessRuleError("Cancellation reason is required");
+    }
+
+    const order = await this.getOrderById(tenantContext, branchId, orderId);
+
+    if (order.status === "DELIVERED" || order.status === "CANCELLED") {
+      throw new BusinessRuleError(`Order is in terminal state '${order.status}' and cannot be cancelled`);
+    }
+
+    // Execute Atomic Optimistic Update + Status History Creation for Cancellation
+    await orderRepository.updateOrderStatusWithHistoryTransaction(
+      tenantContext,
+      branchId,
+      orderId,
+      expectedVersion,
+      order.status,
+      "CANCELLED",
+      tenantContext.employeeId || null,
+      reason
+    );
+
+    return this.getOrderById(tenantContext, branchId, orderId);
+  }
+
+  /**
+   * Gets Order Timeline History.
+   */
+  async getOrderHistory(tenantContext, branchId, orderId) {
+    await this.verifyBranchOwnership(tenantContext, branchId);
+    return orderRepository.findOrderHistory(tenantContext, branchId, orderId);
+  }
+
+  /**
+   * Public Order Submission via QR / Online (Unauthenticated endpoint).
+   */
+  async createPublicOrder(payload, idempotencyKey = null) {
+    let branchId = payload.branchId;
+    let tableId = payload.tableId;
+    let restaurantId = payload.restaurantId;
+
+    // Resolve via tableToken if provided
+    if (payload.tableToken) {
+      const table = await tableRepository.findTableByQrToken(payload.tableToken);
+      if (!table || !table.branch || table.branch.status !== "ACTIVE") {
+        throw new NotFoundError("Invalid or expired QR code");
+      }
+      branchId = table.branchId;
+      tableId = table.id;
+      restaurantId = table.restaurantId;
+    }
+
+    if (!restaurantId || !branchId) {
+      throw new NotFoundError("Target branch or restaurant not found");
+    }
+
+    const tenantContext = { restaurantId };
+    return this.createOrder(
+      tenantContext,
+      branchId,
+      {
+        ...payload,
+        branchId,
+        tableId,
+        source: payload.tableToken ? "QR" : payload.source || "WEBSITE",
+        type: payload.tableToken ? "DINE_IN" : payload.type || "PICKUP",
+      },
+      idempotencyKey
+    );
+  }
+}
+
+export const orderService = new OrderService();
+export default orderService;
