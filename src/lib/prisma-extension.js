@@ -3,7 +3,6 @@ import env from "../config/env.js";
 /**
  * List of Prisma models that are tenant-scoped and require explicit `restaurantId`.
  * Note: Restaurant is the tenant root itself.
- * Tenant-scoped models (e.g. Branch, Employee, Role, Session, Category, Product, ProductModifier, RestaurantTable, etc.) possess a `restaurantId` field.
  */
 const TENANT_SCOPED_MODELS = new Set([
   "Branch",
@@ -18,6 +17,10 @@ const TENANT_SCOPED_MODELS = new Set([
   "Product",
   "ProductModifier",
   "RestaurantTable",
+  "Order",
+  "OrderItem",
+  "OrderStatusHistory",
+  "IdempotencyKey",
 ]);
 
 /**
@@ -35,9 +38,6 @@ function hasRestaurantId(obj) {
  * This extension acts as a developer detection / CI safety net in non-production environments
  * (development, test, ci). It inspects queries targeting tenant-scoped models and verifies that
  * `restaurantId` is explicitly provided.
- *
- * NOTE ON RAW QUERIES: Raw SQL queries (`$queryRaw`, `$executeRaw`) bypass Prisma query middleware
- * and cannot be inspected by this extension. Developers must manually enforce explicit scoping in raw SQL.
  *
  * @param {import("@prisma/client").PrismaClient} client
  */

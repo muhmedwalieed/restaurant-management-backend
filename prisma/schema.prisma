@@ -52,6 +52,43 @@ enum TableStatus {
   MAINTENANCE
 }
 
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PREPARING
+  READY
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+}
+
+enum OrderSource {
+  WHATSAPP
+  QR
+  WEBSITE
+  CASHIER
+  PHONE
+}
+
+enum OrderType {
+  DINE_IN
+  DELIVERY
+  PICKUP
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  ONLINE
+}
+
 model Restaurant {
   id          String           @id @default(cuid())
   name        String
@@ -78,6 +115,10 @@ model Restaurant {
   products               Product[]
   productModifiers       ProductModifier[]
   tables                 RestaurantTable[]
+  orders                 Order[]
+  orderItems             OrderItem[]
+  orderStatusHistories   OrderStatusHistory[]
+  idempotencyKeys        IdempotencyKey[]
 
   @@index([status])
   @@map("restaurants")
@@ -107,6 +148,7 @@ model Branch {
   workingHours   WorkingHours[]
   settings       BranchSettings?
   tables         RestaurantTable[]
+  orders         Order[]
 
   @@unique([restaurantId, code])
   @@index([restaurantId])
@@ -187,6 +229,7 @@ model Product {
   restaurant Restaurant        @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
   category   Category          @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   modifiers  ProductModifier[]
+  orderItems OrderItem[]
 
   @@unique([restaurantId, name])
   @@index([restaurantId])
@@ -228,12 +271,104 @@ model RestaurantTable {
 
   restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
   branch     Branch     @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  orders     Order[]
 
   @@unique([branchId, label])
   @@index([restaurantId])
   @@index([branchId])
   @@index([branchId, status])
   @@map("tables")
+}
+
+model Order {
+  id             String        @id @default(cuid())
+  orderNumber    Int           @map("order_number")
+  restaurantId   String        @map("restaurant_id")
+  branchId       String        @map("branch_id")
+  source         OrderSource   @default(CASHIER)
+  type           OrderType     @default(DINE_IN)
+  status         OrderStatus   @default(PENDING)
+  paymentStatus  PaymentStatus @default(PENDING) @map("payment_status")
+  paymentMethod  PaymentMethod? @map("payment_method")
+  customerId     String?       @map("customer_id")
+  tableId        String?       @map("table_id")
+  couponId       String?       @map("coupon_id")
+  subtotal       Decimal       @db.Decimal(10, 2)
+  discountAmount Decimal       @default(0.00) @map("discount_amount") @db.Decimal(10, 2)
+  total          Decimal       @db.Decimal(10, 2)
+  notes          String?
+  cancelReason   String?       @map("cancel_reason")
+  version        Int           @default(1)
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  restaurant    Restaurant           @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  branch        Branch               @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  table         RestaurantTable?     @relation(fields: [tableId], references: [id], onDelete: SetNull)
+  items         OrderItem[]
+  statusHistory OrderStatusHistory[]
+
+  @@unique([branchId, orderNumber])
+  @@index([restaurantId])
+  @@index([branchId])
+  @@index([restaurantId, branchId, status])
+  @@index([branchId, createdAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id                String   @id @default(cuid())
+  restaurantId      String   @map("restaurant_id")
+  orderId            String   @map("order_id")
+  productId         String   @map("product_id")
+  productName       String   @map("product_name")
+  quantity          Int      @default(1)
+  unitPrice         Decimal  @map("unit_price") @db.Decimal(10, 2)
+  subtotal          Decimal  @db.Decimal(10, 2)
+  notes             String?
+  selectedModifiers Json?    @map("selected_modifiers")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  order      Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product    Product    @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([restaurantId])
+  @@index([orderId])
+  @@map("order_items")
+}
+
+model OrderStatusHistory {
+  id           String      @id @default(cuid())
+  restaurantId String      @map("restaurant_id")
+  orderId      String      @map("order_id")
+  fromStatus   OrderStatus? @map("from_status")
+  toStatus     OrderStatus @map("to_status")
+  changedById  String?     @map("changed_by_id")
+  reason       String?
+  createdAt    DateTime    @default(now()) @map("created_at")
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  order      Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([restaurantId])
+  @@index([orderId])
+  @@map("order_status_history")
+}
+
+model IdempotencyKey {
+  id           String   @id @default(cuid())
+  restaurantId String   @map("restaurant_id")
+  key          String
+  responseBody Json     @map("response_body")
+  statusCode   Int      @default(201) @map("status_code")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@unique([restaurantId, key])
+  @@index([restaurantId])
+  @@map("idempotency_keys")
 }
 
 model Permission {
