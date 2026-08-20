@@ -97,7 +97,30 @@ export class OrderService {
     // 2. Verify Branch Ownership
     await this.verifyBranchOwnership(tenantContext, branchId);
 
-    // 3. Verify Table if provided
+    // 3. Verify / Auto-Link Customer if provided (Fix 1 & Fix 3)
+    if (!payload.customerId && payload.customerPhone) {
+      const customerService = (await import("../customers/customer.service.js")).default;
+      const customer = await customerService.findOrCreateCustomerByPhone(tenantContext, {
+        phone: payload.customerPhone,
+        name: payload.customerName,
+      });
+      if (customer) {
+        payload.customerId = customer.id;
+      }
+    } else if (payload.customerId) {
+      const customer = await prisma.customer.findFirst({
+        where: {
+          id: payload.customerId,
+          restaurantId,
+          deletedAt: null,
+        },
+      });
+      if (!customer) {
+        throw new NotFoundError("Customer not found or access denied");
+      }
+    }
+
+    // 4. Verify Table if provided
     if (payload.tableId) {
       const table = await tableRepository.findTableById(tenantContext, branchId, payload.tableId);
       if (!table) {

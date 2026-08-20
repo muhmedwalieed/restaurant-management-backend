@@ -41,6 +41,10 @@ const errorHandler = (err, req, res, next) => {
     statusCode = 400;
     code = "INVALID_JSON";
     message = "Malformed JSON payload in request body";
+  } else if (err?.code === "P2003") {
+    statusCode = 409;
+    code = "CONFLICT_ERROR";
+    message = "Referenced resource does not exist or was already removed";
   }
 
   // Log error using Pino
