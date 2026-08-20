@@ -161,7 +161,23 @@ export class OrderRepository {
         data: itemsToCreate,
       });
 
-      // 4. Create Initial OrderStatusHistory
+      // 4. Update Table Status to OCCUPIED if tableId provided (ADR-015 Table Lifecycle)
+      if (orderPayload.tableId) {
+        await tx.restaurantTable.updateMany({
+          where: {
+            id: orderPayload.tableId,
+            branchId,
+            restaurantId,
+            deletedAt: null,
+          },
+          data: {
+            status: "OCCUPIED",
+            updatedAt: new Date(),
+          },
+        });
+      }
+
+      // 5. Create Initial OrderStatusHistory
       await tx.orderStatusHistory.create({
         data: {
           restaurantId,
@@ -173,7 +189,7 @@ export class OrderRepository {
         },
       });
 
-      // 5. Save IdempotencyKey if provided
+      // 6. Save IdempotencyKey if provided
       if (idempotencyKey) {
         const responseData = {
           statusCode: 201,
@@ -255,6 +271,176 @@ export class OrderRepository {
           toStatus: newStatus,
           changedById: changedById || null,
           reason: reason || `Status updated from ${currentStatus} to ${newStatus}`,
+        },
+      });
+
+      // Table Release Policy (ADR-015): Release table to AVAILABLE if DELIVERED or CANCELLED and no active orders remain
+      if (newStatus === "DELIVERED" || newStatus === "CANCELLED") {
+        const orderData = await tx.order.findFirst({
+          where: { id: orderId, branchId, restaurantId },
+          select: { tableId: true },
+        });
+
+        if (orderData?.tableId) {
+          const activeCount = await tx.order.count({
+            where: {
+              restaurantId,
+              branchId,
+              tableId: orderData.tableId,
+              id: { not: orderId },
+              status: { in: ["PENDING", "CONFIRMED", "PREPARING", "READY"] },
+            },
+          });
+
+          if (activeCount === 0) {
+            await tx.restaurantTable.updateMany({
+              where: {
+                id: orderData.tableId,
+                branchId,
+                restaurantId,
+                deletedAt: null,
+              },
+              data: {
+                status: "AVAILABLE",
+                updatedAt: new Date(),
+              },
+            });
+          }
+        }
+      }
+
+      return true;
+    });
+  }
+
+  /**
+   * Executes Atomic Optimistic Order Payment update inside a single $transaction.
+   */
+  async updateOrderPaymentWithHistoryTransaction(
+    tenantContext,
+    branchId,
+    orderId,
+    expectedVersion,
+    payload
+  ) {
+    const restaurantId = tenantContext.restaurantId;
+
+    return prisma.$transaction(async (tx) => {
+      const orderBefore = await tx.order.findFirst({
+        where: { id: orderId, branchId, restaurantId },
+        select: { status: true, tableId: true },
+      });
+
+      const updateResult = await tx.order.updateMany({
+        where: {
+          id: orderId,
+          branchId,
+          restaurantId,
+          version: expectedVersion,
+        },
+        data: {
+          paymentStatus: "PAID",
+          paymentMethod: payload.paymentMethod,
+          paidAt: new Date(),
+          paidByEmployeeId: tenantContext.employeeId || null,
+          version: expectedVersion + 1,
+          updatedAt: new Date(),
+        },
+      });
+
+      if (updateResult.count === 0) {
+        throw new ConflictError("Order was modified by another request. Please refresh and retry.");
+      }
+
+      await tx.orderStatusHistory.create({
+        data: {
+          restaurantId,
+          orderId,
+          fromStatus: orderBefore?.status || null,
+          toStatus: orderBefore?.status || "PENDING",
+          changedById: tenantContext.employeeId || null,
+          reason: `Payment processed (${payload.paymentMethod})`,
+        },
+      });
+
+      if (orderBefore?.tableId && orderBefore.status === "DELIVERED") {
+        const activeCount = await tx.order.count({
+          where: {
+            restaurantId,
+            branchId,
+            tableId: orderBefore.tableId,
+            id: { not: orderId },
+            status: { in: ["PENDING", "CONFIRMED", "PREPARING", "READY"] },
+          },
+        });
+
+        if (activeCount === 0) {
+          await tx.restaurantTable.updateMany({
+            where: {
+              id: orderBefore.tableId,
+              branchId,
+              restaurantId,
+              deletedAt: null,
+            },
+            data: {
+              status: "AVAILABLE",
+              updatedAt: new Date(),
+            },
+          });
+        }
+      }
+
+      return true;
+    });
+  }
+
+  /**
+   * Executes Atomic Optimistic Order Refund update inside a single $transaction.
+   */
+  async updateOrderRefundWithHistoryTransaction(
+    tenantContext,
+    branchId,
+    orderId,
+    expectedVersion,
+    payload
+  ) {
+    const restaurantId = tenantContext.restaurantId;
+
+    return prisma.$transaction(async (tx) => {
+      const orderBefore = await tx.order.findFirst({
+        where: { id: orderId, branchId, restaurantId },
+        select: { status: true },
+      });
+
+      const updateResult = await tx.order.updateMany({
+        where: {
+          id: orderId,
+          branchId,
+          restaurantId,
+          version: expectedVersion,
+        },
+        data: {
+          paymentStatus: "REFUNDED",
+          refundedAt: new Date(),
+          refundReason: payload.reason,
+          refundedByEmployeeId: tenantContext.employeeId || null,
+          version: expectedVersion + 1,
+          updatedAt: new Date(),
+        },
+      });
+
+      if (updateResult.count === 0) {
+        throw new ConflictError("Order was modified by another request. Please refresh and retry.");
+      }
+
+      await tx.orderStatusHistory.create({
+        data: {
+          restaurantId,
+          orderId,
+          fromStatus: orderBefore?.status || null,
+          toStatus: orderBefore?.status || "PENDING",
+          changedById: tenantContext.employeeId || null,
+          reason: `Payment refunded: ${payload.reason}`,
         },
       });
 

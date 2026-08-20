@@ -1,0 +1,192 @@
+[1mdiff --git a/src/modules/orders/order.controller.js b/src/modules/orders/order.controller.js[m
+[1mindex c138be5..69fc9eb 100644[m
+[1m--- a/src/modules/orders/order.controller.js[m
+[1m+++ b/src/modules/orders/order.controller.js[m
+[36m@@ -133,6 +133,65 @@[m [mexport class OrderController {[m
+       next(error);[m
+     }[m
+   }[m
+[32m+[m
+[32m+[m[32m  async createPosOrder(req, res, next) {[m
+[32m+[m[32m    try {[m
+[32m+[m[32m      const body = req.validated?.body ?? req.body ?? {};[m
+[32m+[m[32m      const idempotencyKey = req.headers["idempotency-key"] || req.headers["x-idempotency-key"] || null;[m
+[32m+[m
+[32m+[m[32m      const result = await orderService.createPosOrder(req.tenantContext, req.params.branchId, body, idempotencyKey);[m
+[32m+[m
+[32m+[m[32m      if (result.isCached) {[m
+[32m+[m[32m        return res.status(result.statusCode).json(result.data);[m
+[32m+[m[32m      }[m
+[32m+[m
+[32m+[m[32m      return sendSuccess(res, {[m
+[32m+[m[32m        statusCode: 201,[m
+[32m+[m[32m        message: "POS order created successfully",[m
+[32m+[m[32m        data: result.data,[m
+[32m+[m[32m      });[m
+[32m+[m[32m    } catch (error) {[m
+[32m+[m[32m      next(error);[m
+[32m+[m[32m    }[m
+[32m+[m[32m  }[m
+[32m+[m
+[32m+[m[32m  async processOrderPayment(req, res, next) {[m
+[32m+[m[32m    try {[m
+[32m+[m[32m      const body = req.validated?.body ?? req.body ?? {};[m
+[32m+[m[32m      const paidOrder = await orderService.processOrderPayment([m
+[32m+[m[32m        req.tenantContext,[m
+[32m+[m[32m        req.params.branchId,[m
+[32m+[m[32m        req.params.id,[m
+[32m+[m[32m        body[m
+[32m+[m[32m      );[m
+[32m+[m
+[32m+[m[32m      return sendSuccess(res, {[m
+[32m+[m[32m        message: "Order payment processed successfully",[m
+[32m+[m[32m        data: paidOrder,[m
+[32m+[m[32m      });[m
+[32m+[m[32m    } catch (error) {[m
+[32m+[m[32m      next(error);[m
+[32m+[m[32m    }[m
+[32m+[m[32m  }[m
+[32m+[m
+[32m+[m[32m  async processOrderRefund(req, res, next) {[m
+[32m+[m[32m    try {[m
+[32m+[m[32m      const body = req.validated?.body ?? req.body ?? {};[m
+[32m+[m[32m      const refundedOrder = await orderService.processOrderRefund([m
+[32m+[m[32m        req.tenantContext,[m
+[32m+[m[32m        req.params.branchId,[m
+[32m+[m[32m        req.params.id,[m
+[32m+[m[32m        body[m
+[32m+[m[32m      );[m
+[32m+[m
+[32m+[m[32m      return sendSuccess(res, {[m
+[32m+[m[32m        message: "Order payment refunded successfully",[m
+[32m+[m[32m        data: refundedOrder,[m
+[32m+[m[32m      });[m
+[32m+[m[32m    } catch (error) {[m
+[32m+[m[32m      next(error);[m
+[32m+[m[32m    }[m
+[32m+[m[32m  }[m
+ }[m
+ [m
+ export const orderController = new OrderController();[m
+[1mdiff --git a/src/modules/orders/order.repository.js b/src/modules/orders/order.repository.js[m
+[1mindex 8d543ac..6c80fef 100644[m
+[1m--- a/src/modules/orders/order.repository.js[m
+[1m+++ b/src/modules/orders/order.repository.js[m
+[36m@@ -161,7 +161,23 @@[m [mexport class OrderRepository {[m
+         data: itemsToCreate,[m
+       });[m
+ [m
+[31m-      // 4. Create Initial OrderStatusHistory[m
+[32m+[m[32m      // 4. Update Table Status to OCCUPIED if tableId provided (ADR-015 Table Lifecycle)[m
+[32m+[m[32m      if (orderPayload.tableId) {[m
+[32m+[m[32m        await tx.restaurantTable.updateMany({[m
+[32m+[m[32m          where: {[m
+[32m+[m[32m            id: orderPayload.tableId,[m
+[32m+[m[32m            branchId,[m
+[32m+[m[32m            restaurantId,[m
+[32m+[m[32m            deletedAt: null,[m
+[32m+[m[32m          },[m
+[32m+[m[32m          data: {[m
+[32m+[m[32m            status: "OCCUPIED",[m
+[32m+[m[32m            updatedAt: new Date(),[m
+[32m+[m[32m          },[m
+[32m+[m[32m        });[m
+[32m+[m[32m      }[m
+[32m+[m
+[32m+[m[32m      // 5. Create Initial OrderStatusHistory[m
+       await tx.orderStatusHistory.create({[m
+         data: {[m
+           restaurantId,[m
+[36m@@ -173,7 +189,7 @@[m [mexport class OrderRepository {[m
+         },[m
+       });[m
+ [m
+[31m-      // 5. Save IdempotencyKey if provided[m
+[32m+[m[32m      // 6. Save IdempotencyKey if provided[m
+       if (idempotencyKey) {[m
+         const responseData = {[m
+           statusCode: 201,[m
+[36m@@ -258,6 +274,176 @@[m [mexport class OrderRepository {[m
+         },[m
+       });[m
+ [m
+[32m+[m[32m      // Table Release Policy (ADR-015): Release table to AVAILABLE if DELIVERED or CANCELLED and no active orders remain[m
+[32m+[m[32m      if (newStatus === "DELIVERED" || newStatus === "CANCELLED") {[m
+[32m+[m[32m        const orderData = await tx.order.findFirst({[m
+[32m+[m[32m          where: { id: orderId, branchId, restaurantId },[m
+[32m+[m[32m          select: { tableId: true },[m
+[32m+[m[32m        });[m
+[32m+[m
+[32m+[m[32m        if (orderData?.tableId) {[m
+[32m+[m[32m          const activeCount = await tx.order.count({[m
+[32m+[m[32m            where: {[m
+[32m+[m[32m              restaurantId,[m
+[32m+[m[32m              branchId,[m
+[32m+[m[32m              tableId: orderData.tableId,[m
+[32m+[m[32m              id: { not: orderId },[m
+[32m+[m[32m              status: { in: ["PENDING", "CONFIRMED", "PREPARING", "READY"] },[m
+[32m+[m[32m            },[m
+[32m+[m[32m          });[m
+[32m+[m
+[32m+[m[32m          if (activeCount === 0) {[m
+[32m+[m[32m            await tx.restaurantTable.updateMany({[m
+[32m+[m[32m              where: {[m
+[32m+[m[32m                id: orderData.tableId,[m
+[32m+[m[32m                branchId,[m
+[32m+[m[32m                restaurantId,[m
+[32m+[m[32m                deletedAt: null,[m
+[32m+[m[32m              },[m
+[32m+[m[32m              data: {[m
+[32m+[m[32m                status: "AVAILABLE",[m
+[32m+[m[32m                updatedAt: new Date(),[m
+[32m+[m[32m              },[m
+[32m+[m[32m            });[m
+[32m+[m[32m          }[m
+[32m+[m[32m        }[m
+[32m+[m[32m      }[m
+[32m+[m
+[32m+[m[32m      return true;[m
+[32m+[m[32m    });[m
+[32m+[m[32m  }[m
+[32m+[m
+[32m+[m[32m  /**[m
+[32m+[m[32m   * Executes Atomic Optimistic Order Payment update inside a single $transaction.[m
+[32m+[m[32m   */[m
+[32m+[m[32m  async updateOrderPaymentWithHistoryTransaction([m
+[32m+[m[32m    tenantContext,[m
+[32m+[m[32m    branchId,[m
+[32m+[m[32m    orderId,[m
+[32m+[m[32m    expectedVersion,[m
+[32m+[m[32m    payload[m
+[32m+[m[32m  ) {[m
+[32m+[m[32m    const restaurantId = tenantContext.restaurantId;[m
+[32m+[m
+[32m+[m[32m    return prisma.$transaction(async (tx) => {[m
+[32m+[m[32m      const orderBefore = await tx.order.findFirst({[m
+[32m+[m[32m        where: { id: orderId, branchId, restaurantId },[m
+[32m+[m[32m        select: { status: true, tableId: true },[m
+[32m+[m[32m      });[m
+[32m+[m
+[32m+[m[32m      const updateResult = await tx.order.updateMany({[m
+[32m+[m[32m        where: {[m
+[32m+[m[32m          id: orderId,[m
+[32m+[m[32m          branchId,[m
+[32m+[m[32m          restaurantId,[m
+[32m+[m[32m          version: expectedVersion,[m
+[32m+[m[32m        },[m
+[32m+[m[32m        data: {[m
+[32m+[m[32m          paymentStatus: "PAID",[m
+[32m+[m[32m          paymentMethod: payload.paymentMethod,[m
+[32m+[m[32m          paidAt: new Date(),[m
+[32m+[m[32m          paidByEmployeeId: tenantContext.employeeId || null,[m
+[32m+[m[32m          version: expectedVersion + 1,[m
+[32m+[m[32m          updatedAt: new Date(),[m
+[32m+[m[32m        },[m
+[32m+[m[32m      });[m
+[32m+[m
+[32m+[m[32m      if (updateResult.count === 0) {[m
+[32m+[m[32m        throw new ConflictError("Order was modified by another request. Please refresh and retry.");[m
+[32m+[m[32m      }[m
+[32m+[m
+[32m+[m[32m      await tx.orderStatusHistory.create({[m
+[32m+[m[32m    

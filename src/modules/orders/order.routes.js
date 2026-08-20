@@ -7,6 +7,9 @@ import {
   updateOrderStatusSchema,
   cancelOrderSchema,
   publicOrderSchema,
+  posOrderSchema,
+  paymentSchema,
+  refundSchema,
 } from "./order.validation.js";
 import { authenticate } from "../auth/authenticate.middleware.js";
 import { authorize } from "../auth/authorize.middleware.js";
@@ -36,6 +39,16 @@ router.post("/orders/public", publicOrderRateLimiter, validate(publicOrderSchema
   orderController.createPublicOrder(req, res, next);
 });
 
+// ==================== POS ORDERING PIPELINE ====================
+const branchPosRouter = Router({ mergeParams: true });
+branchPosRouter.use(authenticate, requireTenantContext);
+
+branchPosRouter.post("/", authorize("orders.create"), validate(posOrderSchema), (req, res, next) => {
+  orderController.createPosOrder(req, res, next);
+});
+
+router.use("/branches/:branchId/pos/orders", branchPosRouter);
+
 // ==================== AUTHENTICATED BRANCH ORDERS PIPELINE ====================
 const branchOrderRouter = Router({ mergeParams: true });
 branchOrderRouter.use(authenticate, requireTenantContext);
@@ -58,6 +71,14 @@ branchOrderRouter.patch("/:id/status", authorize("orders.update"), validate(upda
 
 branchOrderRouter.post("/:id/cancel", authorize("orders.cancel"), validate(cancelOrderSchema), (req, res, next) => {
   orderController.cancelOrder(req, res, next);
+});
+
+branchOrderRouter.post("/:id/payment", authorize("orders.payment"), validate(paymentSchema), (req, res, next) => {
+  orderController.processOrderPayment(req, res, next);
+});
+
+branchOrderRouter.post("/:id/refund", authorize("orders.refund"), validate(refundSchema), (req, res, next) => {
+  orderController.processOrderRefund(req, res, next);
 });
 
 branchOrderRouter.get("/:id/history", authorize("orders.view"), (req, res, next) => {
