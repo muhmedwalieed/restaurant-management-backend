@@ -124,6 +124,7 @@ model Restaurant {
   whatsappConnections    WhatsAppConnection[]
   whatsappMessages       WhatsAppMessage[]
   webhookEvents          WebhookEvent[]
+  whatsappConversations  WhatsAppConversation[]
 
   @@index([status])
   @@map("restaurants")
@@ -510,6 +511,7 @@ model Customer {
   restaurant Restaurant        @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
   addresses  CustomerAddress[]
   orders     Order[]
+  conversations WhatsAppConversation[]
 
   @@unique([restaurantId, phone])
   @@index([restaurantId])
@@ -589,6 +591,7 @@ model WhatsAppConnection {
 
   restaurant Restaurant        @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
   messages   WhatsAppMessage[]
+  conversations WhatsAppConversation[]
 
   @@unique([restaurantId, providerAccountId])
   @@index([restaurantId])
@@ -640,4 +643,49 @@ model WebhookEvent {
   @@index([restaurantId])
   @@index([restaurantId, status])
   @@map("webhook_events")
+}
+
+enum WhatsAppFlowState {
+  WELCOME
+  MAIN_MENU
+  MENU_CATEGORY
+  PRODUCT_SELECT
+  CART
+  ADDRESS
+  CONFIRM_ORDER
+  TRACKING
+  FAQ
+  HUMAN_HANDOFF
+}
+
+enum WhatsAppConversationStatus {
+  ACTIVE
+  WAITING_AGENT
+  CLOSED
+}
+
+model WhatsAppConversation {
+  id                 String                     @id @default(cuid())
+  restaurantId       String                     @map("restaurant_id")
+  connectionId       String                     @map("connection_id")
+  customerPhone      String                     @map("customer_phone")
+  customerId         String?                    @map("customer_id")
+  state              WhatsAppFlowState          @default(WELCOME)
+  status             WhatsAppConversationStatus @default(ACTIVE)
+  cart               Json?                      @default("[]")
+  address            String?                    @db.Text
+  selectedCategoryId String?                    @map("selected_category_id")
+  lastInboundAt      DateTime                   @default(now()) @map("last_inbound_at")
+  createdAt          DateTime                   @default(now()) @map("created_at")
+  updatedAt          DateTime                   @updatedAt @map("updated_at")
+
+  restaurant Restaurant         @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  connection WhatsAppConnection @relation(fields: [connectionId], references: [id], onDelete: Restrict)
+  customer   Customer?          @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  @@unique([restaurantId, connectionId, customerPhone])
+  @@index([restaurantId])
+  @@index([restaurantId, status])
+  @@index([restaurantId, customerPhone])
+  @@map("whatsapp_conversations")
 }

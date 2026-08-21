@@ -199,6 +199,18 @@ export class WhatsAppService {
             providerMessageId,
             status: "DELIVERED",
           });
+
+          // Dispatch to Module 10 WhatsApp Automation Engine (ADR-020)
+          try {
+            const { whatsAppAutomationService } = await import("../whatsapp-automation/automation.service.js");
+            await whatsAppAutomationService.handleInboundMessage(tenantContext, connection, {
+              fromPhone,
+              content,
+              providerMessageId,
+            });
+          } catch (autoErr) {
+            // Non-fatal automation flow exception handled
+          }
         }
       }
 
