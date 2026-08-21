@@ -121,6 +121,9 @@ model Restaurant {
   idempotencyKeys        IdempotencyKey[]
   customers              Customer[]
   customerAddresses      CustomerAddress[]
+  whatsappConnections    WhatsAppConnection[]
+  whatsappMessages       WhatsAppMessage[]
+  webhookEvents          WebhookEvent[]
 
   @@index([status])
   @@map("restaurants")
@@ -535,4 +538,106 @@ model CustomerAddress {
   @@index([restaurantId])
   @@index([customerId])
   @@map("customer_addresses")
+}
+
+enum ConnectionStatus {
+  ACTIVE
+  DISCONNECTED
+  FAILED
+}
+
+enum ConnectionProvider {
+  META
+  MOCK
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageType {
+  TEXT
+  MEDIA
+}
+
+enum MessageStatus {
+  PENDING
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+enum WebhookEventStatus {
+  RECEIVED
+  PROCESSED
+  FAILED
+}
+
+model WhatsAppConnection {
+  id                    String             @id @default(cuid())
+  restaurantId          String             @map("restaurant_id")
+  status                ConnectionStatus   @default(ACTIVE)
+  provider              ConnectionProvider @default(META)
+  providerAccountId     String             @map("provider_account_id")
+  providerPhoneNumberId String             @map("provider_phone_number_id")
+  displayName           String?            @map("display_name")
+  webhookSecret         String?            @map("webhook_secret")
+  createdAt             DateTime           @default(now()) @map("created_at")
+  updatedAt             DateTime           @updatedAt @map("updated_at")
+
+  restaurant Restaurant        @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  messages   WhatsAppMessage[]
+
+  @@unique([restaurantId, providerAccountId])
+  @@index([restaurantId])
+  @@index([providerPhoneNumberId])
+  @@map("whatsapp_connections")
+}
+
+model WhatsAppMessage {
+  id                String           @id @default(cuid())
+  restaurantId      String           @map("restaurant_id")
+  connectionId      String           @map("connection_id")
+  direction         MessageDirection
+  type              MessageType      @default(TEXT)
+  fromPhone         String           @map("from_phone")
+  toPhone           String           @map("to_phone")
+  content           String?          @db.Text
+  mediaUrl          String?          @map("media_url")
+  providerMessageId String?          @map("provider_message_id")
+  status            MessageStatus    @default(PENDING)
+  timestamp         DateTime         @default(now())
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
+
+  restaurant Restaurant         @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  connection WhatsAppConnection @relation(fields: [connectionId], references: [id], onDelete: Restrict)
+
+  @@unique([restaurantId, providerMessageId])
+  @@index([restaurantId, createdAt])
+  @@index([restaurantId, direction])
+  @@index([restaurantId, status])
+  @@map("whatsapp_messages")
+}
+
+model WebhookEvent {
+  id           String             @id @default(cuid())
+  restaurantId String             @map("restaurant_id")
+  eventId      String             @map("event_id")
+  provider     ConnectionProvider @default(META)
+  rawPayload   Json               @map("raw_payload")
+  status       WebhookEventStatus @default(RECEIVED)
+  attempts     Int                @default(0)
+  lastError    String?            @map("last_error") @db.Text
+  processedAt  DateTime?          @map("processed_at")
+  createdAt    DateTime           @default(now()) @map("created_at")
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+
+  @@unique([restaurantId, eventId])
+  @@index([restaurantId])
+  @@index([restaurantId, status])
+  @@map("webhook_events")
 }
