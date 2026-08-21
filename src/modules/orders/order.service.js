@@ -364,6 +364,10 @@ export class OrderService {
       throw new BusinessRuleError("Order is already paid");
     }
 
+    if (order.paymentStatus === "REFUNDED") {
+      throw new BusinessRuleError("Cannot process payment for refunded order");
+    }
+
     if (payload.amount !== undefined && Number(payload.amount) > Number(order.total)) {
       throw new BusinessRuleError("Payment amount exceeds order total");
     }

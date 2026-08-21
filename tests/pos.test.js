@@ -537,4 +537,125 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
     assert.equal(body.success, true);
     assert.equal(body.data.paymentStatus, "PENDING"); // Safely ignored!
   });
+
+  test("16. Payment Guard: Payment on cancelled order returns 422 BusinessRuleError", async () => {
+    const cancelledOrder = await prisma.order.create({
+      data: {
+        orderNumber: 3100,
+        restaurantId: tenantA.id,
+        branchId: branchA.id,
+        source: "CASHIER",
+        type: "DINE_IN",
+        status: "CANCELLED",
+        paymentStatus: "PENDING",
+        tableId: tableA1.id,
+        subtotal: 15.0,
+        total: 15.0,
+        cancelReason: "Test cancellation",
+      },
+    });
+
+    const res = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/orders/${cancelledOrder.id}/payment`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${cashierAToken}`,
+      },
+      body: JSON.stringify({
+        paymentMethod: "CASH",
+        expectedVersion: cancelledOrder.version,
+      }),
+    });
+
+    assert.equal(res.status, 422);
+    const body = await res.json();
+    assert.equal(body.error.code, "BUSINESS_RULE_ERROR");
+    assert.ok(body.error.message.includes("cancelled"));
+  });
+
+  test("17. Payment Guard: Payment on refunded order returns 422 BusinessRuleError", async () => {
+    const res = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/orders/${posOrderDineIn.id}/payment`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${cashierAToken}`,
+      },
+      body: JSON.stringify({
+        paymentMethod: "CASH",
+        expectedVersion: posOrderDineIn.version,
+      }),
+    });
+
+    assert.equal(res.status, 422);
+    const body = await res.json();
+    assert.equal(body.error.code, "BUSINESS_RULE_ERROR");
+    assert.ok(body.error.message.includes("refunded"));
+  });
+
+  test("18. Refund Guard: Refund without reason returns 400 Validation Error", async () => {
+    const res = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/orders/${posOrderDelivery.id}/refund`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${cashierAToken}`,
+      },
+      body: JSON.stringify({
+        expectedVersion: posOrderDelivery.version,
+      }),
+    });
+
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.equal(body.error.code, "VALIDATION_ERROR");
+  });
+
+  test("19. Cross-Tenant Protection: Tenant B cannot pay or refund Tenant A's order (404)", async () => {
+    const payRes = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/orders/${posOrderDelivery.id}/payment`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${ownerBToken}`, // Token B!
+      },
+      body: JSON.stringify({
+        paymentMethod: "CASH",
+        expectedVersion: posOrderDelivery.version,
+      }),
+    });
+    assert.equal(payRes.status, 404);
+    const payBody = await payRes.json();
+    assert.equal(payBody.error.code, "NOT_FOUND");
+
+    const refundRes = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/orders/${posOrderDelivery.id}/refund`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${ownerBToken}`, // Token B!
+      },
+      body: JSON.stringify({
+        reason: "Cross tenant refund attempt",
+        expectedVersion: posOrderDelivery.version,
+      }),
+    });
+    assert.equal(refundRes.status, 404);
+    const refundBody = await refundRes.json();
+    assert.equal(refundBody.error.code, "NOT_FOUND");
+  });
+
+  test("20. RBAC Protection: Staff with orders.view ONLY receives 403 on /refund", async () => {
+    const res = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/orders/${posOrderDelivery.id}/refund`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${viewOnlyStaffToken}`,
+      },
+      body: JSON.stringify({
+        reason: "Unauthorized refund",
+        expectedVersion: 1,
+      }),
+    });
+
+    assert.equal(res.status, 403);
+    const body = await res.json();
+    assert.equal(body.error.code, "AUTHORIZATION_ERROR");
+  });
 });
