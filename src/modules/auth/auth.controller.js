@@ -26,6 +26,7 @@ export class AuthController {
         password: body.password,
         device: userAgent,
         ipAddress,
+        forceLogout: body.forceLogout,
       });
 
       // Optionally set HttpOnly cookie
@@ -89,6 +90,17 @@ export class AuthController {
 
       return sendSuccess(res, {
         message: "Logged out successfully",
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async me(req, res, next) {
+    try {
+      const profile = await authService.me(req.tenantContext);
+      return sendSuccess(res, {
+        data: profile,
       });
     } catch (error) {
       next(error);

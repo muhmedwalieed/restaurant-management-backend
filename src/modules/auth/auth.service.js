@@ -2,9 +2,10 @@ import crypto from "crypto";
 import authRepository from "./auth.repository.js";
 import { hashPassword, verifyPassword } from "./keychain.js";
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from "../../utils/jwt.js";
-import { AuthenticationError, BusinessRuleError } from "../../shared/errors/index.js";
+import { AuthenticationError, BusinessRuleError, NotFoundError } from "../../shared/errors/index.js";
 import redis from "../../config/redis.js";
 import logger from "../../config/logger.js";
+import prisma from "../../lib/prisma.js";
 
 /**
  * Computes SHA-256 hash of a refresh token.
@@ -51,7 +52,7 @@ export class AuthService {
   /**
    * Handles Employee Login with Single Active Session enforcement.
    */
-  async login({ email, password, device, ipAddress }) {
+  async login({ email, password, device, ipAddress, forceLogout = false }) {
     const employee = await authRepository.findEmployeeByEmailForLogin(email);
 
     if (!employee) {
@@ -77,10 +78,14 @@ export class AuthService {
     );
 
     if (otherDeviceSession) {
-      throw new BusinessRuleError("This account is already active on another device.", {
-        forceLogoutRequired: true,
-        sessionDevice: otherDeviceSession.device,
-      });
+      if (forceLogout) {
+        await authRepository.forceLogoutEmployee(restaurantId, employeeId);
+      } else {
+        throw new BusinessRuleError("This account is already active on another device.", {
+          forceLogoutRequired: true,
+          sessionDevice: otherDeviceSession.device,
+        });
+      }
     }
 
     // Check if session exists on SAME device fingerprint
@@ -133,6 +138,63 @@ export class AuthService {
         role: employee.role.name,
         branchId: employee.branchId,
         restaurantId: employee.restaurantId,
+      },
+    };
+  }
+
+  /**
+   * Returns the authenticated employee profile with role + permission keys.
+   * Source of truth for the Frontend User Context.
+   */
+  async me(tenantContext) {
+    if (!tenantContext?.employeeId || !tenantContext?.restaurantId) {
+      throw new AuthenticationError("Tenant context is required");
+    }
+
+    const employee = await prisma.employee.findFirst({
+      where: {
+        id: tenantContext.employeeId,
+        restaurantId: tenantContext.restaurantId,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        status: true,
+        branchId: true,
+        branch: {
+          select: { id: true, name: true, code: true },
+        },
+        role: {
+          select: {
+            id: true,
+            name: true,
+            isSystem: true,
+            permissions: {
+              include: {
+                permission: { select: { id: true, key: true, description: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!employee) {
+      throw new NotFoundError("Employee not found");
+    }
+
+    return {
+      ...employee,
+      role: {
+        ...employee.role,
+        permissions: (employee.role.permissions || []).map((rp) => ({
+          id: rp.permission.id,
+          key: rp.permission.key,
+          name: rp.permission.description,
+          module: rp.permission.key.split(".")[0],
+        })),
       },
     };
   }
