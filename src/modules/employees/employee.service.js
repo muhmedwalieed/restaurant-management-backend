@@ -24,11 +24,15 @@ async function invalidatePermissionCache(employeeId) {
 }
 
 export class EmployeeService {
-  async listEmployees(tenantContext, { page = 1, limit = 20, branchId }) {
+  async listEmployees(tenantContext, { page = 1, limit = 20, branchId, search, status, roleId, sort }) {
     const { items, total } = await employeeRepository.findEmployees(tenantContext, {
       page,
       limit,
       branchId,
+      search,
+      status,
+      roleId,
+      sort,
     });
 
     const totalPages = Math.ceil(total / limit) || 1;

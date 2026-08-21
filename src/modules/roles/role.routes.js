@@ -14,6 +14,10 @@ router.get("/", authorize("employees.view"), (req, res, next) => {
   roleController.listRoles(req, res, next);
 });
 
+router.get("/permissions/catalog", authorize("employees.view"), (req, res, next) => {
+  roleController.getPermissionsCatalog(req, res, next);
+});
+
 router.get("/:id", authorize("employees.view"), (req, res, next) => {
   roleController.getRoleById(req, res, next);
 });

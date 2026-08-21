@@ -60,13 +60,13 @@ describe("Roles Module Integration & Security Tests", () => {
     await disconnectRedis();
   });
 
-  test("1. Reserved System Role Names check: POST /roles with name 'owner' is rejected (409 ConflictError)", async () => {
+test("1. Reserved System Role Names check: POST /roles with name 'owner' is rejected (409 ConflictError)", async () => {
     const res = await fetch(`${baseUrl}/api/v1/roles`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${ownerToken}`,
-      },
+},
       body: JSON.stringify({
         name: "owner", // Reserved name!
         description: "Attempting to claim owner name",
@@ -78,6 +78,29 @@ describe("Roles Module Integration & Security Tests", () => {
     const body = await res.json();
     assert.equal(body.success, false);
     assert.equal(body.error.code, "CONFLICT_ERROR");
+  });
+
+  test("1a. GET /api/v1/roles/permissions/catalog returns permissions grouped by module (19 keys)", async () => {
+    const res = await fetch(`${baseUrl}/api/v1/roles/permissions/catalog`, {
+      headers: {
+        Authorization: `Bearer ${ownerToken}`,
+      },
+    });
+
+    assert.equal(res.status, 200);
+    const body = await res.json();
+
+    assert.equal(body.success, true);
+    assert.ok(Array.isArray(body.data));
+    const employeesModule = body.data.find((g) => g.module === "employees");
+    assert.ok(employeesModule);
+    assert.ok(employeesModule.permissions.some((p) => p.key === "employees.view"));
+    assert.ok(employeesModule.permissions.some((p) => p.key === "employees.manage"));
+    const ordersModule = body.data.find((g) => g.module === "orders");
+    assert.ok(ordersModule);
+    assert.ok(ordersModule.permissions.some((p) => p.key === "orders.payment"));
+    const totalKeys = body.data.reduce((sum, g) => sum + g.permissions.length, 0);
+    assert.equal(totalKeys, 19);
   });
 
   test("2. POST /api/v1/roles creates custom role with permissions (201 Created)", async () => {

@@ -245,4 +245,83 @@ describe("Employees Module Integration & Security Tests", () => {
     assert.notEqual(deletedInDb.deletedAt, null);
     assert.equal(deletedInDb.status, "INACTIVE");
   });
+
+  test("7. GET /api/v1/employees supports search, status, roleId and sort filters", async () => {
+    const managerRole = await prisma.role.findFirst({
+      where: { restaurantId: restaurantA.id, name: "manager" },
+    });
+    const mainBranch = await prisma.branch.findFirst({
+      where: { restaurantId: restaurantA.id, isMain: true },
+    });
+
+    const unique = Date.now();
+    const zetaEmail = `zetaflt-${unique}@testa.com`;
+    const alphaEmail = `alphaflt-${unique}@testa.com`;
+
+    const createZeta = await fetch(`${baseUrl}/api/v1/employees`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${ownerAToken}` },
+      body: JSON.stringify({
+        name: "Zeta Filter Target",
+        email: zetaEmail,
+        password: "Password123!",
+        branchId: mainBranch.id,
+        roleId: managerRole.id,
+      }),
+    });
+    assert.equal(createZeta.status, 201);
+
+    const createAlpha = await fetch(`${baseUrl}/api/v1/employees`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${ownerAToken}` },
+      body: JSON.stringify({
+        name: "Alpha Filter Target",
+        email: alphaEmail,
+        password: "Password123!",
+        branchId: mainBranch.id,
+        roleId: managerRole.id,
+      }),
+    });
+    assert.equal(createAlpha.status, 201);
+
+    // search by name
+    const searchRes = await fetch(`${baseUrl}/api/v1/employees?search=Zeta`, {
+      headers: { Authorization: `Bearer ${ownerAToken}` },
+    });
+    const searchBody = await searchRes.json();
+    assert.equal(searchRes.status, 200);
+    assert.ok(searchBody.data.some((e) => e.name === "Zeta Filter Target"));
+
+    // status filter
+    const statusRes = await fetch(`${baseUrl}/api/v1/employees?status=ACTIVE`, {
+      headers: { Authorization: `Bearer ${ownerAToken}` },
+    });
+    const statusBody = await statusRes.json();
+    assert.equal(statusRes.status, 200);
+    assert.ok(statusBody.data.every((e) => e.status === "ACTIVE"));
+
+    // roleId filter
+    const roleRes = await fetch(`${baseUrl}/api/v1/employees?roleId=${managerRole.id}`, {
+      headers: { Authorization: `Bearer ${ownerAToken}` },
+    });
+    const roleBody = await roleRes.json();
+    assert.equal(roleRes.status, 200);
+    assert.ok(roleBody.data.every((e) => e.roleId === managerRole.id));
+
+    // sort by name asc
+    const sortRes = await fetch(`${baseUrl}/api/v1/employees?sort=name:asc`, {
+      headers: { Authorization: `Bearer ${ownerAToken}` },
+    });
+    const sortBody = await sortRes.json();
+    assert.equal(sortRes.status, 200);
+    assert.ok(sortBody.data.length >= 2);
+    const names = sortBody.data.map((e) => e.name);
+    assert.equal(names[0] < names[1], true);
+
+    // row shape: branch + role included
+    const target = sortBody.data.find((e) => e.email === zetaEmail);
+    assert.ok(target);
+    assert.ok(target.branch && target.branch.id);
+    assert.ok(target.role && target.role.id && target.role.name);
+  });
 });

@@ -13,6 +13,17 @@ export class RoleController {
     }
   }
 
+  async getPermissionsCatalog(req, res, next) {
+    try {
+      const catalog = roleService.getPermissionsCatalog();
+      return sendSuccess(res, {
+        data: catalog,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async getRoleById(req, res, next) {
     try {
       const role = await roleService.getRoleById(req.tenantContext, req.params.id);

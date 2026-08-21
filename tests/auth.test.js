@@ -128,6 +128,34 @@ describe("Auth Module Integration & E2E Tests", () => {
     refreshToken = body.data.refreshToken;
   });
 
+  test("2b. GET /api/v1/auth/me returns current employee profile with role permissions", async () => {
+    const res = await fetch(`${baseUrl}/api/v1/auth/me`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    assert.equal(res.status, 200);
+    const body = await res.json();
+
+    assert.equal(body.success, true);
+    assert.equal(body.data.id, registeredOwner.id);
+    assert.equal(body.data.email, registeredOwner.email);
+    assert.equal(body.data.status, "ACTIVE");
+    assert.ok(body.data.branch && body.data.branch.id);
+    assert.ok(body.data.role && body.data.role.id);
+    assert.ok(Array.isArray(body.data.role.permissions));
+    assert.ok(body.data.role.permissions.length > 0);
+    assert.ok(body.data.role.permissions.every((p) => p.key && p.module));
+  });
+
+  test("2c. GET /api/v1/auth/me without token returns 401 AuthenticationError", async () => {
+    const res = await fetch(`${baseUrl}/api/v1/auth/me`);
+    assert.equal(res.status, 401);
+    const body = await res.json();
+    assert.equal(body.error.code, "AUTHENTICATION_ERROR");
+  });
+
   test("3. Single Active Session: Login from a different device fingerprint is rejected with 422 BusinessRuleError", async () => {
     const res = await fetch(`${baseUrl}/api/v1/auth/login`, {
       method: "POST",
@@ -227,5 +255,59 @@ describe("Auth Module Integration & E2E Tests", () => {
       },
     });
     assert.equal(protectedRes.status, 401);
+  });
+
+  test("8. Login forceLogout flag revokes active session on another device (200 OK)", async () => {
+    const loginDev1 = await fetch(`${baseUrl}/api/v1/auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": "Device-FL-1",
+      },
+      body: JSON.stringify({
+        email: registeredOwner.email,
+        password: registeredOwner.password,
+      }),
+    });
+    assert.equal(loginDev1.status, 200);
+    const dev1Token = (await loginDev1.json()).data.accessToken;
+
+    // Without forceLogout -> 422 forceLogoutRequired
+    const rejected = await fetch(`${baseUrl}/api/v1/auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": "Device-FL-2",
+      },
+      body: JSON.stringify({
+        email: registeredOwner.email,
+        password: registeredOwner.password,
+      }),
+    });
+    assert.equal(rejected.status, 422);
+
+    // With forceLogout: true -> 200 + old session revoked
+    const forced = await fetch(`${baseUrl}/api/v1/auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": "Device-FL-2",
+      },
+      body: JSON.stringify({
+        email: registeredOwner.email,
+        password: registeredOwner.password,
+        forceLogout: true,
+      }),
+    });
+    assert.equal(forced.status, 200);
+    const forcedBody = await forced.json();
+    assert.ok(forcedBody.data.accessToken);
+
+    const oldSessionRes = await fetch(`${baseUrl}/api/v1/auth/me`, {
+      headers: {
+        Authorization: `Bearer ${dev1Token}`,
+      },
+    });
+    assert.equal(oldSessionRes.status, 401);
   });
 });

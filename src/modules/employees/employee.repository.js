@@ -1,20 +1,38 @@
 import prisma from "../../lib/prisma.js";
 
 export class EmployeeRepository {
-  async findEmployees(tenantContext, { page = 1, limit = 20, branchId }) {
+  async findEmployees(tenantContext, { page = 1, limit = 20, branchId, search, status, roleId, sort }) {
     const skip = (page - 1) * limit;
 
     const where = {
       restaurantId: tenantContext.restaurantId,
       deletedAt: null,
       ...(branchId ? { branchId } : {}),
+      ...(status ? { status } : {}),
+      ...(roleId ? { roleId } : {}),
+      ...(search
+        ? {
+            OR: [
+              { name: { contains: search, mode: "insensitive" } },
+              { email: { contains: search, mode: "insensitive" } },
+              { phone: { contains: search, mode: "insensitive" } },
+            ],
+          }
+        : {}),
     };
+
+    let orderBy = { createdAt: "desc" };
+    if (sort) {
+      const [field, direction] = sort.split(":");
+      orderBy = { [field]: direction };
+    }
 
     const [items, total] = await Promise.all([
       prisma.employee.findMany({
         where,
         skip,
         take: limit,
+        orderBy,
         select: {
           id: true,
           restaurantId: true,
@@ -33,7 +51,6 @@ export class EmployeeRepository {
             select: { id: true, name: true, isSystem: true },
           },
         },
-        orderBy: { createdAt: "desc" },
       }),
       prisma.employee.count({ where }),
     ]);
