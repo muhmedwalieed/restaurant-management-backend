@@ -23,6 +23,9 @@ const TENANT_SCOPED_MODELS = new Set([
   "IdempotencyKey",
   "Customer",
   "CustomerAddress",
+  "WhatsAppConnection",
+  "WhatsAppMessage",
+  "WebhookEvent",
 ]);
 
 /**
