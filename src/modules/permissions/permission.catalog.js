@@ -20,6 +20,8 @@ export const GLOBAL_PERMISSIONS = [
   { key: "customers.create", description: "Create new customer profiles" },
   { key: "customers.update", description: "Update customer profiles and manage addresses" },
   { key: "customers.delete", description: "Soft-delete customer profiles" },
+  { key: "whatsapp.view", description: "View WhatsApp connection and message history" },
+  { key: "whatsapp.manage", description: "Connect/disconnect WhatsApp and send messages" },
 ];
 
 /**
