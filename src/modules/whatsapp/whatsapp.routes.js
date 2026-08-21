@@ -1,6 +1,7 @@
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
 import whatsAppController from "./whatsapp.controller.js";
+import automationController from "../whatsapp-automation/automation.controller.js";
 import { verifyWhatsAppSignature } from "./whatsapp_webhook.middleware.js";
 import {
   connectConnectionSchema,
@@ -8,6 +9,7 @@ import {
   sendMessageSchema,
   listMessagesQuerySchema,
 } from "./whatsapp.validation.js";
+import { listConversationsQuerySchema } from "../whatsapp-automation/automation.validation.js";
 import { authenticate } from "../auth/authenticate.middleware.js";
 import { authorize } from "../auth/authorize.middleware.js";
 import { requireTenantContext } from "../../shared/middleware/tenant-context.js";
@@ -114,6 +116,40 @@ adminRouter.post(
   authorize("whatsapp.manage"),
   (req, res, next) => {
     whatsAppController.retryFailedWebhooks(req, res, next);
+  }
+);
+
+// ==================== CONVERSATIONS AUTOMATION ENDPOINTS ====================
+adminRouter.get(
+  "/conversations",
+  authorize("whatsapp.view"),
+  validate(listConversationsQuerySchema),
+  (req, res, next) => {
+    automationController.listConversations(req, res, next);
+  }
+);
+
+adminRouter.get(
+  "/conversations/:id",
+  authorize("whatsapp.view"),
+  (req, res, next) => {
+    automationController.getConversationById(req, res, next);
+  }
+);
+
+adminRouter.post(
+  "/conversations/:id/handoff",
+  authorize("whatsapp.manage"),
+  (req, res, next) => {
+    automationController.handoffConversation(req, res, next);
+  }
+);
+
+adminRouter.post(
+  "/conversations/:id/close",
+  authorize("whatsapp.manage"),
+  (req, res, next) => {
+    automationController.closeConversation(req, res, next);
   }
 );
 

@@ -55,6 +55,25 @@ const envSchema = z.object({
     .int()
     .positive()
     .default(10),
+
+  WHATSAPP_VERIFY_TOKEN: z
+    .string()
+    .min(16),
+
+  WHATSAPP_WEBHOOK_SECRET: z
+    .string()
+    .min(16)
+    .optional(),
+
+  WHATSAPP_API_TOKEN: z
+    .string()
+    .min(1)
+    .optional(),
+
+  WHATSAPP_PHONE_NUMBER_ID: z
+    .string()
+    .min(1)
+    .optional(),
 });
 
 const parsedEnv = envSchema.safeParse(process.env);

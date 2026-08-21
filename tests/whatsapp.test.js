@@ -21,8 +21,8 @@ describe("Module 9 — WhatsApp Integration Module Tests", () => {
   let tenantB;
   let ownerBToken;
 
-  const phoneIdA = "+201000000001";
-  const accountIdA = "waba_acc_1001";
+  const phoneIdA = `+201${Date.now().toString().slice(-9)}`;
+  const accountIdA = `waba_acc_${Date.now()}`;
   const webhookSecretA = "secret_key_tenant_a_123";
 
   let connectionA;
@@ -156,6 +156,7 @@ describe("Module 9 — WhatsApp Integration Module Tests", () => {
     if (ids.length > 0) {
       await prisma.webhookEvent.deleteMany({ where: { restaurantId: { in: ids } } });
       await prisma.whatsAppMessage.deleteMany({ where: { restaurantId: { in: ids } } });
+      await prisma.whatsAppConversation.deleteMany({ where: { restaurantId: { in: ids } } });
       await prisma.whatsAppConnection.deleteMany({ where: { restaurantId: { in: ids } } });
       await prisma.session.deleteMany({ where: { restaurantId: { in: ids } } });
       await prisma.employeeBranchAccess.deleteMany({ where: { restaurantId: { in: ids } } });
