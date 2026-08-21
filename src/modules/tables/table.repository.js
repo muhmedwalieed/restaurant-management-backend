@@ -117,6 +117,29 @@ export class TableRepository {
   }
 
   /**
+   * Updates table status (ownership verified first via findTableById).
+   */
+  async updateTableStatus(tenantContext, branchId, tableId, status) {
+    const existing = await this.findTableById(tenantContext, branchId, tableId);
+    if (!existing) {
+      return null;
+    }
+
+    return prisma.restaurantTable.updateMany({
+      where: {
+        id: tableId,
+        branchId,
+        restaurantId: tenantContext.restaurantId,
+        deletedAt: null,
+      },
+      data: {
+        status,
+        updatedAt: new Date(),
+      },
+    });
+  }
+
+  /**
    * Updates table fields (ownership verified first via findTableById).
    */
   async updateTable(tenantContext, branchId, tableId, data) {

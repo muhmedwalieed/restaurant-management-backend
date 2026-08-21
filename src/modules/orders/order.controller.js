@@ -133,6 +133,65 @@ export class OrderController {
       next(error);
     }
   }
+
+  async createPosOrder(req, res, next) {
+    try {
+      const body = req.validated?.body ?? req.body ?? {};
+      const idempotencyKey = req.headers["idempotency-key"] || req.headers["x-idempotency-key"] || null;
+
+      const result = await orderService.createPosOrder(req.tenantContext, req.params.branchId, body, idempotencyKey);
+
+      if (result.isCached) {
+        return res.status(result.statusCode).json(result.data);
+      }
+
+      return sendSuccess(res, {
+        statusCode: 201,
+        message: "POS order created successfully",
+        data: result.data,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async processOrderPayment(req, res, next) {
+    try {
+      const body = req.validated?.body ?? req.body ?? {};
+      const paidOrder = await orderService.processOrderPayment(
+        req.tenantContext,
+        req.params.branchId,
+        req.params.id,
+        body
+      );
+
+      return sendSuccess(res, {
+        message: "Order payment processed successfully",
+        data: paidOrder,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async processOrderRefund(req, res, next) {
+    try {
+      const body = req.validated?.body ?? req.body ?? {};
+      const refundedOrder = await orderService.processOrderRefund(
+        req.tenantContext,
+        req.params.branchId,
+        req.params.id,
+        body
+      );
+
+      return sendSuccess(res, {
+        message: "Order payment refunded successfully",
+        data: refundedOrder,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export const orderController = new OrderController();

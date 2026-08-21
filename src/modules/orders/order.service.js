@@ -323,6 +323,86 @@ export class OrderService {
       idempotencyKey
     );
   }
+
+  /**
+   * Cashier / POS Manual Order Submission.
+   */
+  async createPosOrder(tenantContext, branchId, payload, idempotencyKey = null) {
+    const type = payload.type || "DINE_IN";
+
+    if (type === "DINE_IN" && !payload.tableId) {
+      throw new BusinessRuleError("tableId is required for DINE_IN POS orders");
+    }
+
+    if ((type === "DELIVERY" || type === "PICKUP") && !payload.customerId && !payload.customerPhone) {
+      throw new BusinessRuleError("Customer profile or customer phone number is required for DELIVERY and PICKUP orders");
+    }
+
+    return this.createOrder(
+      tenantContext,
+      branchId,
+      {
+        ...payload,
+        source: "CASHIER",
+        type,
+      },
+      idempotencyKey
+    );
+  }
+
+  /**
+   * Processes Order Payment.
+   */
+  async processOrderPayment(tenantContext, branchId, orderId, payload) {
+    const order = await this.getOrderById(tenantContext, branchId, orderId);
+
+    if (order.status === "CANCELLED") {
+      throw new BusinessRuleError("Cannot process payment for cancelled order");
+    }
+
+    if (order.paymentStatus === "PAID") {
+      throw new BusinessRuleError("Order is already paid");
+    }
+
+    if (order.paymentStatus === "REFUNDED") {
+      throw new BusinessRuleError("Cannot process payment for refunded order");
+    }
+
+    if (payload.amount !== undefined && Number(payload.amount) > Number(order.total)) {
+      throw new BusinessRuleError("Payment amount exceeds order total");
+    }
+
+    await orderRepository.updateOrderPaymentWithHistoryTransaction(
+      tenantContext,
+      branchId,
+      orderId,
+      payload.expectedVersion,
+      payload
+    );
+
+    return this.getOrderById(tenantContext, branchId, orderId);
+  }
+
+  /**
+   * Processes Order Refund.
+   */
+  async processOrderRefund(tenantContext, branchId, orderId, payload) {
+    const order = await this.getOrderById(tenantContext, branchId, orderId);
+
+    if (order.paymentStatus !== "PAID") {
+      throw new BusinessRuleError("Only paid orders can be refunded");
+    }
+
+    await orderRepository.updateOrderRefundWithHistoryTransaction(
+      tenantContext,
+      branchId,
+      orderId,
+      payload.expectedVersion,
+      payload
+    );
+
+    return this.getOrderById(tenantContext, branchId, orderId);
+  }
 }
 
 export const orderService = new OrderService();

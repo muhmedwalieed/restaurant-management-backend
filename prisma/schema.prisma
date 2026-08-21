@@ -300,6 +300,11 @@ model Order {
   total          Decimal       @db.Decimal(10, 2)
   notes          String?
   cancelReason   String?       @map("cancel_reason")
+  paidAt         DateTime?     @map("paid_at")
+  paidByEmployeeId String?     @map("paid_by_employee_id")
+  refundedAt     DateTime?     @map("refunded_at")
+  refundReason   String?       @map("refund_reason")
+  refundedByEmployeeId String? @map("refunded_by_employee_id")
   version        Int           @default(1)
   createdAt      DateTime      @default(now()) @map("created_at")
   updatedAt      DateTime      @updatedAt @map("updated_at")

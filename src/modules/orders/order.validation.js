@@ -60,3 +60,32 @@ export const publicOrderSchema = z.object({
     notes: z.string().optional(),
   }),
 });
+
+export const posOrderSchema = z.object({
+  body: z.object({
+    type: z.enum(["DINE_IN", "DELIVERY", "PICKUP"]).optional().default("DINE_IN"),
+    tableId: z.string().optional(),
+    customerId: z.string().optional(),
+    customerPhone: z.string().min(3).max(30).optional(),
+    customerName: z.string().max(100).optional(),
+    couponId: z.string().optional(),
+    discountAmount: z.coerce.number().min(0).optional().default(0),
+    notes: z.string().optional(),
+    items: z.array(orderItemInputSchema).min(1, "Order must contain at least one item"),
+  }),
+});
+
+export const paymentSchema = z.object({
+  body: z.object({
+    paymentMethod: z.enum(["CASH", "CARD", "ONLINE"]),
+    amount: z.coerce.number().positive().optional(),
+    expectedVersion: z.coerce.number().int().min(1, "expectedVersion is required for optimistic locking"),
+  }),
+});
+
+export const refundSchema = z.object({
+  body: z.object({
+    reason: z.string().min(1, "Refund reason is required"),
+    expectedVersion: z.coerce.number().int().min(1, "expectedVersion is required for optimistic locking"),
+  }),
+});
