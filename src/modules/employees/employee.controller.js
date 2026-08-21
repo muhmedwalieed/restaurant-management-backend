@@ -7,11 +7,19 @@ export class EmployeeController {
       const page = req.query.page ? parseInt(req.query.page, 10) : 1;
       const limit = req.query.limit ? Math.min(parseInt(req.query.limit, 10), 100) : 20;
       const branchId = req.query.branchId;
+      const search = req.query.search;
+      const status = req.query.status;
+      const roleId = req.query.roleId;
+      const sort = req.query.sort;
 
       const { items, pagination } = await employeeService.listEmployees(req.tenantContext, {
         page,
         limit,
         branchId,
+        search,
+        status,
+        roleId,
+        sort,
       });
 
       return sendSuccess(res, {

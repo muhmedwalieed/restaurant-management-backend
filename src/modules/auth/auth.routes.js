@@ -42,6 +42,10 @@ router.post("/logout", authenticate, requireTenantContext, (req, res, next) => {
   authController.logout(req, res, next);
 });
 
+router.get("/me", authenticate, requireTenantContext, (req, res, next) => {
+  authController.me(req, res, next);
+});
+
 router.post(
   "/force-logout",
   authenticate,

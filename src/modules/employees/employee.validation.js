@@ -5,6 +5,10 @@ export const employeeQuerySchema = z.object({
     page: z.coerce.number().int().min(1).default(1),
     limit: z.coerce.number().int().min(1).max(100).default(20),
     branchId: z.string().optional(),
+    search: z.string().optional(),
+    status: z.enum(["ACTIVE", "INACTIVE", "SUSPENDED"]).optional(),
+    roleId: z.string().optional(),
+    sort: z.enum(["name:asc", "name:desc", "email:asc", "email:desc", "createdAt:asc", "createdAt:desc"]).optional(),
   }),
 });
 

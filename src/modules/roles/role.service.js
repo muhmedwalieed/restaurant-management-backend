@@ -1,4 +1,5 @@
 import roleRepository from "./role.repository.js";
+import { GLOBAL_PERMISSIONS } from "../permissions/permission.catalog.js";
 import { BusinessRuleError, ConflictError, NotFoundError } from "../../shared/errors/index.js";
 import redis from "../../config/redis.js";
 import logger from "../../config/logger.js";
@@ -24,6 +25,25 @@ async function invalidateEmployeesCache(employeeIds) {
 export class RoleService {
   async listRoles(tenantContext) {
     return roleRepository.findRoles(tenantContext);
+  }
+
+  /**
+   * Returns the global permissions catalog grouped by module.
+   * Powers the Role form permission checkboxes.
+   */
+  getPermissionsCatalog() {
+    const grouped = [];
+    for (const perm of GLOBAL_PERMISSIONS) {
+      const module = perm.key.split(".")[0];
+      const entry = grouped.find((g) => g.module === module);
+      const item = { key: perm.key, name: perm.description };
+      if (entry) {
+        entry.permissions.push(item);
+      } else {
+        grouped.push({ module, permissions: [item] });
+      }
+    }
+    return grouped;
   }
 
   async getRoleById(tenantContext, id) {
