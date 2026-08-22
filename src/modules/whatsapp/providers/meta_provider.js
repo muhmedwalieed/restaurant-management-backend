@@ -1,7 +1,6 @@
 import crypto from "node:crypto";
 import { WhatsAppProviderInterface } from "./whatsapp_provider.interface.js";
 import { ExternalServiceError, AuthorizationError } from "../../../shared/errors/index.js";
-import env from "../../../config/env.js";
 
 export class MetaProvider extends WhatsAppProviderInterface {
   verifySignature(rawBody, signature, secret) {

@@ -29,12 +29,4 @@ export const GLOBAL_PERMISSIONS = [
   { key: "chats.takeover", description: "Take over, lock, return and reassign inbox conversations" },
 ];
 
-/**
- * Returns array of all canonical permission keys.
- * @returns {string[]}
- */
-export function getPermissionKeys() {
-  return GLOBAL_PERMISSIONS.map((p) => p.key);
-}
-
 export default GLOBAL_PERMISSIONS;

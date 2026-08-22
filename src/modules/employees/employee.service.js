@@ -3,7 +3,6 @@ import authRepository from "../auth/auth.repository.js";
 import { hashPassword, verifyPassword } from "../auth/keychain.js";
 import {
   AuthenticationError,
-  AuthorizationError,
   BusinessRuleError,
   ConflictError,
   NotFoundError,

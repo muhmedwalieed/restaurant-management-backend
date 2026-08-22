@@ -1,5 +1,3 @@
-import { ExternalServiceError, ValidationError } from "../../../shared/errors/index.js";
-
 /**
  * Base abstract class defining WhatsApp Provider Interface.
  */
