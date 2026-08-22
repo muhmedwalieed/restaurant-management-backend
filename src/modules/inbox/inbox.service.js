@@ -1,5 +1,6 @@
 import inboxRepository from "./inbox.repository.js";
 import whatsAppService from "../whatsapp/whatsapp.service.js";
+import { emitEvent, DomainEvent } from "../../shared/events/event-bus.js";
 import { NotFoundError, BusinessRuleError } from "../../shared/errors/index.js";
 
 export class InboxService {
@@ -36,6 +37,14 @@ export class InboxService {
       throw new BusinessRuleError("No agent to assign the conversation to");
     }
     await inboxRepository.assignConversation(tenantContext, id, targetAgentId);
+
+    emitEvent(DomainEvent.CHAT_ASSIGNED, {
+      restaurantId: tenantContext.restaurantId,
+      conversationId: id,
+      agentId: targetAgentId,
+      customerPhone: conv.customerPhone,
+    });
+
     return this.getConversation(tenantContext, id);
   }
 

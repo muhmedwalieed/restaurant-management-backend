@@ -8,6 +8,7 @@ import routes from "../routes/index.js";
 import healthRouter from "../routes/health.routes.js";
 import { requestIdMiddleware } from "../shared/middleware/request-id.js";
 import { notFoundHandler, errorHandler } from "../middleware/error.middleware.js";
+import "../modules/notifications/notification.subscriptions.js";
 
 const app = express();
 

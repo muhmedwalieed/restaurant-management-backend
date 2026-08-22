@@ -6,6 +6,7 @@ import app from "./app/app.js";
 import env from "./config/env.js";
 import prisma from "./lib/prisma.js";
 import { disconnectRedis } from "./config/redis.js";
+import { setSocketIo } from "./lib/socket.js";
 import logger from "./config/logger.js";
 
 const PORT = env.PORT || 5000;
@@ -18,6 +19,8 @@ const io = new Server(httpServer, {
     credentials: true,
   },
 });
+
+setSocketIo(io);
 
 io.on("connection", (socket) => {
   logger.info({ socketId: socket.id }, `Socket connected: ${socket.id}`);

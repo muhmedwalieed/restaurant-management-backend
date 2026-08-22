@@ -29,6 +29,7 @@ export const GLOBAL_PERMISSIONS = [
   { key: "chats.takeover", description: "Take over, lock, return and reassign inbox conversations" },
   { key: "dashboard.view", description: "View restaurant analytics dashboards and reports" },
   { key: "coupons.manage", description: "Create, update, deactivate and manage discount coupons" },
+  { key: "notifications.view", description: "View and manage own in-app notifications and preferences" },
 ];
 
 export default GLOBAL_PERMISSIONS;

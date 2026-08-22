@@ -2,6 +2,7 @@ import orderRepository from "./order.repository.js";
 import branchRepository from "../branches/branch.repository.js";
 import tableRepository from "../tables/table.repository.js";
 import couponService from "../coupons/coupon.service.js";
+import { emitEvent, DomainEvent } from "../../shared/events/event-bus.js";
 import prisma from "../../lib/prisma.js";
 import { BusinessRuleError, NotFoundError } from "../../shared/errors/index.js";
 
@@ -233,6 +234,17 @@ export class OrderService {
       idempotencyKey
     );
 
+    // Emit domain event for in-process consumers (notifications, audit-logs) — Section 29.
+    emitEvent(DomainEvent.ORDER_CREATED, {
+      restaurantId,
+      branchId,
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      total: Number(order.total),
+      source: order.source,
+      type: order.type,
+    });
+
     return {
       isCached: false,
       statusCode: 201,
@@ -266,6 +278,14 @@ export class OrderService {
       reason
     );
 
+    emitEvent(DomainEvent.ORDER_STATUS_CHANGED, {
+      restaurantId: tenantContext.restaurantId,
+      branchId,
+      orderId,
+      orderNumber: order.orderNumber,
+      status: newStatus,
+    });
+
     return this.getOrderById(tenantContext, branchId, orderId);
   }
 
@@ -294,6 +314,14 @@ export class OrderService {
       tenantContext.employeeId || null,
       reason
     );
+
+    emitEvent(DomainEvent.ORDER_STATUS_CHANGED, {
+      restaurantId: tenantContext.restaurantId,
+      branchId,
+      orderId,
+      orderNumber: order.orderNumber,
+      status: "CANCELLED",
+    });
 
     return this.getOrderById(tenantContext, branchId, orderId);
   }
@@ -456,6 +484,14 @@ export class OrderService {
       payload.expectedVersion,
       payload
     );
+
+    emitEvent(DomainEvent.ORDER_PAID, {
+      restaurantId: tenantContext.restaurantId,
+      branchId,
+      orderId,
+      orderNumber: order.orderNumber,
+      total: Number(order.total),
+    });
 
     return this.getOrderById(tenantContext, branchId, orderId);
   }
