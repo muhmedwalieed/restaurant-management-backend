@@ -36,4 +36,8 @@ router.get("/employee-performance", authorize("dashboard.view"), validate(employ
   dashboardController.getEmployeePerformance(req, res, next);
 });
 
+router.get("/branches-comparison", authorize("dashboard.view"), validate(employeePerformanceQuerySchema), (req, res, next) => {
+  dashboardController.getBranchComparison(req, res, next);
+});
+
 export default router;

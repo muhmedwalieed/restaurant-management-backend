@@ -104,6 +104,35 @@ export class DashboardService {
   }
 
   /**
+   * Branch comparison (Module 19): orders/revenue per branch, sorted by revenue desc.
+   */
+  async getBranchComparison(tenantContext, { from, to }) {
+    const { byBranch, paidByBranch, branches } = await dashboardRepository.branchComparison(tenantContext, { from, to });
+
+    const revenueMap = new Map(byBranch.map((r) => [r.branchId, r]));
+    const paidMap = new Map(paidByBranch.map((r) => [r.branchId, Number(r._sum.total || 0)]));
+
+    return branches
+      .map((b) => {
+        const stats = revenueMap.get(b.id);
+        const orders = stats?._count._all || 0;
+        const revenue = Number(stats?._sum.total || 0);
+        return {
+          branchId: b.id,
+          branchName: b.name,
+          code: b.code,
+          isMain: b.isMain,
+          status: b.status,
+          orders,
+          revenue,
+          paidRevenue: paidMap.get(b.id) || 0,
+          averageOrderValue: orders > 0 ? Number((revenue / orders).toFixed(2)) : 0,
+        };
+      })
+      .sort((a, b) => b.revenue - a.revenue);
+  }
+
+  /**
    * Daily sales trend — orders + revenue per day (defaults to last 7 days).
    */
   async getSalesTrend(tenantContext, { branchId, from, to, days = 7 }) {

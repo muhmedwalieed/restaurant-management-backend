@@ -15,6 +15,7 @@ import dashboardRouter from "../modules/dashboard/dashboard.routes.js";
 import couponRouter from "../modules/coupons/coupon.routes.js";
 import notificationRouter from "../modules/notifications/notification.routes.js";
 import auditLogRouter from "../modules/audit-logs/audit-log.routes.js";
+import { branchUsersRouter, myBranchesRouter } from "../modules/multi-branch/multi-branch.routes.js";
 import whatsappRouter from "../modules/whatsapp/whatsapp.routes.js";
 
 const router = Router();
@@ -26,6 +27,8 @@ router.use("/v1/roles", rolesRouter);
 router.use("/v1/restaurant", restaurantRouter);
 router.use("/v1/branches", branchRouter);
 router.use("/v1/branches/:branchId/kds/orders", kdsRouter);
+router.use("/v1/branches/:branchId/users", branchUsersRouter);
+router.use("/v1/employees/me/branches", myBranchesRouter);
 router.use("/v1/customers", customerRouter);
 router.use("/v1/inbox", inboxRouter);
 router.use("/v1/phone-order", phoneOrderRouter);
