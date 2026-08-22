@@ -27,6 +27,7 @@ export const GLOBAL_PERMISSIONS = [
   { key: "chats.assign", description: "Assign and claim inbox conversations from the queue" },
   { key: "chats.close", description: "Resolve and close inbox conversations" },
   { key: "chats.takeover", description: "Take over, lock, return and reassign inbox conversations" },
+  { key: "dashboard.view", description: "View restaurant analytics dashboards and reports" },
 ];
 
 export default GLOBAL_PERMISSIONS;

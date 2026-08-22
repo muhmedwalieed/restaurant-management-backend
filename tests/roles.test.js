@@ -80,7 +80,7 @@ test("1. Reserved System Role Names check: POST /roles with name 'owner' is reje
     assert.equal(body.error.code, "CONFLICT_ERROR");
   });
 
-  test("1a. GET /api/v1/roles/permissions/catalog returns permissions grouped by module (19 keys)", async () => {
+  test("1a. GET /api/v1/roles/permissions/catalog returns permissions grouped by module (25 keys)", async () => {
     const res = await fetch(`${baseUrl}/api/v1/roles/permissions/catalog`, {
       headers: {
         Authorization: `Bearer ${ownerToken}`,
@@ -99,8 +99,11 @@ test("1. Reserved System Role Names check: POST /roles with name 'owner' is reje
     const ordersModule = body.data.find((g) => g.module === "orders");
     assert.ok(ordersModule);
     assert.ok(ordersModule.permissions.some((p) => p.key === "orders.payment"));
+    const dashboardModule = body.data.find((g) => g.module === "dashboard");
+    assert.ok(dashboardModule);
+    assert.ok(dashboardModule.permissions.some((p) => p.key === "dashboard.view"));
     const totalKeys = body.data.reduce((sum, g) => sum + g.permissions.length, 0);
-    assert.equal(totalKeys, 24);
+    assert.equal(totalKeys, 25);
   });
 
   test("2. POST /api/v1/roles creates custom role with permissions (201 Created)", async () => {
