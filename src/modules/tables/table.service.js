@@ -14,12 +14,13 @@ function generateQrToken() {
 }
 
 /**
- * Formats full QR URL payload.
+ * Formats full QR URL payload — points to the FRONTEND public table-menu page.
+ * Scanning the QR opens the public menu page in the browser.
  * @param {string} qrToken
  * @returns {string}
  */
 function buildQrUrl(qrToken) {
-  return `${env.APP_URL}/api/v1/menu/table/${qrToken}`;
+  return `${env.CLIENT_URL}/menu/table/${qrToken}`;
 }
 
 export class TableService {

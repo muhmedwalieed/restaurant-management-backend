@@ -14,6 +14,7 @@ export class OrderController {
         status: query.status,
         type: query.type,
         source: query.source,
+        tableId: query.tableId,
       });
 
       return sendSuccess(res, {

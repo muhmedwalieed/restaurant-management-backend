@@ -274,6 +274,15 @@ describe("Order Management & KDS Module Integration Tests", () => {
 
   test("2. Idempotency Key Engine: Duplicate request with same Idempotency-Key returns cached response without duplicate creation", async () => {
     const testKey = `idem-dup-test-${Date.now()}`;
+    // Fresh table so this order is independent of the active order on tableA (single-order-per-table rule)
+    const freshTable = await prisma.restaurantTable.create({
+      data: {
+        restaurantId: tenantA.id,
+        branchId: branchA.id,
+        label: `T-idem-${Date.now()}`,
+        qrToken: `qr-idem-${Date.now()}`,
+      },
+    });
 
     const res1 = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/orders`, {
       method: "POST",
@@ -285,7 +294,7 @@ describe("Order Management & KDS Module Integration Tests", () => {
       body: JSON.stringify({
         type: "DINE_IN",
         source: "CASHIER",
-        tableId: tableA.id,
+        tableId: freshTable.id,
         items: [{ productId: productA2.id, quantity: 1 }],
       }),
     });
@@ -304,7 +313,7 @@ describe("Order Management & KDS Module Integration Tests", () => {
       body: JSON.stringify({
         type: "DINE_IN",
         source: "CASHIER",
-        tableId: tableA.id,
+        tableId: freshTable.id,
         items: [{ productId: productA2.id, quantity: 1 }],
       }),
     });
@@ -631,6 +640,14 @@ describe("Order Management & KDS Module Integration Tests", () => {
       },
     });
 
+    // Fresh tables so both sub-orders are independent (single-order-per-table rule)
+    const tableForId = await prisma.restaurantTable.create({
+      data: { restaurantId: tenantA.id, branchId: branchA.id, label: `T-custid-${Date.now()}`, qrToken: `qr-custid-${Date.now()}` },
+    });
+    const tableForPhone = await prisma.restaurantTable.create({
+      data: { restaurantId: tenantA.id, branchId: branchA.id, label: `T-custph-${Date.now()}`, qrToken: `qr-custph-${Date.now()}` },
+    });
+
     // Sub-test A: Explicit customerId
     const resId = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/orders`, {
       method: "POST",
@@ -642,7 +659,7 @@ describe("Order Management & KDS Module Integration Tests", () => {
         type: "DINE_IN",
         source: "CASHIER",
         customerId: custA.id,
-        tableId: tableA.id,
+        tableId: tableForId.id,
         items: [{ productId: productA1.id, quantity: 1 }],
       }),
     });
@@ -662,7 +679,7 @@ describe("Order Management & KDS Module Integration Tests", () => {
         type: "DINE_IN",
         source: "CASHIER",
         customerPhone: "+201088882222", // Existing customer phone!
-        tableId: tableA.id,
+        tableId: tableForPhone.id,
         items: [{ productId: productA1.id, quantity: 1 }],
       }),
     });

@@ -267,8 +267,43 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
     assert.equal(table.status, "OCCUPIED");
   });
 
-  test("3. Multi-Order Policy on OCCUPIED Table (ADR-015): Creating second order on OCCUPIED table succeeds", async () => {
+  test("3. Single Active Order Per Table: Creating a second order on an OCCUPIED table returns 422 BusinessRuleError", async () => {
     const res = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/pos/orders`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${cashierAToken}`,
+      },
+      body: JSON.stringify({
+        type: "DINE_IN",
+        tableId: tableA1.id, // Already has an active order from test 1!
+        items: [{ productId: productA2.id, quantity: 1 }],
+      }),
+    });
+
+    assert.equal(res.status, 422);
+    const body = await res.json();
+    assert.equal(body.error.code, "BUSINESS_RULE_ERROR");
+    assert.ok(body.error.message.includes("active order"));
+  });
+
+  test("3a. New order on a table AFTER its active order is cancelled succeeds (201)", async () => {
+    // Cancel the existing active order on tableA1 (from test 1) using owner (has orders.cancel)
+    const cancelRes = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/orders/${posOrderDineIn.id}/cancel`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${ownerAToken}`,
+      },
+      body: JSON.stringify({
+        expectedVersion: posOrderDineIn.version,
+        reason: "Test: free the table",
+      }),
+    });
+    assert.equal(cancelRes.status, 200);
+
+    // Now a new order on the same table is allowed
+    const newOrderRes = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/pos/orders`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -281,9 +316,8 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
       }),
     });
 
-    assert.equal(res.status, 201);
-    const body = await res.json();
-    assert.equal(body.success, true);
+    assert.equal(newOrderRes.status, 201);
+    posOrderDineIn = (await newOrderRes.json()).data;
   });
 
   test("4. POS Validation Rule: DINE_IN order without tableId returns 422 BusinessRuleError", async () => {
@@ -517,6 +551,9 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
   });
 
   test("15. Mass Assignment Protection: Injected paymentStatus in body is ignored during POS order creation", async () => {
+    const freshTable = await prisma.restaurantTable.create({
+      data: { restaurantId: tenantA.id, branchId: branchA.id, label: `T-mass-${Date.now()}`, qrToken: `qr-mass-${Date.now()}` },
+    });
     const res = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/pos/orders`, {
       method: "POST",
       headers: {
@@ -525,7 +562,7 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
       },
       body: JSON.stringify({
         type: "DINE_IN",
-        tableId: tableA1.id,
+        tableId: freshTable.id,
         paymentStatus: "PAID", // Injected!
         items: [{ productId: productA1.id, quantity: 1 }],
       }),

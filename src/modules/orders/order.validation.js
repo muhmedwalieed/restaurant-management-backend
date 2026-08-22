@@ -7,6 +7,7 @@ export const orderQuerySchema = z.object({
     status: z.enum(["PENDING", "CONFIRMED", "PREPARING", "READY", "OUT_FOR_DELIVERY", "DELIVERED", "CANCELLED"]).optional(),
     type: z.enum(["DINE_IN", "DELIVERY", "PICKUP"]).optional(),
     source: z.enum(["WHATSAPP", "QR", "WEBSITE", "CASHIER", "PHONE"]).optional(),
+    tableId: z.string().optional(),
   }),
 });
 
