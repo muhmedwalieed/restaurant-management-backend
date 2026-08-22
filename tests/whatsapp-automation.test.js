@@ -195,6 +195,8 @@ describe("Module 10 — WhatsApp Automation Module Tests", () => {
   after(async () => {
     const ids = [tenantA?.id, tenantB?.id].filter(Boolean);
     if (ids.length > 0) {
+      await prisma.inboxMessage.deleteMany({ where: { restaurantId: { in: ids } } });
+      await prisma.inboxConversation.deleteMany({ where: { restaurantId: { in: ids } } });
       await prisma.orderStatusHistory.deleteMany({ where: { restaurantId: { in: ids } } });
       await prisma.orderItem.deleteMany({ where: { restaurantId: { in: ids } } });
       await prisma.order.deleteMany({ where: { restaurantId: { in: ids } } });

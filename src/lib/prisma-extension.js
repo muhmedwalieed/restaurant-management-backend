@@ -27,6 +27,8 @@ const TENANT_SCOPED_MODELS = new Set([
   "WhatsAppMessage",
   "WebhookEvent",
   "WhatsAppConversation",
+  "InboxConversation",
+  "InboxMessage",
 ]);
 
 /**

@@ -22,6 +22,10 @@ export const GLOBAL_PERMISSIONS = [
   { key: "customers.delete", description: "Soft-delete customer profiles" },
   { key: "whatsapp.view", description: "View WhatsApp connection and message history" },
   { key: "whatsapp.manage", description: "Connect/disconnect WhatsApp and send messages" },
+  { key: "chats.view", description: "View the unified inbox queue and conversations" },
+  { key: "chats.reply", description: "Reply to inbox conversations and add internal notes" },
+  { key: "chats.assign", description: "Assign and claim inbox conversations from the queue" },
+  { key: "chats.close", description: "Resolve and close inbox conversations" },
 ];
 
 /**

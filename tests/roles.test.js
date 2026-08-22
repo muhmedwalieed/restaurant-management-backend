@@ -100,7 +100,7 @@ test("1. Reserved System Role Names check: POST /roles with name 'owner' is reje
     assert.ok(ordersModule);
     assert.ok(ordersModule.permissions.some((p) => p.key === "orders.payment"));
     const totalKeys = body.data.reduce((sum, g) => sum + g.permissions.length, 0);
-    assert.equal(totalKeys, 19);
+    assert.equal(totalKeys, 23);
   });
 
   test("2. POST /api/v1/roles creates custom role with permissions (201 Created)", async () => {

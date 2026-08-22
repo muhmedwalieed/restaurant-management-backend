@@ -125,6 +125,8 @@ model Restaurant {
   whatsappMessages       WhatsAppMessage[]
   webhookEvents          WebhookEvent[]
   whatsappConversations  WhatsAppConversation[]
+  inboxConversations     InboxConversation[]
+  inboxMessages          InboxMessage[]
 
   @@index([status])
   @@map("restaurants")
@@ -450,6 +452,8 @@ model Employee {
   role           Role                   @relation(fields: [roleId], references: [id], onDelete: Restrict)
   sessions       Session[]
   branchAccesses EmployeeBranchAccess[]
+  assignedInboxConversations InboxConversation[] @relation("inbox_assigned_agent")
+  inboxMessages  InboxMessage[] @relation("inbox_message_agent")
 
   @@unique([restaurantId, email])
   @@index([restaurantId])
@@ -512,6 +516,7 @@ model Customer {
   addresses  CustomerAddress[]
   orders     Order[]
   conversations WhatsAppConversation[]
+  inboxConversations InboxConversation[]
 
   @@unique([restaurantId, phone])
   @@index([restaurantId])
@@ -682,10 +687,70 @@ model WhatsAppConversation {
   restaurant Restaurant         @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
   connection WhatsAppConnection @relation(fields: [connectionId], references: [id], onDelete: Restrict)
   customer   Customer?          @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  inboxConversation InboxConversation?
 
   @@unique([restaurantId, connectionId, customerPhone])
   @@index([restaurantId])
   @@index([restaurantId, status])
   @@index([restaurantId, customerPhone])
   @@map("whatsapp_conversations")
+}
+
+enum InboxStatus {
+  WAITING
+  ACTIVE
+  PENDING
+  RESOLVED
+  CLOSED
+}
+
+enum InboxSenderType {
+  AGENT
+  CUSTOMER
+  SYSTEM
+}
+
+model InboxConversation {
+  id                     String      @id @default(cuid())
+  restaurantId           String      @map("restaurant_id")
+  whatsappConversationId String?     @unique @map("whatsapp_conversation_id")
+  customerId             String?     @map("customer_id")
+  customerPhone          String      @map("customer_phone")
+  assignedAgentId        String?     @map("assigned_agent_id")
+  relatedOrderId         String?     @map("related_order_id")
+  status                 InboxStatus @default(WAITING)
+  lastMessageAt          DateTime    @default(now()) @map("last_message_at")
+  createdAt              DateTime    @default(now()) @map("created_at")
+  updatedAt              DateTime    @updatedAt @map("updated_at")
+
+  restaurant            Restaurant            @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  whatsappConversation  WhatsAppConversation? @relation(fields: [whatsappConversationId], references: [id], onDelete: SetNull)
+  customer              Customer?             @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  assignedAgent         Employee?             @relation("inbox_assigned_agent", fields: [assignedAgentId], references: [id], onDelete: SetNull)
+  messages              InboxMessage[]
+
+  @@index([restaurantId])
+  @@index([restaurantId, status])
+  @@index([restaurantId, assignedAgentId])
+  @@index([restaurantId, whatsappConversationId])
+  @@map("inbox_conversations")
+}
+
+model InboxMessage {
+  id             String          @id @default(cuid())
+  restaurantId   String          @map("restaurant_id")
+  conversationId String          @map("conversation_id")
+  senderType     InboxSenderType @default(AGENT)
+  content        String          @db.Text
+  isInternal     Boolean         @default(false) @map("is_internal")
+  agentId        String?         @map("agent_id")
+  createdAt      DateTime        @default(now()) @map("created_at")
+
+  restaurant   Restaurant       @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  conversation InboxConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  agent        Employee?        @relation("inbox_message_agent", fields: [agentId], references: [id], onDelete: SetNull)
+
+  @@index([restaurantId])
+  @@index([conversationId])
+  @@map("inbox_messages")
 }
