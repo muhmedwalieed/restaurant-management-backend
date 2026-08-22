@@ -76,7 +76,13 @@ export class WhatsAppAutomationService {
 
     // 2. Human Handoff Guard (Section 28 / ADR-023)
     if (conv.status === "WAITING_AGENT") {
-      // Paused for support agent interaction
+      // Paused for support agent interaction — record the customer message into the inbox (Module 11).
+      try {
+        const { inboxService } = await import("../inbox/inbox.service.js");
+        await inboxService.recordCustomerMessage(tenantContext, conv.id, customerPhone, content);
+      } catch (err) {
+        // Non-fatal: inbox sync must never break the webhook ack.
+      }
       return;
     }
 
@@ -417,6 +423,14 @@ export class WhatsAppAutomationService {
       to: customerPhone,
       text: "👨‍💼 *تم تحويل المحادثة إلى أحد ممثلي خدمة العملاء.*\nسيتواصل معك أحد موظفينا في أقرب وقت.",
     });
+
+    // Create the inbox conversation for support agents (Module 11 Unified Inbox).
+    try {
+      const { inboxService } = await import("../inbox/inbox.service.js");
+      await inboxService.createFromWhatsApp(tenantContext, conv, customerPhone);
+    } catch (err) {
+      // Non-fatal: handoff already persisted — inbox creation is best-effort.
+    }
   }
 
   // ==================== ADMIN METHODS ====================

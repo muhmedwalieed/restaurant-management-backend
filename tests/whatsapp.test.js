@@ -154,6 +154,8 @@ describe("Module 9 — WhatsApp Integration Module Tests", () => {
 
     const ids = [tenantA?.id, tenantB?.id].filter(Boolean);
     if (ids.length > 0) {
+      await prisma.inboxMessage.deleteMany({ where: { restaurantId: { in: ids } } });
+      await prisma.inboxConversation.deleteMany({ where: { restaurantId: { in: ids } } });
       await prisma.webhookEvent.deleteMany({ where: { restaurantId: { in: ids } } });
       await prisma.whatsAppMessage.deleteMany({ where: { restaurantId: { in: ids } } });
       await prisma.whatsAppConversation.deleteMany({ where: { restaurantId: { in: ids } } });
