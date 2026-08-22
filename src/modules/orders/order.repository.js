@@ -1,5 +1,6 @@
 import prisma from "../../lib/prisma.js";
 import { AuthenticationError, ConflictError } from "../../shared/errors/index.js";
+import couponService from "../coupons/coupon.service.js";
 
 export class OrderRepository {
   /**
@@ -126,6 +127,20 @@ export class OrderRepository {
       // 1. Calculate next orderNumber
       const orderNumber = await this.findNextOrderNumber(restaurantId, branchId, tx);
 
+      // 1b. Apply coupon atomically (row-locked usage counter + server-side discount).
+      // A failed coupon (expired/usage-limit/conditions) rolls back the whole order.
+      const subtotal = Number(orderPayload.subtotal);
+      let discountAmount = Number(orderPayload.discountAmount || 0);
+      if (orderPayload.couponId) {
+        const applied = await couponService.applyCouponForOrderInTransaction(tx, tenantContext, {
+          couponId: orderPayload.couponId,
+          orderSubtotal: subtotal,
+          items: itemsPayload.map((i) => ({ productId: i.productId, subtotal: i.subtotal })),
+        });
+        discountAmount = applied.discountAmount;
+      }
+      const total = Math.max(0, subtotal - discountAmount);
+
       // 2. Create Order
       const order = await tx.order.create({
         data: {
@@ -140,9 +155,9 @@ export class OrderRepository {
           tableId: orderPayload.tableId || null,
           customerId: orderPayload.customerId || null,
           couponId: orderPayload.couponId || null,
-          subtotal: orderPayload.subtotal,
-          discountAmount: orderPayload.discountAmount || 0,
-          total: orderPayload.total,
+          subtotal,
+          discountAmount,
+          total,
           notes: orderPayload.notes || null,
           version: 1,
         },
