@@ -60,7 +60,7 @@ export class PhoneOrderService {
       source: "PHONE",
       type,
       customerId: customer.id,
-      items: items.map((i) => ({ productId: i.productId, quantity: i.quantity, modifierIds: i.modifierIds })),
+      items: items.map((i) => ({ productId: i.productId, quantity: i.quantity, modifierIds: i.modifierIds, notes: i.notes })),
       notes: orderNotes,
     });
 
