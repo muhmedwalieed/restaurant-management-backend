@@ -58,6 +58,7 @@ export const publicOrderSchema = z.object({
       customerPhone: z.string().min(3).max(30).optional(),
       customerName: z.string().max(100).optional(),
       address: z.string().max(500).optional(),
+      couponCode: z.string().min(3).max(50).optional(),
       items: z.array(orderItemInputSchema).min(1, "Order must contain at least one item"),
       notes: z.string().optional(),
     })

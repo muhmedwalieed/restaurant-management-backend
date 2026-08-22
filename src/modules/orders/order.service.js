@@ -1,6 +1,7 @@
 import orderRepository from "./order.repository.js";
 import branchRepository from "../branches/branch.repository.js";
 import tableRepository from "../tables/table.repository.js";
+import couponService from "../coupons/coupon.service.js";
 import prisma from "../../lib/prisma.js";
 import { BusinessRuleError, NotFoundError } from "../../shared/errors/index.js";
 
@@ -205,8 +206,10 @@ export class OrderService {
       });
     }
 
-    const discountAmount = payload.discountAmount ? Number(payload.discountAmount) : 0;
-    const calculatedTotal = Math.max(0, calculatedSubtotal - discountAmount);
+    // Coupon discounts are ALWAYS computed server-side under row lock (Module 16).
+    // When a coupon is attached, any client-supplied discountAmount is ignored.
+    const hasCoupon = Boolean(payload.couponId);
+    const discountAmount = hasCoupon ? 0 : payload.discountAmount ? Number(payload.discountAmount) : 0;
 
     const orderPayload = {
       source: payload.source || "CASHIER",
@@ -216,7 +219,6 @@ export class OrderService {
       couponId: payload.couponId || null,
       subtotal: calculatedSubtotal,
       discountAmount,
-      total: calculatedTotal,
       notes: payload.notes || null,
       paymentStatus: payload.paymentStatus || "PENDING",
       paymentMethod: payload.paymentMethod || null,
@@ -338,6 +340,17 @@ export class OrderService {
     }
 
     const tenantContext = { restaurantId };
+
+    // Resolve a public coupon code to its id (full validity is enforced under row lock
+    // inside createOrder — expired/limit/condition failures reject the order there).
+    if (payload.couponCode) {
+      const couponId = await couponService.getCouponIdByCode(tenantContext, payload.couponCode);
+      if (!couponId) {
+        throw new BusinessRuleError("Invalid or unavailable coupon code");
+      }
+      payload = { ...payload, couponId, couponCode: undefined };
+    }
+
     return this.createOrder(
       tenantContext,
       branchId,
