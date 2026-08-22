@@ -68,6 +68,34 @@ export class InboxController {
       next(error);
     }
   }
+
+  async takeover(req, res, next) {
+    try {
+      const conv = await inboxService.takeover(req.tenantContext, req.params.id);
+      return sendSuccess(res, { message: "Conversation taken over (locked on manager)", data: conv });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async returnToAgent(req, res, next) {
+    try {
+      const conv = await inboxService.returnToAgent(req.tenantContext, req.params.id);
+      return sendSuccess(res, { message: "Conversation returned to agent", data: conv });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async reassign(req, res, next) {
+    try {
+      const body = req.validated?.body ?? req.body ?? {};
+      const conv = await inboxService.reassign(req.tenantContext, req.params.id, body.agentId);
+      return sendSuccess(res, { message: "Conversation reassigned", data: conv });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export const inboxController = new InboxController();

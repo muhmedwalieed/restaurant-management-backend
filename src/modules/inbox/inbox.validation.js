@@ -26,3 +26,9 @@ export const noteSchema = z.object({
     content: z.string().min(1, "Note content is required").max(4096),
   }),
 });
+
+export const reassignConversationSchema = z.object({
+  body: z.object({
+    agentId: z.string().min(1, "agentId is required"),
+  }),
+});

@@ -26,6 +26,7 @@ export const GLOBAL_PERMISSIONS = [
   { key: "chats.reply", description: "Reply to inbox conversations and add internal notes" },
   { key: "chats.assign", description: "Assign and claim inbox conversations from the queue" },
   { key: "chats.close", description: "Resolve and close inbox conversations" },
+  { key: "chats.takeover", description: "Take over, lock, return and reassign inbox conversations" },
 ];
 
 /**

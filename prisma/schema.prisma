@@ -454,6 +454,7 @@ model Employee {
   branchAccesses EmployeeBranchAccess[]
   assignedInboxConversations InboxConversation[] @relation("inbox_assigned_agent")
   inboxMessages  InboxMessage[] @relation("inbox_message_agent")
+  lockedInboxConversations InboxConversation[] @relation("inbox_locked_by")
 
   @@unique([restaurantId, email])
   @@index([restaurantId])
@@ -718,6 +719,8 @@ model InboxConversation {
   customerPhone          String      @map("customer_phone")
   assignedAgentId        String?     @map("assigned_agent_id")
   relatedOrderId         String?     @map("related_order_id")
+  lockedById             String?     @map("locked_by_id")
+  lockedAt               DateTime?   @map("locked_at")
   status                 InboxStatus @default(WAITING)
   lastMessageAt          DateTime    @default(now()) @map("last_message_at")
   createdAt              DateTime    @default(now()) @map("created_at")
@@ -727,6 +730,7 @@ model InboxConversation {
   whatsappConversation  WhatsAppConversation? @relation(fields: [whatsappConversationId], references: [id], onDelete: SetNull)
   customer              Customer?             @relation(fields: [customerId], references: [id], onDelete: SetNull)
   assignedAgent         Employee?             @relation("inbox_assigned_agent", fields: [assignedAgentId], references: [id], onDelete: SetNull)
+  lockedBy              Employee?             @relation("inbox_locked_by", fields: [lockedById], references: [id], onDelete: SetNull)
   messages              InboxMessage[]
 
   @@index([restaurantId])
