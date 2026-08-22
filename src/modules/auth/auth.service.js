@@ -3,6 +3,7 @@ import authRepository from "./auth.repository.js";
 import { hashPassword, verifyPassword } from "./keychain.js";
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from "../../utils/jwt.js";
 import { AuthenticationError, BusinessRuleError, NotFoundError } from "../../shared/errors/index.js";
+import { GLOBAL_PERMISSIONS } from "../permissions/permission.catalog.js";
 import redis from "../../config/redis.js";
 import logger from "../../config/logger.js";
 import prisma from "../../lib/prisma.js";
@@ -183,6 +184,24 @@ export class AuthService {
 
     if (!employee) {
       throw new NotFoundError("Employee not found");
+    }
+
+    // Owner bypass: an owner ALWAYS holds every permission key, regardless of
+    // RolePermission rows (a tenant registered before later permissions were
+    // seeded would otherwise miss them). Matches authorize.middleware.js.
+    if (employee.role.isSystem && employee.role.name === "owner") {
+      return {
+        ...employee,
+        role: {
+          ...employee.role,
+          permissions: GLOBAL_PERMISSIONS.map((p) => ({
+            id: p.key,
+            key: p.key,
+            name: p.description,
+            module: p.key.split(".")[0],
+          })),
+        },
+      };
     }
 
     return {

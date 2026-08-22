@@ -50,7 +50,10 @@ export const createProductSchema = z.object({
     name: z.string().min(2, "Product name must be at least 2 characters"),
     description: z.string().optional(),
     price: z.coerce.number().positive("Price must be a positive number"),
-    imageUrl: z.string().url("Invalid image URL format").optional(),
+    imageUrl: z
+      .union([z.string().url("Invalid image URL format"), z.literal("")])
+      .transform((val) => (val === "" ? null : val))
+      .optional(),
     isAvailable: z.boolean().optional().default(true),
     status: z.enum(["ACTIVE", "INACTIVE"]).optional().default("ACTIVE"),
   }),
@@ -62,7 +65,10 @@ export const updateProductSchema = z.object({
     name: z.string().min(2).optional(),
     description: z.string().optional(),
     price: z.coerce.number().positive().optional(),
-    imageUrl: z.string().url().optional(),
+    imageUrl: z
+      .union([z.string().url(), z.literal("")])
+      .transform((val) => (val === "" ? null : val))
+      .optional(),
     isAvailable: z.boolean().optional(),
     status: z.enum(["ACTIVE", "INACTIVE"]).optional(),
   }),
