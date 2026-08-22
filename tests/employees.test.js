@@ -78,6 +78,7 @@ describe("Employees Module Integration & Security Tests", () => {
       await prisma.rolePermission.deleteMany({ where: { restaurantId: { in: ids } } });
       await prisma.role.deleteMany({ where: { restaurantId: { in: ids } } });
       await prisma.branch.deleteMany({ where: { restaurantId: { in: ids } } });
+      await prisma.auditLog.deleteMany({ where: { restaurantId: { in: ids } } });
       await prisma.restaurant.deleteMany({ where: { id: { in: ids } } });
     }
 

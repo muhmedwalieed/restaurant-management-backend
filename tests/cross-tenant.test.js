@@ -57,6 +57,7 @@ describe("Cross-Tenant Isolation & IDOR Security Tests (Real DB & Repository)", 
     // Cleanup created test records from database to maintain a clean DB state
     if (restaurantA?.id || restaurantB?.id) {
       const ids = [restaurantA?.id, restaurantB?.id].filter(Boolean);
+      await prisma.auditLog.deleteMany({ where: { restaurantId: { in: ids } } });
       await prisma.branch.deleteMany({
         where: { restaurantId: { in: ids } },
       });

@@ -51,6 +51,7 @@ describe("Restaurant Module Integration Tests", () => {
       await prisma.workingHours.deleteMany({ where: { restaurantId: restaurant.id } });
       await prisma.branchSettings.deleteMany({ where: { restaurantId: restaurant.id } });
       await prisma.branch.deleteMany({ where: { restaurantId: restaurant.id } });
+      await prisma.auditLog.deleteMany({ where: { restaurantId: restaurant.id } });
       await prisma.restaurant.deleteMany({ where: { id: restaurant.id } });
     }
 

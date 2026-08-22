@@ -130,6 +130,7 @@ model Restaurant {
   coupons                Coupon[]
   notifications          Notification[]
   notificationPreferences NotificationPreference[]
+  auditLogs              AuditLog[]
 
   @@index([status])
   @@map("restaurants")
@@ -162,6 +163,7 @@ model Branch {
   orders         Order[]
   coupons        Coupon[]
   notifications  Notification[]
+  auditLogs      AuditLog[]
 
   @@unique([restaurantId, code])
   @@index([restaurantId])
@@ -463,6 +465,7 @@ model Employee {
   lockedInboxConversations InboxConversation[] @relation("inbox_locked_by")
   notifications  Notification[] @relation("notification_target")
   notificationPreference NotificationPreference? @relation("notification_pref")
+  auditLogs      AuditLog[] @relation("audit_actor")
 
   @@unique([restaurantId, email])
   @@index([restaurantId])
@@ -846,4 +849,27 @@ model NotificationPreference {
 
   @@index([restaurantId])
   @@map("notification_preferences")
+}
+
+model AuditLog {
+  id              String   @id @default(cuid())
+  restaurantId    String   @map("restaurant_id")
+  branchId        String?  @map("branch_id")
+  actorEmployeeId String?  @map("actor_employee_id")
+  action          String
+  entityType      String   @map("entity_type")
+  entityId        String?  @map("entity_id")
+  metadata        Json?
+  ipAddress       String?  @map("ip_address")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  branch     Branch?    @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  actor      Employee?  @relation("audit_actor", fields: [actorEmployeeId], references: [id], onDelete: SetNull)
+
+  @@index([restaurantId])
+  @@index([restaurantId, action])
+  @@index([restaurantId, entityType, entityId])
+  @@index([restaurantId, createdAt])
+  @@map("audit_logs")
 }

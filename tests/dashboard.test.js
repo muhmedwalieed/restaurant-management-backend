@@ -171,6 +171,7 @@ describe("Module 15 — Dashboard & Analytics Integration Tests", () => {
       await prisma.workingHours.deleteMany({ where: { restaurantId: id } });
       await prisma.branchSettings.deleteMany({ where: { restaurantId: id } });
       await prisma.branch.deleteMany({ where: { restaurantId: id } });
+      await prisma.auditLog.deleteMany({ where: { restaurantId: id } });
       await prisma.restaurant.deleteMany({ where: { id } });
     }
     await new Promise((resolve) => {

@@ -243,6 +243,7 @@ export class OrderService {
       total: Number(order.total),
       source: order.source,
       type: order.type,
+      actorEmployeeId: tenantContext.employeeId || null,
     });
 
     return {
@@ -284,6 +285,7 @@ export class OrderService {
       orderId,
       orderNumber: order.orderNumber,
       status: newStatus,
+      actorEmployeeId: tenantContext.employeeId || null,
     });
 
     return this.getOrderById(tenantContext, branchId, orderId);
@@ -321,6 +323,7 @@ export class OrderService {
       orderId,
       orderNumber: order.orderNumber,
       status: "CANCELLED",
+      actorEmployeeId: tenantContext.employeeId || null,
     });
 
     return this.getOrderById(tenantContext, branchId, orderId);
@@ -491,6 +494,7 @@ export class OrderService {
       orderId,
       orderNumber: order.orderNumber,
       total: Number(order.total),
+      actorEmployeeId: tenantContext.employeeId || null,
     });
 
     return this.getOrderById(tenantContext, branchId, orderId);
