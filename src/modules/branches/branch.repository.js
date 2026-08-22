@@ -217,6 +217,7 @@ export class BranchRepository {
             },
           },
           update: {
+            restaurantId,
             openTime: item.openTime,
             closeTime: item.closeTime,
             isOpen: item.isOpen !== undefined ? item.isOpen : true,
@@ -271,6 +272,7 @@ export class BranchRepository {
         branchId,
       },
       update: {
+        restaurantId,
         ...(currency !== undefined ? { currency } : {}),
         ...(timezone !== undefined ? { timezone } : {}),
         updatedAt: new Date(),

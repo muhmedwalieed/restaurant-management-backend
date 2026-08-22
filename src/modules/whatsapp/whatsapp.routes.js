@@ -43,7 +43,7 @@ router.post(
   }
 );
 
-router.get("/webhooks/whatsapp", (req, res, next) => {
+router.get("/webhooks/whatsapp", webhookRateLimiter, (req, res, next) => {
   whatsAppController.handleVerification(req, res, next);
 });
 
