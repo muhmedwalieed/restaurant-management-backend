@@ -10,6 +10,7 @@ import {
   posOrderSchema,
   paymentSchema,
   refundSchema,
+  trackOrderQuerySchema,
 } from "./order.validation.js";
 import { authenticate } from "../auth/authenticate.middleware.js";
 import { authorize } from "../auth/authorize.middleware.js";
@@ -37,6 +38,10 @@ const publicOrderRateLimiter = rateLimit({
 // ==================== PUBLIC ORDER ENDPOINT (Unauthenticated) ====================
 router.post("/orders/public", publicOrderRateLimiter, validate(publicOrderSchema), (req, res, next) => {
   orderController.createPublicOrder(req, res, next);
+});
+
+router.get("/orders/track", publicOrderRateLimiter, validate(trackOrderQuerySchema), (req, res, next) => {
+  orderController.trackOrder(req, res, next);
 });
 
 // ==================== POS ORDERING PIPELINE ====================

@@ -67,6 +67,9 @@ export class OrderRepository {
               label: true,
             },
           },
+          customer: {
+            select: { id: true, name: true, phone: true },
+          },
         },
         orderBy: { createdAt: "desc" },
       }),

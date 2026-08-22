@@ -135,6 +135,16 @@ export class OrderController {
     }
   }
 
+  async trackOrder(req, res, next) {
+    try {
+      const query = req.validated?.query ?? req.query ?? {};
+      const order = await orderService.trackOrder(query);
+      return sendSuccess(res, { data: order });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async createPosOrder(req, res, next) {
     try {
       const body = req.validated?.body ?? req.body ?? {};
