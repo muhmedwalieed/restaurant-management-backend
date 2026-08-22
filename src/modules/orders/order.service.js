@@ -346,7 +346,7 @@ export class OrderService {
         branchId,
         tableId,
         notes: [payload.notes, payload.address ? `العنوان: ${payload.address}` : null].filter(Boolean).join(" | ") || null,
-        source: payload.tableToken ? "QR" : payload.source || "WEBSITE",
+        source: payload.tableToken ? "QR" : "WEBSITE",
         type: payload.tableToken ? "DINE_IN" : payload.type || "PICKUP",
       },
       idempotencyKey
