@@ -3,6 +3,7 @@ import authRepository from "./auth.repository.js";
 import { hashPassword, verifyPassword } from "./keychain.js";
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from "../../utils/jwt.js";
 import { AuthenticationError, BusinessRuleError, NotFoundError } from "../../shared/errors/index.js";
+import { AuditAction, auditLogService } from "../audit-logs/audit-log.service.js";
 import { GLOBAL_PERMISSIONS } from "../permissions/permission.catalog.js";
 import redis from "../../config/redis.js";
 import logger from "../../config/logger.js";
@@ -298,6 +299,14 @@ export class AuthService {
     }
 
     await authRepository.forceLogoutEmployee(tenantContext.restaurantId, targetEmployeeId);
+
+    await auditLogService.record(tenantContext, {
+      actorEmployeeId: tenantContext.employeeId || null,
+      action: AuditAction.EMPLOYEE_FORCE_LOGGED_OUT,
+      entityType: "employee",
+      entityId: targetEmployeeId,
+      metadata: { byEmployeeId: tenantContext.employeeId || null },
+    });
 
     // Immediate Redis Permission Cache Invalidation
     try {

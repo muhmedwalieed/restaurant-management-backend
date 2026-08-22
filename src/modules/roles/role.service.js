@@ -1,6 +1,7 @@
 import roleRepository from "./role.repository.js";
 import { GLOBAL_PERMISSIONS } from "../permissions/permission.catalog.js";
 import { BusinessRuleError, ConflictError, NotFoundError } from "../../shared/errors/index.js";
+import { AuditAction, auditLogService } from "../audit-logs/audit-log.service.js";
 import redis from "../../config/redis.js";
 import logger from "../../config/logger.js";
 
@@ -67,11 +68,21 @@ export class RoleService {
       throw new ConflictError(`Role with name '${normalizedName}' already exists in this restaurant`);
     }
 
-    return roleRepository.createRole(tenantContext, {
+    const createdRole = await roleRepository.createRole(tenantContext, {
       name: normalizedName,
       description,
       permissionKeys: permissions,
     });
+
+    await auditLogService.record(tenantContext, {
+      actorEmployeeId: tenantContext.employeeId || null,
+      action: AuditAction.ROLE_CREATED,
+      entityType: "role",
+      entityId: createdRole.id,
+      metadata: { name: normalizedName, permissionKeys: permissions || [] },
+    });
+
+    return createdRole;
   }
 
   async updateRole(tenantContext, id, { name, description, permissions } = {}) {
@@ -96,6 +107,14 @@ export class RoleService {
       name,
       description,
       permissionKeys: permissions,
+    });
+
+    await auditLogService.record(tenantContext, {
+      actorEmployeeId: tenantContext.employeeId || null,
+      action: AuditAction.ROLE_UPDATED,
+      entityType: "role",
+      entityId: id,
+      metadata: { name: updatedRole?.name || existing.name, permissionKeys: permissions },
     });
 
     // Invalidate Redis cache for all employees holding this role
@@ -125,6 +144,14 @@ export class RoleService {
 
     await roleRepository.deleteRole(tenantContext, id);
     await invalidateEmployeesCache(assignedEmpIds);
+
+    await auditLogService.record(tenantContext, {
+      actorEmployeeId: tenantContext.employeeId || null,
+      action: AuditAction.ROLE_DELETED,
+      entityType: "role",
+      entityId: id,
+      metadata: { name: existing.name },
+    });
 
     return { message: "Role deleted successfully" };
   }

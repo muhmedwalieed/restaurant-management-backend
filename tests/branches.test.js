@@ -80,6 +80,7 @@ describe("Branches Module Integration Tests", () => {
       await prisma.workingHours.deleteMany({ where: { restaurantId: { in: ids } } });
       await prisma.branchSettings.deleteMany({ where: { restaurantId: { in: ids } } });
       await prisma.branch.deleteMany({ where: { restaurantId: { in: ids } } });
+      await prisma.auditLog.deleteMany({ where: { restaurantId: { in: ids } } });
       await prisma.restaurant.deleteMany({ where: { id: { in: ids } } });
     }
 

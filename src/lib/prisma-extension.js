@@ -32,6 +32,7 @@ const TENANT_SCOPED_MODELS = new Set([
   "Coupon",
   "Notification",
   "NotificationPreference",
+  "AuditLog",
 ]);
 
 /**

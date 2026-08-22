@@ -1,5 +1,6 @@
 import couponRepository from "./coupon.repository.js";
 import { BusinessRuleError, ConflictError, NotFoundError } from "../../shared/errors/index.js";
+import { AuditAction, auditLogService } from "../audit-logs/audit-log.service.js";
 
 /**
  * Validates that a coupon is currently usable (status, window, usage limit, conditions)
@@ -85,7 +86,17 @@ export class CouponService {
     }
 
     try {
-      return await couponRepository.createCoupon(tenantContext, { ...payload, code });
+      const coupon = await couponRepository.createCoupon(tenantContext, { ...payload, code });
+
+      await auditLogService.record(tenantContext, {
+        actorEmployeeId: tenantContext.employeeId || null,
+        action: AuditAction.COUPON_CREATED,
+        entityType: "coupon",
+        entityId: coupon.id,
+        metadata: { code: coupon.code, type: coupon.type, value: Number(coupon.value) },
+      });
+
+      return coupon;
     } catch (error) {
       if (error?.code === "P2002") {
         throw new ConflictError(`Coupon code '${code}' already exists in this restaurant`);
@@ -110,15 +121,35 @@ export class CouponService {
     if (count === 0) {
       throw new NotFoundError("Coupon not found or access denied");
     }
-    return this.getCouponById(tenantContext, couponId);
+
+    const updated = await this.getCouponById(tenantContext, couponId);
+
+    await auditLogService.record(tenantContext, {
+      actorEmployeeId: tenantContext.employeeId || null,
+      action: AuditAction.COUPON_UPDATED,
+      entityType: "coupon",
+      entityId: couponId,
+      metadata: { code: updated.code, appliedFields: Object.keys(payload) },
+    });
+
+    return updated;
   }
 
   async deleteCoupon(tenantContext, couponId) {
-    await this.getCouponById(tenantContext, couponId);
+    const coupon = await this.getCouponById(tenantContext, couponId);
     const count = await couponRepository.softDeleteCoupon(tenantContext, couponId);
     if (count === 0) {
       throw new NotFoundError("Coupon not found or access denied");
     }
+
+    await auditLogService.record(tenantContext, {
+      actorEmployeeId: tenantContext.employeeId || null,
+      action: AuditAction.COUPON_DELETED,
+      entityType: "coupon",
+      entityId: couponId,
+      metadata: { code: coupon.code },
+    });
+
     return { message: "Coupon deactivated successfully" };
   }
 

@@ -30,6 +30,7 @@ export const GLOBAL_PERMISSIONS = [
   { key: "dashboard.view", description: "View restaurant analytics dashboards and reports" },
   { key: "coupons.manage", description: "Create, update, deactivate and manage discount coupons" },
   { key: "notifications.view", description: "View and manage own in-app notifications and preferences" },
+  { key: "audit.view", description: "View restaurant audit log entries and search history" },
 ];
 
 export default GLOBAL_PERMISSIONS;

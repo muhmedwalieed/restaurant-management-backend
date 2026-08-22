@@ -49,6 +49,7 @@ describe("Roles Module Integration & Security Tests", () => {
       await prisma.rolePermission.deleteMany({ where: { restaurantId: restaurant.id } });
       await prisma.role.deleteMany({ where: { restaurantId: restaurant.id } });
       await prisma.branch.deleteMany({ where: { restaurantId: restaurant.id } });
+      await prisma.auditLog.deleteMany({ where: { restaurantId: restaurant.id } });
       await prisma.restaurant.deleteMany({ where: { id: restaurant.id } });
     }
 
@@ -80,7 +81,7 @@ test("1. Reserved System Role Names check: POST /roles with name 'owner' is reje
     assert.equal(body.error.code, "CONFLICT_ERROR");
   });
 
-  test("1a. GET /api/v1/roles/permissions/catalog returns permissions grouped by module (27 keys)", async () => {
+  test("1a. GET /api/v1/roles/permissions/catalog returns permissions grouped by module (28 keys)", async () => {
     const res = await fetch(`${baseUrl}/api/v1/roles/permissions/catalog`, {
       headers: {
         Authorization: `Bearer ${ownerToken}`,
@@ -108,8 +109,11 @@ test("1. Reserved System Role Names check: POST /roles with name 'owner' is reje
     const notificationsModule = body.data.find((g) => g.module === "notifications");
     assert.ok(notificationsModule);
     assert.ok(notificationsModule.permissions.some((p) => p.key === "notifications.view"));
+    const auditModule = body.data.find((g) => g.module === "audit");
+    assert.ok(auditModule);
+    assert.ok(auditModule.permissions.some((p) => p.key === "audit.view"));
     const totalKeys = body.data.reduce((sum, g) => sum + g.permissions.length, 0);
-    assert.equal(totalKeys, 27);
+    assert.equal(totalKeys, 28);
   });
 
   test("2. POST /api/v1/roles creates custom role with permissions (201 Created)", async () => {

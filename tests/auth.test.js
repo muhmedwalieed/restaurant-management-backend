@@ -37,6 +37,7 @@ describe("Auth Module Integration & E2E Tests", () => {
       await prisma.rolePermission.deleteMany({ where: { restaurantId: createdRestaurant.id } });
       await prisma.role.deleteMany({ where: { restaurantId: createdRestaurant.id } });
       await prisma.branch.deleteMany({ where: { restaurantId: createdRestaurant.id } });
+      await prisma.auditLog.deleteMany({ where: { restaurantId: createdRestaurant.id } });
       await prisma.restaurant.deleteMany({ where: { id: createdRestaurant.id } });
     }
 

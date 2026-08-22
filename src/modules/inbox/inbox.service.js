@@ -43,6 +43,7 @@ export class InboxService {
       conversationId: id,
       agentId: targetAgentId,
       customerPhone: conv.customerPhone,
+      actorEmployeeId: tenantContext.employeeId || null,
     });
 
     return this.getConversation(tenantContext, id);
