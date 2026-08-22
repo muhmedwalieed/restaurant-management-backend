@@ -8,7 +8,7 @@ import {
   publicTableMenuParamsSchema,
 } from "./table.validation.js";
 import { authenticate } from "../auth/authenticate.middleware.js";
-import { authorize } from "../auth/authorize.middleware.js";
+import { authorize, authorizeAny } from "../auth/authorize.middleware.js";
 import { requireTenantContext } from "../../shared/middleware/tenant-context.js";
 import { validate } from "../../shared/middleware/validate.js";
 import env from "../../config/env.js";
@@ -36,31 +36,33 @@ router.get("/menu/table/:qrToken", publicTableRateLimiter, validate(publicTableM
 });
 
 // ==================== AUTHENTICATED BRANCH TABLES PIPELINE ====================
-// Scoped strictly to /branches/:branchId/tables so it doesn't intercept other /v1 routes
+// Scoped strictly to /branches/:branchId/tables so it doesn't intercept other /v1 routes.
+// Read endpoints accept tables.view OR tables.manage (cashier POS needs to pick a table);
+// write endpoints require tables.manage.
 const branchTableRouter = Router({ mergeParams: true });
-branchTableRouter.use(authenticate, requireTenantContext, authorize("tables.manage"));
+branchTableRouter.use(authenticate, requireTenantContext);
 
-branchTableRouter.get("/", validate(tableQuerySchema), (req, res, next) => {
+branchTableRouter.get("/", authorizeAny("tables.view", "tables.manage"), validate(tableQuerySchema), (req, res, next) => {
   tableController.listTables(req, res, next);
 });
 
-branchTableRouter.post("/", validate(createTableSchema), (req, res, next) => {
+branchTableRouter.post("/", authorize("tables.manage"), validate(createTableSchema), (req, res, next) => {
   tableController.createTable(req, res, next);
 });
 
-branchTableRouter.get("/:id", (req, res, next) => {
+branchTableRouter.get("/:id", authorizeAny("tables.view", "tables.manage"), (req, res, next) => {
   tableController.getTableById(req, res, next);
 });
 
-branchTableRouter.patch("/:id", validate(updateTableSchema), (req, res, next) => {
+branchTableRouter.patch("/:id", authorize("tables.manage"), validate(updateTableSchema), (req, res, next) => {
   tableController.updateTable(req, res, next);
 });
 
-branchTableRouter.delete("/:id", (req, res, next) => {
+branchTableRouter.delete("/:id", authorize("tables.manage"), (req, res, next) => {
   tableController.deleteTable(req, res, next);
 });
 
-branchTableRouter.post("/:id/regenerate-qr", (req, res, next) => {
+branchTableRouter.post("/:id/regenerate-qr", authorize("tables.manage"), (req, res, next) => {
   tableController.regenerateQrToken(req, res, next);
 });
 
