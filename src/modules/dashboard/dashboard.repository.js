@@ -121,6 +121,45 @@ export class DashboardRepository {
   }
 
   /**
+   * Per-branch orders + revenue (Module 19 — Branch comparison), non-cancelled only.
+   */
+  async branchComparison(tenantContext, { from, to } = {}) {
+    this.assertTenant(tenantContext);
+    const where = {
+      restaurantId: tenantContext.restaurantId,
+      status: { not: "CANCELLED" },
+      ...(from || to
+        ? {
+            createdAt: {
+              ...(from ? { gte: new Date(from) } : {}),
+              ...(to ? { lte: new Date(to) } : {}),
+            },
+          }
+        : {}),
+    };
+
+    const [byBranch, paidByBranch, branches] = await Promise.all([
+      prisma.order.groupBy({
+        by: ["branchId"],
+        where,
+        _count: { _all: true },
+        _sum: { total: true },
+      }),
+      prisma.order.groupBy({
+        by: ["branchId"],
+        where: { ...where, paymentStatus: "PAID" },
+        _sum: { total: true },
+      }),
+      prisma.branch.findMany({
+        where: { restaurantId: tenantContext.restaurantId },
+        select: { id: true, name: true, code: true, isMain: true, status: true },
+      }),
+    ]);
+
+    return { byBranch, paidByBranch, branches };
+  }
+
+  /**
    * Fetches lightweight order rows for a date range to compute the sales trend in JS.
    * (Prisma groupBy cannot truncate timestamps to days — aggregated here deterministically.)
    */

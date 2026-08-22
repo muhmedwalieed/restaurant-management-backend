@@ -51,6 +51,16 @@ export class DashboardController {
       next(error);
     }
   }
+
+  async getBranchComparison(req, res, next) {
+    try {
+      const query = req.validated?.query ?? req.query ?? {};
+      const data = await dashboardService.getBranchComparison(req.tenantContext, query);
+      return sendSuccess(res, { data });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export const dashboardController = new DashboardController();

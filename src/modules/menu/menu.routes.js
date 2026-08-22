@@ -13,7 +13,7 @@ import {
   publicMenuQuerySchema,
 } from "./menu.validation.js";
 import { authenticate } from "../auth/authenticate.middleware.js";
-import { authorize } from "../auth/authorize.middleware.js";
+import { authorize, authorizeAny } from "../auth/authorize.middleware.js";
 import { requireTenantContext } from "../../shared/middleware/tenant-context.js";
 import { validate } from "../../shared/middleware/validate.js";
 import env from "../../config/env.js";
@@ -45,7 +45,7 @@ router.get("/public", publicMenuRateLimiter, validate(publicMenuQuerySchema), (r
 router.use(authenticate, requireTenantContext);
 
 // ------------ CATEGORIES ------------
-router.get("/categories", authorize("menu.manage"), validate(categoryQuerySchema), (req, res, next) => {
+router.get("/categories", authorizeAny("menu.view", "menu.manage"), validate(categoryQuerySchema), (req, res, next) => {
   menuController.listCategories(req, res, next);
 });
 
@@ -53,7 +53,7 @@ router.post("/categories", authorize("menu.manage"), validate(createCategorySche
   menuController.createCategory(req, res, next);
 });
 
-router.get("/categories/:id", authorize("menu.manage"), (req, res, next) => {
+router.get("/categories/:id", authorizeAny("menu.view", "menu.manage"), (req, res, next) => {
   menuController.getCategoryById(req, res, next);
 });
 
@@ -66,7 +66,7 @@ router.delete("/categories/:id", authorize("menu.manage"), (req, res, next) => {
 });
 
 // ------------ PRODUCTS ------------
-router.get("/products", authorize("menu.manage"), validate(productQuerySchema), (req, res, next) => {
+router.get("/products", authorizeAny("menu.view", "menu.manage"), validate(productQuerySchema), (req, res, next) => {
   menuController.listProducts(req, res, next);
 });
 
@@ -74,7 +74,7 @@ router.post("/products", authorize("menu.manage"), validate(createProductSchema)
   menuController.createProduct(req, res, next);
 });
 
-router.get("/products/:id", authorize("menu.manage"), (req, res, next) => {
+router.get("/products/:id", authorizeAny("menu.view", "menu.manage"), (req, res, next) => {
   menuController.getProductById(req, res, next);
 });
 
@@ -87,7 +87,7 @@ router.delete("/products/:id", authorize("menu.manage"), (req, res, next) => {
 });
 
 // ------------ PRODUCT MODIFIERS (ADD-ONS) ------------
-router.get("/products/:id/modifiers", authorize("menu.manage"), (req, res, next) => {
+router.get("/products/:id/modifiers", authorizeAny("menu.view", "menu.manage"), (req, res, next) => {
   menuController.listModifiers(req, res, next);
 });
 
