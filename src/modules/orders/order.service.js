@@ -323,8 +323,18 @@ export class OrderService {
       restaurantId = table.restaurantId;
     }
 
-    if (!restaurantId || !branchId) {
-      throw new NotFoundError("Target branch or restaurant not found");
+    if (!restaurantId) {
+      throw new NotFoundError("Target restaurant not found");
+    }
+
+    // Website ordering may not know the branch — resolve the restaurant's main branch.
+    if (!branchId) {
+      const tenantContext = { restaurantId };
+      const mainBranch = await branchRepository.findMainBranch(tenantContext);
+      if (!mainBranch) {
+        throw new NotFoundError("No active branch found for this restaurant");
+      }
+      branchId = mainBranch.id;
     }
 
     const tenantContext = { restaurantId };
@@ -335,11 +345,47 @@ export class OrderService {
         ...payload,
         branchId,
         tableId,
+        notes: [payload.notes, payload.address ? `العنوان: ${payload.address}` : null].filter(Boolean).join(" | ") || null,
         source: payload.tableToken ? "QR" : payload.source || "WEBSITE",
         type: payload.tableToken ? "DINE_IN" : payload.type || "PICKUP",
       },
       idempotencyKey
     );
+  }
+
+  /**
+   * Public order tracking (website) — resolves restaurant by slug, then the order by number + customer phone.
+   */
+  async trackOrder({ slug, orderNumber, phone }) {
+    const restaurant = await prisma.restaurant.findFirst({
+      where: { slug, status: "ACTIVE" },
+      select: { id: true },
+    });
+    if (!restaurant) {
+      throw new NotFoundError("Restaurant not found");
+    }
+
+    const order = await prisma.order.findFirst({
+      where: {
+        restaurantId: restaurant.id,
+        orderNumber,
+        customer: { phone },
+      },
+      select: {
+        id: true,
+        orderNumber: true,
+        status: true,
+        type: true,
+        total: true,
+        createdAt: true,
+        items: { select: { id: true, productName: true, quantity: true, subtotal: true } },
+      },
+    });
+    if (!order) {
+      throw new NotFoundError("Order not found for this number and phone");
+    }
+
+    return order;
   }
 
   /**

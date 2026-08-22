@@ -49,16 +49,35 @@ export const cancelOrderSchema = z.object({
 });
 
 export const publicOrderSchema = z.object({
-  body: z.object({
-    tableToken: z.string().optional(),
-    restaurantId: z.string().optional(),
-    branchId: z.string().optional(),
-    source: z.enum(["WHATSAPP", "QR", "WEBSITE", "CASHIER", "PHONE"]).optional(),
-    type: z.enum(["DINE_IN", "DELIVERY", "PICKUP"]).optional(),
-    customerPhone: z.string().min(3).max(30).optional(),
-    customerName: z.string().max(100).optional(),
-    items: z.array(orderItemInputSchema).min(1, "Order must contain at least one item"),
-    notes: z.string().optional(),
+  body: z
+    .object({
+      tableToken: z.string().optional(),
+      restaurantId: z.string().optional(),
+      branchId: z.string().optional(),
+      source: z.enum(["WHATSAPP", "QR", "WEBSITE", "CASHIER", "PHONE"]).optional(),
+      type: z.enum(["DINE_IN", "DELIVERY", "PICKUP"]).optional(),
+      customerPhone: z.string().min(3).max(30).optional(),
+      customerName: z.string().max(100).optional(),
+      address: z.string().max(500).optional(),
+      items: z.array(orderItemInputSchema).min(1, "Order must contain at least one item"),
+      notes: z.string().optional(),
+    })
+    .refine(
+      (data) => {
+        if ((data.type === "DELIVERY" || data.type === "PICKUP") && !data.customerName?.trim()) {
+          return false;
+        }
+        return true;
+      },
+      { message: "Customer name is required for delivery and pickup orders", path: ["customerName"] }
+    ),
+});
+
+export const trackOrderQuerySchema = z.object({
+  query: z.object({
+    slug: z.string().min(1, "Restaurant slug is required"),
+    orderNumber: z.coerce.number().int().min(1, "Order number is required"),
+    phone: z.string().min(3, "Customer phone is required").max(30),
   }),
 });
 
