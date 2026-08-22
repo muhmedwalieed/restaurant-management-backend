@@ -1,6 +1,5 @@
 import whatsAppRepository from "./whatsapp.repository.js";
 import getWhatsAppProvider from "./providers/provider_factory.js";
-import env from "../../config/env.js";
 import {
   NotFoundError,
   ConflictError,
@@ -247,12 +246,12 @@ export class WhatsAppService {
   handleVerification(queryParams) {
     const expectedToken = process.env.WHATSAPP_VERIFY_TOKEN;
 
-    if (!expectedToken && env.NODE_ENV === "production") {
+    if (!expectedToken) {
       throw new ExternalServiceError("WHATSAPP_VERIFY_TOKEN is not configured in the environment");
     }
 
     const provider = getWhatsAppProvider("META");
-    return provider.handleVerification(queryParams, expectedToken || "default_verify_token");
+    return provider.handleVerification(queryParams, expectedToken);
   }
 
   /**
