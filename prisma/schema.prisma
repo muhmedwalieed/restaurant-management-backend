@@ -128,6 +128,8 @@ model Restaurant {
   inboxConversations     InboxConversation[]
   inboxMessages          InboxMessage[]
   coupons                Coupon[]
+  notifications          Notification[]
+  notificationPreferences NotificationPreference[]
 
   @@index([status])
   @@map("restaurants")
@@ -159,6 +161,7 @@ model Branch {
   tables         RestaurantTable[]
   orders         Order[]
   coupons        Coupon[]
+  notifications  Notification[]
 
   @@unique([restaurantId, code])
   @@index([restaurantId])
@@ -458,6 +461,8 @@ model Employee {
   assignedInboxConversations InboxConversation[] @relation("inbox_assigned_agent")
   inboxMessages  InboxMessage[] @relation("inbox_message_agent")
   lockedInboxConversations InboxConversation[] @relation("inbox_locked_by")
+  notifications  Notification[] @relation("notification_target")
+  notificationPreference NotificationPreference? @relation("notification_pref")
 
   @@unique([restaurantId, email])
   @@index([restaurantId])
@@ -794,4 +799,51 @@ model Coupon {
   @@index([restaurantId])
   @@index([restaurantId, branchId])
   @@map("coupons")
+}
+
+enum NotificationType {
+  ORDER_CREATED
+  ORDER_STATUS_CHANGED
+  ORDER_PAID
+  CHAT_ASSIGNED
+  CHAT_MESSAGE
+  SYSTEM
+}
+
+model Notification {
+  id               String           @id @default(cuid())
+  restaurantId     String           @map("restaurant_id")
+  branchId         String?          @map("branch_id")
+  targetEmployeeId String           @map("target_employee_id")
+  type             NotificationType
+  title            String
+  body             String           @db.Text
+  referenceType    String?          @map("reference_type")
+  referenceId      String?          @map("reference_id")
+  isRead           Boolean          @default(false) @map("is_read")
+  readAt           DateTime?        @map("read_at")
+  createdAt        DateTime         @default(now()) @map("created_at")
+
+  restaurant     Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  branch         Branch?    @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  targetEmployee Employee   @relation("notification_target", fields: [targetEmployeeId], references: [id], onDelete: Cascade)
+
+  @@index([restaurantId])
+  @@index([targetEmployeeId, isRead])
+  @@index([restaurantId, targetEmployeeId, isRead])
+  @@map("notifications")
+}
+
+model NotificationPreference {
+  id           String   @id @default(cuid())
+  restaurantId String   @map("restaurant_id")
+  employeeId   String   @unique @map("employee_id")
+  disabledTypes Json    @default("[]") @map("disabled_types")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  employee   Employee   @relation("notification_pref", fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([restaurantId])
+  @@map("notification_preferences")
 }

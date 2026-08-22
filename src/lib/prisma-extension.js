@@ -30,6 +30,8 @@ const TENANT_SCOPED_MODELS = new Set([
   "InboxConversation",
   "InboxMessage",
   "Coupon",
+  "Notification",
+  "NotificationPreference",
 ]);
 
 /**

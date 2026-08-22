@@ -13,6 +13,7 @@ import inboxRouter from "../modules/inbox/inbox.routes.js";
 import phoneOrderRouter from "../modules/phone-order/phone-order.routes.js";
 import dashboardRouter from "../modules/dashboard/dashboard.routes.js";
 import couponRouter from "../modules/coupons/coupon.routes.js";
+import notificationRouter from "../modules/notifications/notification.routes.js";
 import whatsappRouter from "../modules/whatsapp/whatsapp.routes.js";
 
 const router = Router();
@@ -29,6 +30,7 @@ router.use("/v1/inbox", inboxRouter);
 router.use("/v1/phone-order", phoneOrderRouter);
 router.use("/v1/dashboard", dashboardRouter);
 router.use("/v1/coupons", couponRouter);
+router.use("/v1/notifications", notificationRouter);
 router.use("/v1", tableRouter);
 router.use("/v1", orderRouter);
 router.use("/v1/menu", menuRouter);
