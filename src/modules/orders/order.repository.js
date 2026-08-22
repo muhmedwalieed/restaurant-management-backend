@@ -39,7 +39,7 @@ export class OrderRepository {
   /**
    * Finds orders for a specific branch with filters and pagination.
    */
-  async findOrdersByBranch(tenantContext, branchId, { page = 1, limit = 20, status, type, source } = {}) {
+  async findOrdersByBranch(tenantContext, branchId, { page = 1, limit = 20, status, type, source, tableId } = {}) {
     if (!tenantContext || !tenantContext.restaurantId) {
       throw new AuthenticationError("TenantContext with restaurantId is required");
     }
@@ -51,6 +51,7 @@ export class OrderRepository {
       ...(status ? { status } : {}),
       ...(type ? { type } : {}),
       ...(source ? { source } : {}),
+      ...(tableId ? { tableId } : {}),
     };
 
     const [items, total] = await Promise.all([

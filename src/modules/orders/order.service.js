@@ -42,7 +42,7 @@ export class OrderService {
     return branch;
   }
 
-  async listOrders(tenantContext, branchId, { page = 1, limit = 20, status, type, source } = {}) {
+  async listOrders(tenantContext, branchId, { page = 1, limit = 20, status, type, source, tableId } = {}) {
     await this.verifyBranchOwnership(tenantContext, branchId);
     const { items, total } = await orderRepository.findOrdersByBranch(tenantContext, branchId, {
       page,
@@ -50,6 +50,7 @@ export class OrderService {
       status,
       type,
       source,
+      tableId,
     });
 
     const totalPages = Math.ceil(total / limit) || 1;
@@ -125,6 +126,23 @@ export class OrderService {
       const table = await tableRepository.findTableById(tenantContext, branchId, payload.tableId);
       if (!table) {
         throw new NotFoundError("Table not found in target branch");
+      }
+
+      // Single Active Order Per Table (enforced): reject creating a new order on a
+      // table that already has an active order (PENDING/CONFIRMED/PREPARING/READY).
+      const activeOrderOnTable = await prisma.order.findFirst({
+        where: {
+          restaurantId,
+          branchId,
+          tableId: payload.tableId,
+          status: { in: ["PENDING", "CONFIRMED", "PREPARING", "READY"] },
+        },
+        select: { id: true, orderNumber: true },
+      });
+      if (activeOrderOnTable) {
+        throw new BusinessRuleError(
+          `Table already has an active order (#${activeOrderOnTable.orderNumber}). A table can only have one active order at a time`
+        );
       }
     }
 
