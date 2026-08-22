@@ -81,7 +81,7 @@ test("1. Reserved System Role Names check: POST /roles with name 'owner' is reje
     assert.equal(body.error.code, "CONFLICT_ERROR");
   });
 
-  test("1a. GET /api/v1/roles/permissions/catalog returns permissions grouped by module (28 keys)", async () => {
+  test("1a. GET /api/v1/roles/permissions/catalog returns permissions grouped by module (29 keys)", async () => {
     const res = await fetch(`${baseUrl}/api/v1/roles/permissions/catalog`, {
       headers: {
         Authorization: `Bearer ${ownerToken}`,
@@ -100,6 +100,10 @@ test("1. Reserved System Role Names check: POST /roles with name 'owner' is reje
     const ordersModule = body.data.find((g) => g.module === "orders");
     assert.ok(ordersModule);
     assert.ok(ordersModule.permissions.some((p) => p.key === "orders.payment"));
+    const menuModule = body.data.find((g) => g.module === "menu");
+    assert.ok(menuModule);
+    assert.ok(menuModule.permissions.some((p) => p.key === "menu.manage"));
+    assert.ok(menuModule.permissions.some((p) => p.key === "menu.view"));
     const dashboardModule = body.data.find((g) => g.module === "dashboard");
     assert.ok(dashboardModule);
     assert.ok(dashboardModule.permissions.some((p) => p.key === "dashboard.view"));
@@ -113,7 +117,7 @@ test("1. Reserved System Role Names check: POST /roles with name 'owner' is reje
     assert.ok(auditModule);
     assert.ok(auditModule.permissions.some((p) => p.key === "audit.view"));
     const totalKeys = body.data.reduce((sum, g) => sum + g.permissions.length, 0);
-    assert.equal(totalKeys, 28);
+    assert.equal(totalKeys, 29);
   });
 
   test("2. POST /api/v1/roles creates custom role with permissions (201 Created)", async () => {

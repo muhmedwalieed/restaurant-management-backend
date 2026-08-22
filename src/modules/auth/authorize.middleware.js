@@ -66,10 +66,10 @@ export async function getEmployeePermissions(employeeId, restaurantId) {
 }
 
 /**
- * Authorization Middleware Factory.
- * @param {string} permissionKey - e.g. "employees.manage"
+ * Authorization Middleware Factory — allows access if the user holds ANY of the keys.
+ * @param {...string} permissionKeys - e.g. authorizeAny("menu.view", "menu.manage")
  */
-export function authorize(permissionKey) {
+export function authorizeAny(...permissionKeys) {
   return async (req, res, next) => {
     try {
       if (!req.tenantContext || !req.tenantContext.employeeId || !req.tenantContext.restaurantId) {
@@ -84,13 +84,16 @@ export function authorize(permissionKey) {
         return next();
       }
 
-      // Check if permissionKey exists in permission array
-      if (!permissions.includes(permissionKey)) {
+      // Grant access if the user holds ANY of the requested keys
+      const allowed = permissionKeys.some((key) => permissions.includes(key));
+      if (!allowed) {
         logger.warn(
-          { employeeId, requiredPermission: permissionKey, roleName },
+          { employeeId, requiredPermissions: permissionKeys, roleName },
           "Authorization failure: insufficient permissions"
         );
-        throw new AuthorizationError(`Permission '${permissionKey}' is required to perform this action`);
+        throw new AuthorizationError(
+          `One of '${permissionKeys.join("', '")}' permissions is required to perform this action`
+        );
       }
 
       next();
@@ -98,6 +101,14 @@ export function authorize(permissionKey) {
       next(error);
     }
   };
+}
+
+/**
+ * Authorization Middleware Factory.
+ * @param {string} permissionKey - e.g. "employees.manage"
+ */
+export function authorize(permissionKey) {
+  return authorizeAny(permissionKey);
 }
 
 export default authorize;
