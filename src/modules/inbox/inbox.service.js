@@ -41,6 +41,7 @@ export class InboxService {
 
   async reply(tenantContext, id, { content }) {
     const conv = await this.getConversation(tenantContext, id);
+    this.assertCanModify(conv, tenantContext.employeeId);
 
     // Send the reply to the customer over WhatsApp first (non-internal).
     await whatsAppService.sendMessage(tenantContext, {
@@ -63,6 +64,7 @@ export class InboxService {
 
   async addNote(tenantContext, id, { content }) {
     const conv = await this.getConversation(tenantContext, id);
+    this.assertCanModify(conv, tenantContext.employeeId);
 
     // Internal note — never sent to the customer (Section 28).
     await inboxRepository.createMessage(tenantContext, {
@@ -78,14 +80,57 @@ export class InboxService {
   }
 
   async resolveConversation(tenantContext, id) {
-    await this.getConversation(tenantContext, id);
+    const conv = await this.getConversation(tenantContext, id);
+    this.assertCanModify(conv, tenantContext.employeeId);
     await inboxRepository.updateStatus(tenantContext, id, "RESOLVED");
     return this.getConversation(tenantContext, id);
   }
 
   async closeConversation(tenantContext, id) {
-    await this.getConversation(tenantContext, id);
+    const conv = await this.getConversation(tenantContext, id);
+    this.assertCanModify(conv, tenantContext.employeeId);
     await inboxRepository.updateStatus(tenantContext, id, "CLOSED");
+    return this.getConversation(tenantContext, id);
+  }
+
+  // ==================== MANAGER MONITORING & TAKEOVER (Module 12) ====================
+
+  /**
+   * Throws if the conversation is locked by another user (manager takeover).
+   */
+  assertCanModify(conv, employeeId) {
+    if (conv.lockedById && conv.lockedById !== employeeId) {
+      throw new BusinessRuleError("This conversation is locked by a manager. Only the manager who took it over can act on it.");
+    }
+  }
+
+  /**
+   * Manager takes over a conversation: locks it on the manager (assigned agent is locked out).
+   */
+  async takeover(tenantContext, id) {
+    const conv = await this.getConversation(tenantContext, id);
+    await inboxRepository.lockConversation(tenantContext, id, tenantContext.employeeId);
+    return this.getConversation(tenantContext, id);
+  }
+
+  /**
+   * Manager returns the conversation to the assigned agent (clears the lock).
+   */
+  async returnToAgent(tenantContext, id) {
+    await this.getConversation(tenantContext, id);
+    await inboxRepository.clearLock(tenantContext, id);
+    return this.getConversation(tenantContext, id);
+  }
+
+  /**
+   * Manager reassigns the conversation to a different agent (clears the lock).
+   */
+  async reassign(tenantContext, id, agentId) {
+    const conv = await this.getConversation(tenantContext, id);
+    if (!agentId) {
+      throw new BusinessRuleError("Target agentId is required for reassignment");
+    }
+    await inboxRepository.reassignConversation(tenantContext, id, agentId);
     return this.getConversation(tenantContext, id);
   }
 

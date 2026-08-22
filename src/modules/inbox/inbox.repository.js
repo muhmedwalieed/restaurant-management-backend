@@ -86,6 +86,27 @@ export class InboxRepository {
     });
   }
 
+  async lockConversation(tenantContext, id, lockedById) {
+    return prisma.inboxConversation.updateMany({
+      where: { id, restaurantId: tenantContext.restaurantId },
+      data: { lockedById, lockedAt: new Date(), updatedAt: new Date() },
+    });
+  }
+
+  async clearLock(tenantContext, id) {
+    return prisma.inboxConversation.updateMany({
+      where: { id, restaurantId: tenantContext.restaurantId },
+      data: { lockedById: null, lockedAt: null, updatedAt: new Date() },
+    });
+  }
+
+  async reassignConversation(tenantContext, id, agentId) {
+    return prisma.inboxConversation.updateMany({
+      where: { id, restaurantId: tenantContext.restaurantId },
+      data: { assignedAgentId: agentId, lockedById: null, lockedAt: null, status: "ACTIVE", updatedAt: new Date() },
+    });
+  }
+
   async touchConversation(tenantContext, id) {
     return prisma.inboxConversation.updateMany({
       where: { id, restaurantId: tenantContext.restaurantId },

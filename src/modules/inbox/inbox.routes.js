@@ -5,6 +5,7 @@ import {
   assignConversationSchema,
   replySchema,
   noteSchema,
+  reassignConversationSchema,
 } from "./inbox.validation.js";
 import { authenticate } from "../auth/authenticate.middleware.js";
 import { authorize } from "../auth/authorize.middleware.js";
@@ -41,6 +42,18 @@ router.post("/conversations/:id/resolve", authorize("chats.close"), (req, res, n
 
 router.post("/conversations/:id/close", authorize("chats.close"), (req, res, next) => {
   inboxController.closeConversation(req, res, next);
+});
+
+router.post("/conversations/:id/takeover", authorize("chats.takeover"), (req, res, next) => {
+  inboxController.takeover(req, res, next);
+});
+
+router.post("/conversations/:id/return", authorize("chats.takeover"), (req, res, next) => {
+  inboxController.returnToAgent(req, res, next);
+});
+
+router.post("/conversations/:id/reassign", authorize("chats.takeover"), validate(reassignConversationSchema), (req, res, next) => {
+  inboxController.reassign(req, res, next);
 });
 
 export default router;

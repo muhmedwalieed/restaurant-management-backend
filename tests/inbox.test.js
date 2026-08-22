@@ -15,6 +15,8 @@ describe("Module 11 — Unified Inbox / Support Integration Tests", () => {
   let branchA;
   let agentToken;
   let noChatsToken;
+  let ownerToken;
+  let ownerId;
   let ownerBToken;
   let waConversation;
   let inboxConv;
@@ -39,9 +41,11 @@ describe("Module 11 — Unified Inbox / Support Integration Tests", () => {
       restaurantSlug: `inbox-a-${uniq}`,
     });
     tenantA = regA.restaurant;
+    ownerId = regA.employee.id;
     branchA = await prisma.branch.findFirst({ where: { restaurantId: tenantA.id, isMain: true } });
 
     const loginA = await authService.login({ email: regA.employee.email, password: "Password123!", device: "A", ipAddress: "127.0.0.1" });
+    ownerToken = loginA.accessToken;
 
     const passwordHash = await bcrypt.hash("Password123!", 10);
 
@@ -239,5 +243,95 @@ describe("Module 11 — Unified Inbox / Support Integration Tests", () => {
     assert.equal(res.status, 403);
     const body = await res.json();
     assert.equal(body.error.code, "AUTHORIZATION_ERROR");
+  });
+
+  // ==================== MODULE 12 — MANAGER TAKEOVER ====================
+
+  test("13. Takeover: manager locks the conversation on themselves", async () => {
+    // Use the owner (manager) token — owner has chats.takeover via bypass
+    const res = await fetch(`${baseUrl}/api/v1/inbox/conversations/${inboxConv.id}/takeover`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${ownerToken}` },
+      body: JSON.stringify({}),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.data.lockedById, ownerId);
+    assert.ok(body.data.lockedAt);
+  });
+
+  test("14. Locked conversation: the assigned agent cannot reply (422)", async () => {
+    const res = await fetch(`${baseUrl}/api/v1/inbox/conversations/${inboxConv.id}/reply`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${agentToken}` },
+      body: JSON.stringify({ content: "محاولة رد من الوكيل وهو مقفول" }),
+    });
+    assert.equal(res.status, 422);
+    const body = await res.json();
+    assert.equal(body.error.code, "BUSINESS_RULE_ERROR");
+  });
+
+  test("15. Locked conversation: the manager who took over can still reply (200)", async () => {
+    const res = await fetch(`${baseUrl}/api/v1/inbox/conversations/${inboxConv.id}/reply`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${ownerToken}` },
+      body: JSON.stringify({ content: "رد المدير بعد الـTakeover" }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    const msg = body.data.messages.find((m) => m.content === "رد المدير بعد الـTakeover");
+    assert.ok(msg);
+    assert.equal(msg.isInternal, false);
+  });
+
+  test("16. Return to Agent clears the lock", async () => {
+    const res = await fetch(`${baseUrl}/api/v1/inbox/conversations/${inboxConv.id}/return`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${ownerToken}` },
+      body: JSON.stringify({}),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.data.lockedById, null);
+  });
+
+  test("17. Agent can reply again after lock is cleared (200)", async () => {
+    const res = await fetch(`${baseUrl}/api/v1/inbox/conversations/${inboxConv.id}/reply`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${agentToken}` },
+      body: JSON.stringify({ content: "الوكيل رجع يرد" }),
+    });
+    assert.equal(res.status, 200);
+  });
+
+  test("18. Reassign moves the conversation to another agent", async () => {
+    const res = await fetch(`${baseUrl}/api/v1/inbox/conversations/${inboxConv.id}/reassign`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${ownerToken}` },
+      body: JSON.stringify({ agentId: ownerId }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.data.assignedAgentId, ownerId);
+  });
+
+  test("19. Reassign without agentId -> 400 validation", async () => {
+    const res = await fetch(`${baseUrl}/api/v1/inbox/conversations/${inboxConv.id}/reassign`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${ownerToken}` },
+      body: JSON.stringify({}),
+    });
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.equal(body.error.code, "VALIDATION_ERROR");
+  });
+
+  test("20. Cross-Tenant: Tenant B takeover on Tenant A conversation -> 404", async () => {
+    const res = await fetch(`${baseUrl}/api/v1/inbox/conversations/${inboxConv.id}/takeover`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${ownerBToken}` },
+      body: JSON.stringify({}),
+    });
+    assert.equal(res.status, 404);
   });
 });
