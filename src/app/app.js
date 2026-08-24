@@ -6,6 +6,7 @@ import cookieParser from "cookie-parser";
 import env from "../config/env.js";
 import routes from "../routes/index.js";
 import healthRouter from "../routes/health.routes.js";
+import { UPLOADS_DIR } from "../lib/uploads.js";
 import { requestIdMiddleware } from "../shared/middleware/request-id.js";
 import { notFoundHandler, errorHandler } from "../middleware/error.middleware.js";
 import "../modules/notifications/notification.subscriptions.js";
@@ -47,6 +48,12 @@ app.use((req, res, next) => {
 
 // Root level health endpoints (/health, /ready) mounted ONLY at root /
 app.use("/", healthRouter);
+
+// Serve uploaded images (dotfiles denied, browser cache 1 day)
+app.use(
+  "/uploads",
+  express.static(UPLOADS_DIR, { dotfiles: "deny", maxAge: "1d", index: false })
+);
 
 // API Routes mounted under /api
 app.use("/api", routes);

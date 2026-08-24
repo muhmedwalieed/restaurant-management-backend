@@ -15,6 +15,7 @@ import dashboardRouter from "../modules/dashboard/dashboard.routes.js";
 import couponRouter from "../modules/coupons/coupon.routes.js";
 import notificationRouter from "../modules/notifications/notification.routes.js";
 import auditLogRouter from "../modules/audit-logs/audit-log.routes.js";
+import uploadsRouter from "../modules/uploads/uploads.routes.js";
 import { branchUsersRouter, myBranchesRouter } from "../modules/multi-branch/multi-branch.routes.js";
 import whatsappRouter from "../modules/whatsapp/whatsapp.routes.js";
 
@@ -36,6 +37,7 @@ router.use("/v1/dashboard", dashboardRouter);
 router.use("/v1/coupons", couponRouter);
 router.use("/v1/notifications", notificationRouter);
 router.use("/v1/audit-logs", auditLogRouter);
+router.use("/v1/uploads", uploadsRouter);
 router.use("/v1", tableRouter);
 router.use("/v1", orderRouter);
 router.use("/v1/menu", menuRouter);

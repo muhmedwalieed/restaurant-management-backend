@@ -51,7 +51,11 @@ export const createProductSchema = z.object({
     description: z.string().optional(),
     price: z.coerce.number().positive("Price must be a positive number"),
     imageUrl: z
-      .union([z.string().url("Invalid image URL format"), z.literal("")])
+      .union([
+        z.string().url("Invalid image URL format"),
+        z.string().regex(/^\/uploads\//, "Invalid image path"),
+        z.literal(""),
+      ])
       .transform((val) => (val === "" ? null : val))
       .optional(),
     isAvailable: z.boolean().optional().default(true),
@@ -66,7 +70,11 @@ export const updateProductSchema = z.object({
     description: z.string().optional(),
     price: z.coerce.number().positive().optional(),
     imageUrl: z
-      .union([z.string().url(), z.literal("")])
+      .union([
+        z.string().url(),
+        z.string().regex(/^\/uploads\//),
+        z.literal(""),
+      ])
       .transform((val) => (val === "" ? null : val))
       .optional(),
     isAvailable: z.boolean().optional(),
