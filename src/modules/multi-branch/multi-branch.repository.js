@@ -107,6 +107,19 @@ export class MultiBranchRepository {
     });
   }
 
+  /**
+   * Every branch in the tenant — used by owners / branch managers so the branch
+   * switcher matches what the branches management page shows.
+   */
+  async findAllBranches(tenantContext) {
+    this.assertTenant(tenantContext);
+    return prisma.branch.findMany({
+      where: { restaurantId: tenantContext.restaurantId },
+      select: { id: true, name: true, code: true, isMain: true, status: true },
+      orderBy: [{ isMain: "desc" }, { name: "asc" }],
+    });
+  }
+
   assertTenant(tenantContext) {
     if (!tenantContext || !tenantContext.restaurantId) {
       throw new AuthenticationError("TenantContext with restaurantId is required");

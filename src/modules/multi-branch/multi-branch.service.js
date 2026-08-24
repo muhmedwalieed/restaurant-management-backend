@@ -1,6 +1,7 @@
 import multiBranchRepository from "./multi-branch.repository.js";
 import { AuditAction, auditLogService } from "../audit-logs/audit-log.service.js";
-import { BusinessRuleError, ConflictError, NotFoundError } from "../../shared/errors/index.js";
+import { BusinessRuleError, ConflictError, NotFoundError, AuthorizationError } from "../../shared/errors/index.js";
+import { getEmployeePermissions } from "../auth/authorize.middleware.js";
 
 export class MultiBranchService {
   /**
@@ -89,12 +90,29 @@ export class MultiBranchService {
 
   /**
    * The employee's accessible branches (branch switcher for the frontend).
+   *
+   * Owners and users with `branches.manage` see EVERY branch in the tenant, matching
+   * what the branches management page shows. Everyone else (cashier, kitchen, ...)
+   * sees only their home branch plus the branches explicitly granted to them.
    */
   async listMyBranches(tenantContext) {
-    const employeeId = tenantContext.employeeId;
+    const { restaurantId, employeeId } = tenantContext;
     if (!employeeId) {
       throw new NotFoundError("Employee identity required");
     }
+
+    let canManageAll = false;
+    try {
+      const { roleName, isSystem, permissions } = await getEmployeePermissions(employeeId, restaurantId);
+      canManageAll = (isSystem && roleName === "owner") || permissions.includes("branches.manage");
+    } catch (error) {
+      if (!(error instanceof AuthorizationError)) throw error;
+    }
+
+    if (canManageAll) {
+      return multiBranchRepository.findAllBranches(tenantContext);
+    }
+
     const branches = await multiBranchRepository.findEmployeeBranches(tenantContext, employeeId);
     if (!branches) {
       throw new NotFoundError("Employee not found or access denied");
