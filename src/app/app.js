@@ -49,9 +49,15 @@ app.use((req, res, next) => {
 // Root level health endpoints (/health, /ready) mounted ONLY at root /
 app.use("/", healthRouter);
 
-// Serve uploaded images (dotfiles denied, browser cache 1 day)
+// Serve uploaded images (dotfiles denied, browser cache 1 day).
+// Allow cross-origin display: helmet sets CORP: same-origin by default, which
+// would block <img> tags loading these assets from the frontend origin.
 app.use(
   "/uploads",
+  (req, res, next) => {
+    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+    next();
+  },
   express.static(UPLOADS_DIR, { dotfiles: "deny", maxAge: "1d", index: false })
 );
 
