@@ -107,6 +107,7 @@ export const trackOrderQuerySchema = z.object({
 export const posOrderSchema = z.object({
   body: z
     .object({
+      source: z.enum(["WHATSAPP", "QR", "WEBSITE", "CASHIER", "PHONE"]).optional().default("CASHIER"),
       type: z.enum(["DINE_IN", "DELIVERY", "PICKUP"]).optional().default("DINE_IN"),
       tableId: z.string().optional(),
       customerId: z.string().optional(),

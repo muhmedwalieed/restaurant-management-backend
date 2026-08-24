@@ -7,3 +7,4 @@ npm-debug.log*
 .DS_Store
 Backend_Project_Guide.md
 dev-server.log
+backend-dev.log

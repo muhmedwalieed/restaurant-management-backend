@@ -234,7 +234,7 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
     await disconnectRedis();
   });
 
-  test("1. POST /api/v1/branches/:branchId/pos/orders creates manual DINE_IN order (source: CASHIER enforced)", async () => {
+  test("1. POST /api/v1/branches/:branchId/pos/orders creates manual DINE_IN order (default source: CASHIER)", async () => {
     const res = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/pos/orders`, {
       method: "POST",
       headers: {
@@ -244,7 +244,6 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
       body: JSON.stringify({
         type: "DINE_IN",
         tableId: tableA1.id,
-        source: "WEBSITE", // Attempting override — must be forced to CASHIER
         items: [{ productId: productA1.id, quantity: 2 }],
       }),
     });
@@ -253,12 +252,34 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
     const body = await res.json();
 
     assert.equal(body.success, true);
-    assert.equal(body.data.source, "CASHIER"); // Enforced!
+    assert.equal(body.data.source, "CASHIER"); // Default source when none supplied
     assert.equal(body.data.type, "DINE_IN");
     assert.equal(Number(body.data.total), 30.0);
     assert.equal(body.data.tableId, tableA1.id);
 
     posOrderDineIn = body.data;
+  });
+
+  test("1a. POST /pos/orders honours a caller-supplied source (e.g. PHONE for a mobile order)", async () => {
+    const res = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/pos/orders`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${cashierAToken}`,
+      },
+      body: JSON.stringify({
+        type: "DELIVERY",
+        customerPhone: "+201099990009",
+        customerName: "Source Test",
+        address: "ميدان التحرير",
+        source: "PHONE",
+        items: [{ productId: productA1.id, quantity: 1 }],
+      }),
+    });
+
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.equal(body.data.source, "PHONE");
   });
 
   test("2. Table Lifecycle (ADR-015): Table status transitions to OCCUPIED after DINE_IN order creation", async () => {

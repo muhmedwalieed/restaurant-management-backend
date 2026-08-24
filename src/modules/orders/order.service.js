@@ -487,7 +487,7 @@ export class OrderService {
       branchId,
       {
         ...payload,
-        source: "CASHIER",
+        source: payload.source || "CASHIER",
         type,
       },
       idempotencyKey
