@@ -50,7 +50,7 @@ router.post(
   "/force-logout",
   authenticate,
   requireTenantContext,
-  authorize("employees.manage_roles"),
+  authorize("employees.manage"),
   validate(forceLogoutSchema),
   (req, res, next) => {
     authController.forceLogout(req, res, next);
