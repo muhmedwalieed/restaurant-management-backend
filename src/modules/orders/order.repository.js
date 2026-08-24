@@ -81,6 +81,53 @@ export class OrderRepository {
   }
 
   /**
+   * Finds orders across ALL branches of the tenant with filters and pagination —
+   * the unified "all orders in one place" view (optional branchId filter).
+   */
+  async findOrdersByTenant(tenantContext, { page = 1, limit = 20, status, type, source, branchId, tableId } = {}) {
+    if (!tenantContext || !tenantContext.restaurantId) {
+      throw new AuthenticationError("TenantContext with restaurantId is required");
+    }
+
+    const skip = (page - 1) * limit;
+    const where = {
+      restaurantId: tenantContext.restaurantId,
+      ...(branchId ? { branchId } : {}),
+      ...(status ? { status } : {}),
+      ...(type ? { type } : {}),
+      ...(source ? { source } : {}),
+      ...(tableId ? { tableId } : {}),
+    };
+
+    const [items, total] = await Promise.all([
+      prisma.order.findMany({
+        where,
+        skip,
+        take: limit,
+        include: {
+          items: true,
+          table: {
+            select: {
+              id: true,
+              label: true,
+            },
+          },
+          customer: {
+            select: { id: true, name: true, phone: true },
+          },
+          branch: {
+            select: { id: true, name: true, code: true },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.order.count({ where }),
+    ]);
+
+    return { items, total };
+  }
+
+  /**
    * Finds single order by ID under a specific branch.
    */
   async findOrderById(tenantContext, branchId, orderId) {

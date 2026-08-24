@@ -26,6 +26,34 @@ export class OrderController {
     }
   }
 
+  /**
+   * Tenant-wide orders list (all branches, unified view).
+   */
+  async listAllOrders(req, res, next) {
+    try {
+      const query = req.validated?.query ?? req.query ?? {};
+      const page = query.page ? parseInt(query.page, 10) : 1;
+      const limit = query.limit ? Math.min(parseInt(query.limit, 10), 100) : 20;
+
+      const { items, pagination } = await orderService.listAllOrders(req.tenantContext, {
+        page,
+        limit,
+        status: query.status,
+        type: query.type,
+        source: query.source,
+        branchId: query.branchId,
+        tableId: query.tableId,
+      });
+
+      return sendSuccess(res, {
+        data: items,
+        pagination,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async getOrderById(req, res, next) {
     try {
       const order = await orderService.getOrderById(req.tenantContext, req.params.branchId, req.params.id);

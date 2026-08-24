@@ -54,6 +54,16 @@ branchPosRouter.post("/", authorize("orders.create"), validate(posOrderSchema), 
 
 router.use("/branches/:branchId/pos/orders", branchPosRouter);
 
+// ==================== TENANT-WIDE ORDERS (unified view: all branches, all sources) ====================
+const tenantOrderRouter = Router();
+tenantOrderRouter.use(authenticate, requireTenantContext);
+
+tenantOrderRouter.get("/", authorize("orders.view"), validate(orderQuerySchema), (req, res, next) => {
+  orderController.listAllOrders(req, res, next);
+});
+
+router.use("/orders", tenantOrderRouter);
+
 // ==================== AUTHENTICATED BRANCH ORDERS PIPELINE ====================
 const branchOrderRouter = Router({ mergeParams: true });
 branchOrderRouter.use(authenticate, requireTenantContext);

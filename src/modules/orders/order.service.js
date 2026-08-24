@@ -67,6 +67,32 @@ export class OrderService {
     };
   }
 
+  /**
+   * Lists orders across ALL branches of the tenant — the unified orders view.
+   */
+  async listAllOrders(tenantContext, { page = 1, limit = 20, status, type, source, branchId, tableId } = {}) {
+    const { items, total } = await orderRepository.findOrdersByTenant(tenantContext, {
+      page,
+      limit,
+      status,
+      type,
+      source,
+      branchId,
+      tableId,
+    });
+
+    const totalPages = Math.ceil(total / limit) || 1;
+    return {
+      items,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+      },
+    };
+  }
+
   async getOrderById(tenantContext, branchId, orderId) {
     await this.verifyBranchOwnership(tenantContext, branchId);
 
