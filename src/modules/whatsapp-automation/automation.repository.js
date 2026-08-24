@@ -34,7 +34,7 @@ export class AutomationRepository {
       },
       include: {
         customer: {
-          select: { id: true, name: true, phone: true, email: true },
+          select: { id: true, name: true, firstName: true, lastName: true, phone: true },
         },
         connection: {
           select: { id: true, displayName: true, providerPhoneNumberId: true },

@@ -18,6 +18,8 @@ export class CustomerRepository {
         ? {
             OR: [
               { name: { contains: q, mode: "insensitive" } },
+              { firstName: { contains: q, mode: "insensitive" } },
+              { lastName: { contains: q, mode: "insensitive" } },
               { phone: { contains: q, mode: "insensitive" } },
             ],
           }
@@ -30,6 +32,10 @@ export class CustomerRepository {
         skip,
         take: limit,
         include: {
+          phones: {
+            where: { deletedAt: null },
+            orderBy: { isDefault: "desc" },
+          },
           addresses: {
             where: { deletedAt: null },
             orderBy: { isDefault: "desc" },
@@ -61,6 +67,10 @@ export class CustomerRepository {
         deletedAt: null,
       },
       include: {
+        phones: {
+          where: { deletedAt: null },
+          orderBy: { isDefault: "desc" },
+        },
         addresses: {
           where: { deletedAt: null },
           orderBy: { isDefault: "desc" },
@@ -90,44 +100,82 @@ export class CustomerRepository {
   }
 
   /**
-   * Creates new customer record.
+   * Creates new customer record (with optional extra phone numbers).
    */
   async createCustomer(tenantContext, payload) {
     if (!tenantContext || !tenantContext.restaurantId) {
       throw new AuthenticationError("TenantContext with restaurantId is required");
     }
 
+    const phones = (payload.phones || []).map((p) => p.trim()).filter(Boolean);
+
     return prisma.customer.create({
       data: {
         restaurantId: tenantContext.restaurantId,
+        firstName: payload.firstName,
+        lastName: payload.lastName || null,
         name: payload.name,
         phone: payload.phone,
-        email: payload.email || null,
         notes: payload.notes || null,
+        phones:
+          phones.length > 0
+            ? {
+                create: phones.map((phone, i) => ({
+                  restaurantId: tenantContext.restaurantId,
+                  phone,
+                  isDefault: i === 0,
+                })),
+              }
+            : undefined,
+      },
+      include: {
+        phones: {
+          where: { deletedAt: null },
+          orderBy: { isDefault: "desc" },
+        },
       },
     });
   }
 
   /**
    * Updates customer using mandatory findFirst ownership check -> updateMany pattern (Section 12.3).
+   * Also syncs the phone-number set when provided.
    */
   async updateCustomer(tenantContext, customerId, payload) {
     const existing = await this.findCustomerById(tenantContext, customerId);
     if (!existing) return null;
 
-    await prisma.customer.updateMany({
-      where: {
-        id: customerId,
-        restaurantId: tenantContext.restaurantId,
-        deletedAt: null,
-      },
-      data: {
-        ...(payload.name !== undefined ? { name: payload.name } : {}),
-        ...(payload.phone !== undefined ? { phone: payload.phone } : {}),
-        ...(payload.email !== undefined ? { email: payload.email } : {}),
-        ...(payload.notes !== undefined ? { notes: payload.notes } : {}),
-        updatedAt: new Date(),
-      },
+    const restaurantId = tenantContext.restaurantId;
+
+    await prisma.$transaction(async (tx) => {
+      await tx.customer.updateMany({
+        where: {
+          id: customerId,
+          restaurantId,
+          deletedAt: null,
+        },
+        data: {
+          ...(payload.firstName !== undefined ? { firstName: payload.firstName } : {}),
+          ...(payload.lastName !== undefined ? { lastName: payload.lastName } : {}),
+          ...(payload.name !== undefined ? { name: payload.name } : {}),
+          ...(payload.phone !== undefined ? { phone: payload.phone } : {}),
+          ...(payload.notes !== undefined ? { notes: payload.notes } : {}),
+          updatedAt: new Date(),
+        },
+      });
+
+      if (payload.phones) {
+        const phones = payload.phones.map((p) => p.trim()).filter(Boolean);
+        await tx.customerPhone.deleteMany({ where: { customerId, restaurantId } });
+        await tx.customerPhone.createMany({
+          data: phones.map((phone, i) => ({
+            restaurantId,
+            customerId,
+            phone,
+            isDefault: i === 0,
+          })),
+        });
+      }
     });
 
     return this.findCustomerById(tenantContext, customerId);

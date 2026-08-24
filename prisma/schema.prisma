@@ -121,6 +121,7 @@ model Restaurant {
   idempotencyKeys        IdempotencyKey[]
   customers              Customer[]
   customerAddresses      CustomerAddress[]
+  customerPhones         CustomerPhone[]
   whatsappConnections    WhatsAppConnection[]
   whatsappMessages       WhatsAppMessage[]
   webhookEvents          WebhookEvent[]
@@ -517,15 +518,17 @@ model EmployeeBranchAccess {
 model Customer {
   id           String    @id @default(cuid())
   restaurantId String    @map("restaurant_id")
+  firstName    String?   @map("first_name")
+  lastName     String?   @map("last_name")
   name         String
   phone        String
-  email        String?
   notes        String?
   deletedAt    DateTime? @map("deleted_at")
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
   restaurant Restaurant        @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  phones     CustomerPhone[]
   addresses  CustomerAddress[]
   orders     Order[]
   conversations WhatsAppConversation[]
@@ -533,9 +536,28 @@ model Customer {
 
   @@unique([restaurantId, phone])
   @@index([restaurantId])
-  @@index([restaurantId, name])
+  @@index([restaurantId, firstName])
   @@index([restaurantId, phone])
   @@map("customers")
+}
+
+model CustomerPhone {
+  id           String   @id @default(cuid())
+  restaurantId String   @map("restaurant_id")
+  customerId   String   @map("customer_id")
+  phone        String
+  isDefault    Boolean  @default(false) @map("is_default")
+  deletedAt    DateTime? @map("deleted_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  customer   Customer   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([restaurantId, phone])
+  @@index([restaurantId])
+  @@index([customerId])
+  @@map("customer_phones")
 }
 
 model CustomerAddress {

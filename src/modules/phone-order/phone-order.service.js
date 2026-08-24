@@ -21,8 +21,9 @@ export class PhoneOrderService {
       customer: {
         id: customer.id,
         name: customer.name,
+        firstName: customer.firstName,
+        lastName: customer.lastName,
         phone: customer.phone,
-        email: customer.email,
         notes: customer.notes,
       },
       defaultAddress: defaultAddress

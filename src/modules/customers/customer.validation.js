@@ -9,19 +9,29 @@ export const customerQuerySchema = z.object({
 });
 
 export const createCustomerSchema = z.object({
-  body: z.object({
-    name: z.string().min(1, "Customer name is required").max(100),
-    phone: z.string().min(3, "Valid phone number is required").max(30),
-    email: z.string().email("Invalid email format").optional().or(z.literal("")),
-    notes: z.string().max(500).optional(),
-  }),
+  body: z
+    .object({
+      firstName: z.string().min(1).max(60).optional(),
+      lastName: z.string().max(60).optional(),
+      name: z.string().min(1).max(100).optional(), // legacy full-name fallback
+      phone: z.string().min(3, "Valid phone number is required").max(30),
+      phones: z.array(z.string().min(3).max(30)).optional(),
+      notes: z.string().max(500).optional(),
+    })
+    .superRefine((data, ctx) => {
+      if (!data.firstName?.trim() && !data.name?.trim()) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["firstName"], message: "First name is required" });
+      }
+    }),
 });
 
 export const updateCustomerSchema = z.object({
   body: z.object({
+    firstName: z.string().min(1).max(60).optional(),
+    lastName: z.string().max(60).optional(),
     name: z.string().min(1).max(100).optional(),
     phone: z.string().min(3).max(30).optional(),
-    email: z.string().email("Invalid email format").optional().or(z.literal("")),
+    phones: z.array(z.string().min(3).max(30)).optional(),
     notes: z.string().max(500).optional(),
   }),
 });

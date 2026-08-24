@@ -181,9 +181,9 @@ describe("Customer Management & CRM Module Integration Tests", () => {
         Authorization: `Bearer ${ownerAToken}`,
       },
       body: JSON.stringify({
-        name: "John Doe",
+        firstName: "John",
+        lastName: "Doe",
         phone: "+201012345678",
-        email: "john.doe@example.com",
         notes: "VIP Customer",
       }),
     });
@@ -193,10 +193,36 @@ describe("Customer Management & CRM Module Integration Tests", () => {
 
     assert.equal(body.success, true);
     assert.ok(body.data.id);
+    assert.equal(body.data.firstName, "John");
+    assert.equal(body.data.lastName, "Doe");
     assert.equal(body.data.name, "John Doe");
     assert.equal(body.data.phone, "+201012345678");
+    assert.equal(body.data.email, undefined);
 
     createdCustomerA = body.data;
+  });
+
+  test("1a. POST /customers supports multiple phone numbers", async () => {
+    const res = await fetch(`${baseUrl}/api/v1/customers`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${ownerAToken}`,
+      },
+      body: JSON.stringify({
+        firstName: "Multi",
+        lastName: "Phone",
+        phone: "+201011110001",
+        phones: ["+201011110001", "+201011110002"],
+      }),
+    });
+
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.equal(body.data.firstName, "Multi");
+    assert.equal(body.data.name, "Multi Phone");
+    assert.equal(body.data.phones.length, 2);
+    assert.ok(body.data.phones.some((ph) => ph.isDefault));
   });
 
   test("2. Duplicate Phone: Creating customer with existing phone in same tenant returns 409 ConflictError", async () => {
@@ -275,7 +301,8 @@ describe("Customer Management & CRM Module Integration Tests", () => {
         Authorization: `Bearer ${ownerAToken}`,
       },
       body: JSON.stringify({
-        name: "Johnathan Doe",
+        firstName: "Johnathan",
+        lastName: "Doe",
         notes: "Updated VIP notes",
       }),
     });
@@ -284,6 +311,7 @@ describe("Customer Management & CRM Module Integration Tests", () => {
     const body = await res.json();
 
     assert.equal(body.success, true);
+    assert.equal(body.data.firstName, "Johnathan");
     assert.equal(body.data.name, "Johnathan Doe");
     assert.equal(body.data.notes, "Updated VIP notes");
   });
