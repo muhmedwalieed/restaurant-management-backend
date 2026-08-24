@@ -132,6 +132,7 @@ describe("Module 14 — Phone Ordering Integration Tests", () => {
       body: JSON.stringify({
         type: "DELIVERY",
         customerPhone,
+        customerName: "Existing Phone Customer",
         items: [{ productId: productA.id, quantity: 2 }],
       }),
     });
@@ -139,7 +140,8 @@ describe("Module 14 — Phone Ordering Integration Tests", () => {
     const body = await res.json();
     assert.equal(body.data.source, "PHONE");
     assert.equal(Number(body.data.total), 40);
-    assert.ok(body.data.notes.includes("شارع 1")); // default address injected
+    // default address is injected into the dedicated address field (not notes)
+    assert.equal(body.data.address, "شارع 1، القاهرة");
     const linked = await prisma.customer.findFirst({
       where: { restaurantId: tenantA.id, phone: customerPhone },
       include: { orders: true },

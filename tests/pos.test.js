@@ -339,7 +339,7 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
     assert.equal(body.error.code, "BUSINESS_RULE_ERROR");
   });
 
-  test("5. POS Validation Rule: DELIVERY order without customer returns 422 BusinessRuleError", async () => {
+  test("5. POS Validation Rule: DELIVERY order without customer returns 400 Validation Error", async () => {
     const res = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/pos/orders`, {
       method: "POST",
       headers: {
@@ -347,14 +347,14 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
         Authorization: `Bearer ${cashierAToken}`,
       },
       body: JSON.stringify({
-        type: "DELIVERY", // Missing customerId / customerPhone!
+        type: "DELIVERY", // Missing customer name / phone / address — validation rejects before the service
         items: [{ productId: productA1.id, quantity: 1 }],
       }),
     });
 
-    assert.equal(res.status, 422);
+    assert.equal(res.status, 400);
     const body = await res.json();
-    assert.equal(body.error.code, "BUSINESS_RULE_ERROR");
+    assert.equal(body.error.code, "VALIDATION_ERROR");
   });
 
   test("6. POS Order with customerPhone auto-link creates DELIVERY order successfully", async () => {
@@ -368,6 +368,7 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
         type: "DELIVERY",
         customerPhone: "+201099887766",
         customerName: "Auto POS Customer",
+        address: "ش الزمالك",
         items: [{ productId: productA1.id, quantity: 1 }],
       }),
     });

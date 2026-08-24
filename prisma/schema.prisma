@@ -312,6 +312,7 @@ model Order {
   discountAmount Decimal       @default(0.00) @map("discount_amount") @db.Decimal(10, 2)
   total          Decimal       @db.Decimal(10, 2)
   notes          String?
+  address        String?       @map("address")
   cancelReason   String?       @map("cancel_reason")
   paidAt         DateTime?     @map("paid_at")
   paidByEmployeeId String?     @map("paid_by_employee_id")

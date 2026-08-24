@@ -221,6 +221,7 @@ export class OrderService {
       subtotal: calculatedSubtotal,
       discountAmount,
       notes: payload.notes || null,
+      address: payload.address || null,
       paymentStatus: payload.paymentStatus || "PENDING",
       paymentMethod: payload.paymentMethod || null,
     };
@@ -389,7 +390,8 @@ export class OrderService {
         ...payload,
         branchId,
         tableId,
-        notes: [payload.notes, payload.address ? `العنوان: ${payload.address}` : null].filter(Boolean).join(" | ") || null,
+        address: payload.address || null,
+        notes: payload.notes || null,
         source: payload.tableToken ? "QR" : "WEBSITE",
         type: payload.tableToken ? "DINE_IN" : payload.type || "PICKUP",
       },
@@ -440,6 +442,14 @@ export class OrderService {
 
     if (type === "DINE_IN" && !payload.tableId) {
       throw new BusinessRuleError("tableId is required for DINE_IN POS orders");
+    }
+
+    if (type === "DELIVERY" && !payload.customerName?.trim()) {
+      throw new BusinessRuleError("Customer name is required for DELIVERY orders");
+    }
+
+    if (type === "DELIVERY" && !payload.address?.trim()) {
+      throw new BusinessRuleError("Delivery address is required for DELIVERY orders");
     }
 
     if ((type === "DELIVERY" || type === "PICKUP") && !payload.customerId && !payload.customerPhone) {

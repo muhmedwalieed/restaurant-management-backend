@@ -96,6 +96,19 @@ export class OrderRepository {
       },
       include: {
         items: true,
+        customer: {
+          select: {
+            id: true,
+            name: true,
+            phone: true,
+            addresses: {
+              select: {
+                street: true,
+                city: true,
+              },
+            },
+          },
+        },
         table: {
           select: {
             id: true,
@@ -159,6 +172,7 @@ export class OrderRepository {
           discountAmount,
           total,
           notes: orderPayload.notes || null,
+          address: orderPayload.address || null,
           version: 1,
         },
       });
@@ -238,6 +252,9 @@ export class OrderRepository {
         where: { id: order.id, restaurantId },
         include: {
           items: true,
+          customer: {
+            select: { id: true, name: true, phone: true },
+          },
           table: {
             select: { id: true, label: true },
           },
