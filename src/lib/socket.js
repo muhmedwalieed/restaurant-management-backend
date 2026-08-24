@@ -12,4 +12,28 @@ export function getSocketIo() {
   return io;
 }
 
-export default { setSocketIo, getSocketIo };
+/**
+ * Broadcasts an event to every socket joined to a restaurant room.
+ * Safe no-op when the socket server is not running.
+ */
+export function broadcastToRestaurant(restaurantId, event, payload) {
+  try {
+    io?.to(`restaurant:${restaurantId}`).emit(event, payload);
+  } catch (err) {
+    // Broadcasting must never break the business flow
+  }
+}
+
+/**
+ * Broadcasts an event to a single employee's room (targeted push).
+ * Safe no-op when the socket server is not running.
+ */
+export function broadcastToEmployee(employeeId, event, payload) {
+  try {
+    io?.to(`employee:${employeeId}`).emit(event, payload);
+  } catch (err) {
+    // Broadcasting must never break the business flow
+  }
+}
+
+export default { setSocketIo, getSocketIo, broadcastToRestaurant, broadcastToEmployee };

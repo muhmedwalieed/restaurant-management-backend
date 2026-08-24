@@ -4,6 +4,7 @@ import branchRepository from "../branches/branch.repository.js";
 import whatsAppService from "../whatsapp/whatsapp.service.js";
 import prisma from "../../lib/prisma.js";
 import { NotFoundError, BusinessRuleError } from "../../shared/errors/index.js";
+import { emitEvent, DomainEvent } from "../../shared/events/event-bus.js";
 
 const WELCOME_TEXT =
   "👋 *أهلاً بك في مطعمنا!*\nكيف يمكننا خدمتك اليوم؟\n\n" +
@@ -469,12 +470,22 @@ export class WhatsAppAutomationService {
   async handoffConversation(tenantContext, id) {
     await this.getConversationById(tenantContext, id);
     await automationRepository.updateConversationStatus(tenantContext, id, "WAITING_AGENT");
+    emitEvent(DomainEvent.CONVERSATION_UPDATED, {
+      restaurantId: tenantContext.restaurantId,
+      conversationId: id,
+      action: "handoff",
+    });
     return this.getConversationById(tenantContext, id);
   }
 
   async closeConversation(tenantContext, id) {
     await this.getConversationById(tenantContext, id);
     await automationRepository.updateConversationStatus(tenantContext, id, "CLOSED");
+    emitEvent(DomainEvent.CONVERSATION_UPDATED, {
+      restaurantId: tenantContext.restaurantId,
+      conversationId: id,
+      action: "closed",
+    });
     return this.getConversationById(tenantContext, id);
   }
 }

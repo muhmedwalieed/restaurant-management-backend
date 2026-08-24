@@ -9,6 +9,8 @@ export const DomainEvent = Object.freeze({
   ORDER_STATUS_CHANGED: "order.statusChanged",
   ORDER_PAID: "order.paid",
   CHAT_ASSIGNED: "chat.assigned",
+  CONVERSATION_UPDATED: "conversation.updated",
+  CUSTOMER_UPDATED: "customer.updated",
 });
 
 const emitter = new EventEmitter();

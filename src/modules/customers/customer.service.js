@@ -1,5 +1,6 @@
 import customerRepository from "./customer.repository.js";
 import { ConflictError, NotFoundError } from "../../shared/errors/index.js";
+import { emitEvent, DomainEvent } from "../../shared/events/event-bus.js";
 
 export class CustomerService {
   /**
@@ -55,12 +56,19 @@ export class CustomerService {
     const deduped = [...new Set(phones)];
 
     try {
-      return await customerRepository.createCustomer(tenantContext, {
+      const customer = await customerRepository.createCustomer(tenantContext, {
         ...names,
         phone,
         phones: deduped,
         notes: payload.notes,
       });
+      emitEvent(DomainEvent.CUSTOMER_UPDATED, {
+        restaurantId: tenantContext.restaurantId,
+        customerId: customer.id,
+        action: "created",
+        actorEmployeeId: tenantContext.employeeId || null,
+      });
+      return customer;
     } catch (error) {
       if (error?.code === "P2002") {
         throw new ConflictError(`Customer with phone '${phone}' already exists in this restaurant`);
@@ -98,6 +106,12 @@ export class CustomerService {
       if (!updated) {
         throw new NotFoundError("Customer not found or access denied");
       }
+      emitEvent(DomainEvent.CUSTOMER_UPDATED, {
+        restaurantId: tenantContext.restaurantId,
+        customerId,
+        action: "updated",
+        actorEmployeeId: tenantContext.employeeId || null,
+      });
       return updated;
     } catch (error) {
       if (error?.code === "P2002") {
@@ -113,6 +127,12 @@ export class CustomerService {
     if (!deleted) {
       throw new NotFoundError("Customer not found or access denied");
     }
+    emitEvent(DomainEvent.CUSTOMER_UPDATED, {
+      restaurantId: tenantContext.restaurantId,
+      customerId,
+      action: "deleted",
+      actorEmployeeId: tenantContext.employeeId || null,
+    });
     return deleted;
   }
 

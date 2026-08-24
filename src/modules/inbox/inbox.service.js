@@ -45,6 +45,12 @@ export class InboxService {
       customerPhone: conv.customerPhone,
       actorEmployeeId: tenantContext.employeeId || null,
     });
+    emitEvent(DomainEvent.CONVERSATION_UPDATED, {
+      restaurantId: tenantContext.restaurantId,
+      conversationId: id,
+      action: "assigned",
+      agentId: targetAgentId,
+    });
 
     return this.getConversation(tenantContext, id);
   }
@@ -68,6 +74,11 @@ export class InboxService {
     });
     await inboxRepository.updateStatus(tenantContext, id, "ACTIVE");
     await inboxRepository.touchConversation(tenantContext, id);
+    emitEvent(DomainEvent.CONVERSATION_UPDATED, {
+      restaurantId: tenantContext.restaurantId,
+      conversationId: id,
+      action: "replied",
+    });
 
     return this.getConversation(tenantContext, id);
   }
@@ -100,6 +111,11 @@ export class InboxService {
     const conv = await this.getConversation(tenantContext, id);
     this.assertCanModify(conv, tenantContext.employeeId);
     await inboxRepository.updateStatus(tenantContext, id, "CLOSED");
+    emitEvent(DomainEvent.CONVERSATION_UPDATED, {
+      restaurantId: tenantContext.restaurantId,
+      conversationId: id,
+      action: "closed",
+    });
     return this.getConversation(tenantContext, id);
   }
 
@@ -120,6 +136,11 @@ export class InboxService {
   async takeover(tenantContext, id) {
     const conv = await this.getConversation(tenantContext, id);
     await inboxRepository.lockConversation(tenantContext, id, tenantContext.employeeId);
+    emitEvent(DomainEvent.CONVERSATION_UPDATED, {
+      restaurantId: tenantContext.restaurantId,
+      conversationId: id,
+      action: "takeover",
+    });
     return this.getConversation(tenantContext, id);
   }
 

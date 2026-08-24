@@ -261,7 +261,7 @@ export class OrderService {
       idempotencyKey
     );
 
-    // Emit domain event for in-process consumers (notifications, audit-logs) — Section 29.
+    // Emit domain event for in-process consumers (notifications, audit-logs, realtime) — Section 29.
     emitEvent(DomainEvent.ORDER_CREATED, {
       restaurantId,
       branchId,
@@ -270,6 +270,7 @@ export class OrderService {
       total: Number(order.total),
       source: order.source,
       type: order.type,
+      tableId: order.tableId || null,
       actorEmployeeId: tenantContext.employeeId || null,
     });
 
@@ -312,6 +313,8 @@ export class OrderService {
       orderId,
       orderNumber: order.orderNumber,
       status: newStatus,
+      previousStatus: order.status,
+      tableId: order.tableId || null,
       actorEmployeeId: tenantContext.employeeId || null,
     });
 
@@ -350,6 +353,8 @@ export class OrderService {
       orderId,
       orderNumber: order.orderNumber,
       status: "CANCELLED",
+      previousStatus: order.status,
+      tableId: order.tableId || null,
       actorEmployeeId: tenantContext.employeeId || null,
     });
 
@@ -530,6 +535,7 @@ export class OrderService {
       orderId,
       orderNumber: order.orderNumber,
       total: Number(order.total),
+      tableId: order.tableId || null,
       actorEmployeeId: tenantContext.employeeId || null,
     });
 
