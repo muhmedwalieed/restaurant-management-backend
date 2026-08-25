@@ -1,7 +1,5 @@
 import { z } from "zod";
 
-// ==================== CATEGORY SCHEMAS ====================
-
 export const categoryQuerySchema = z.object({
   query: z.object({
     page: z.coerce.number().int().min(1).default(1),
@@ -27,8 +25,6 @@ export const updateCategorySchema = z.object({
     status: z.enum(["ACTIVE", "INACTIVE"]).optional(),
   }),
 });
-
-// ==================== PRODUCT SCHEMAS ====================
 
 export const productQuerySchema = z.object({
   query: z.object({
@@ -82,8 +78,6 @@ export const updateProductSchema = z.object({
   }),
 });
 
-// ==================== MODIFIER SCHEMAS ====================
-
 export const createModifierSchema = z.object({
   body: z.object({
     name: z.string().min(2, "Modifier name must be at least 2 characters"),
@@ -99,8 +93,6 @@ export const updateModifierSchema = z.object({
     isRequired: z.boolean().optional(),
   }),
 });
-
-// ==================== PUBLIC MENU SCHEMA ====================
 
 export const publicMenuQuerySchema = z.object({
   query: z.object({

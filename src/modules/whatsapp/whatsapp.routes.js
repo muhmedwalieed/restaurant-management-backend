@@ -18,7 +18,6 @@ import env from "../../config/env.js";
 
 const router = Router();
 
-// Rate Limiter for Public Webhook Endpoint
 const webhookRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: env.NODE_ENV === "test" ? 1000 : 100,
@@ -33,7 +32,6 @@ const webhookRateLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-// ==================== PUBLIC WEBHOOK ENDPOINTS ====================
 router.post(
   "/webhooks/whatsapp",
   webhookRateLimiter,
@@ -47,7 +45,6 @@ router.get("/webhooks/whatsapp", webhookRateLimiter, (req, res, next) => {
   whatsAppController.handleVerification(req, res, next);
 });
 
-// ==================== AUTHENTICATED ADMIN ENDPOINTS ====================
 const adminRouter = Router();
 adminRouter.use(authenticate, requireTenantContext);
 
@@ -119,7 +116,6 @@ adminRouter.post(
   }
 );
 
-// ==================== CONVERSATIONS AUTOMATION ENDPOINTS ====================
 adminRouter.get(
   "/conversations",
   authorize("whatsapp.view"),

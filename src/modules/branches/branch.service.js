@@ -31,13 +31,12 @@ export class BranchService {
   }
 
   async createBranch(tenantContext, data) {
-    // 1. Check duplicate code
+
     const existingCode = await branchRepository.findBranchByCode(tenantContext, data.code);
     if (existingCode) {
       throw new ConflictError(`Branch with code '${data.code.toUpperCase()}' already exists in this restaurant`);
     }
 
-    // 2. Check main branch uniqueness constraint
     if (data.isMain) {
       const existingMain = await branchRepository.findMainBranch(tenantContext);
       if (existingMain) {
@@ -64,12 +63,10 @@ export class BranchService {
   async updateBranch(tenantContext, branchId, data) {
     const existing = await this.getBranchById(tenantContext, branchId);
 
-    // Main branch deactivation protection
     if (existing.isMain && data.status && data.status !== "ACTIVE") {
       throw new BusinessRuleError("Main branch cannot be deactivated");
     }
 
-    // Code uniqueness check if code is changing
     if (data.code && data.code.toUpperCase() !== existing.code) {
       const existingCode = await branchRepository.findBranchByCode(tenantContext, data.code);
       if (existingCode) {

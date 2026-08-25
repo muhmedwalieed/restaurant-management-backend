@@ -29,7 +29,6 @@ describe("Branches Module Integration Tests", () => {
       });
     });
 
-    // Setup Tenant A
     const regA = await authService.register({
       name: "Owner Branch A",
       email: `ownerbrancha-${Date.now()}@test.com`,
@@ -50,7 +49,6 @@ describe("Branches Module Integration Tests", () => {
     });
     ownerAToken = loginA.accessToken;
 
-    // Setup Tenant B
     const regB = await authService.register({
       name: "Owner Branch B",
       email: `ownerbranchb-${Date.now()}@test.com`,
@@ -127,7 +125,7 @@ describe("Branches Module Integration Tests", () => {
       },
       body: JSON.stringify({
         name: "Duplicate Code Branch",
-        code: "DT01", // Duplicate code!
+        code: "DT01",
       }),
     });
 
@@ -146,7 +144,7 @@ describe("Branches Module Integration Tests", () => {
       body: JSON.stringify({
         name: "Second Main Branch",
         code: "MAIN2",
-        isMain: true, // Second main branch!
+        isMain: true,
       }),
     });
 
@@ -167,7 +165,7 @@ describe("Branches Module Integration Tests", () => {
 
     assert.equal(body.success, true);
     assert.ok(Array.isArray(body.data));
-    assert.equal(body.pagination.total, 2); // MAIN + DT01
+    assert.equal(body.pagination.total, 2);
   });
 
   test("4b. Mass Assignment: sending restaurantId/id in body is ignored (branch stays in own tenant)", async () => {
@@ -180,8 +178,8 @@ describe("Branches Module Integration Tests", () => {
       body: JSON.stringify({
         name: "Mass Assignment Branch",
         code: "MA01",
-        restaurantId: tenantB.id, // Must be ignored
-        id: "forged-id-12345", // Must be ignored
+        restaurantId: tenantB.id,
+        id: "forged-id-12345",
       }),
     });
 
@@ -194,7 +192,7 @@ describe("Branches Module Integration Tests", () => {
   test("5. Cross-Tenant Protection: Tenant B cannot access Tenant A's branch (404 Not Found)", async () => {
     const res = await fetch(`${baseUrl}/api/v1/branches/${createdBranchA.id}`, {
       headers: {
-        Authorization: `Bearer ${ownerBToken}`, // Token from Tenant B
+        Authorization: `Bearer ${ownerBToken}`,
       },
     });
 
@@ -208,7 +206,7 @@ describe("Branches Module Integration Tests", () => {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${ownerBToken}`, // Token from Tenant B
+        Authorization: `Bearer ${ownerBToken}`,
       },
       body: JSON.stringify({
         name: "Hijacked Branch Name",
@@ -301,7 +299,7 @@ describe("Branches Module Integration Tests", () => {
       },
       body: JSON.stringify({
         workingHours: [
-          { day: "MON", openTime: "8am", closeTime: "10pm", isOpen: true }, // Invalid time format
+          { day: "MON", openTime: "8am", closeTime: "10pm", isOpen: true },
         ],
       }),
     });
@@ -353,7 +351,6 @@ describe("Branches Module Integration Tests", () => {
   test("11. RBAC: Employee without branches.manage permission gets 403 on branch endpoints", async () => {
     const limitedEmail = `limited-${Date.now()}@test.com`;
 
-    // Create a custom role WITHOUT branches.manage
     const roleRes = await fetch(`${baseUrl}/api/v1/roles`, {
       method: "POST",
       headers: {
@@ -370,7 +367,6 @@ describe("Branches Module Integration Tests", () => {
     assert.equal(roleRes.status, 201);
     const roleBody = await roleRes.json();
 
-    // Create an employee holding that limited role
     const empRes = await fetch(`${baseUrl}/api/v1/employees`, {
       method: "POST",
       headers: {

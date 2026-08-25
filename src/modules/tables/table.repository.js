@@ -2,9 +2,7 @@ import prisma from "../../lib/prisma.js";
 import { AuthenticationError } from "../../shared/errors/index.js";
 
 export class TableRepository {
-  /**
-   * Finds tables for a specific branch with pagination and optional status filter.
-   */
+
   async findTablesByBranch(tenantContext, branchId, { page = 1, limit = 20, status } = {}) {
     if (!tenantContext || !tenantContext.restaurantId) {
       throw new AuthenticationError("TenantContext with restaurantId is required");
@@ -40,9 +38,6 @@ export class TableRepository {
     return { items, total };
   }
 
-  /**
-   * Finds a single table by ID under a specific branch.
-   */
   async findTableById(tenantContext, branchId, tableId) {
     if (!tenantContext || !tenantContext.restaurantId) {
       throw new AuthenticationError("TenantContext with restaurantId is required");
@@ -69,9 +64,6 @@ export class TableRepository {
     });
   }
 
-  /**
-   * Finds a table by label in a specific branch.
-   */
   async findTableByLabel(tenantContext, branchId, label) {
     if (!tenantContext || !tenantContext.restaurantId) {
       throw new AuthenticationError("TenantContext with restaurantId is required");
@@ -87,9 +79,6 @@ export class TableRepository {
     });
   }
 
-  /**
-   * Creates a new table for a branch.
-   */
   async createTable(tenantContext, branchId, tableData) {
     if (!tenantContext || !tenantContext.restaurantId) {
       throw new AuthenticationError("TenantContext with restaurantId is required");
@@ -116,9 +105,6 @@ export class TableRepository {
     });
   }
 
-  /**
-   * Updates table fields (ownership verified first via findTableById).
-   */
   async updateTable(tenantContext, branchId, tableId, data) {
     const existing = await this.findTableById(tenantContext, branchId, tableId);
     if (!existing) {
@@ -138,9 +124,6 @@ export class TableRepository {
     });
   }
 
-  /**
-   * Soft deletes a table (sets deletedAt and status to MAINTENANCE).
-   */
   async softDeleteTable(tenantContext, branchId, tableId) {
     const existing = await this.findTableById(tenantContext, branchId, tableId);
     if (!existing) {
@@ -161,9 +144,6 @@ export class TableRepository {
     });
   }
 
-  /**
-   * Rotates / updates QR token for a table.
-   */
   async updateQrToken(tenantContext, branchId, tableId, newQrToken) {
     const existing = await this.findTableById(tenantContext, branchId, tableId);
     if (!existing) {
@@ -183,16 +163,11 @@ export class TableRepository {
     });
   }
 
-  /**
-   * Finds table by QR token for public table menu resolution.
-   * Scopes explicitly via candidate Restaurant lookup to satisfy Tenant Safety-Net.
-   */
   async findTableByQrToken(qrToken) {
     if (!qrToken) {
       return null;
     }
 
-    // 1. Resolve candidate restaurantId via non-tenant-scoped Restaurant root
     const candidateRestaurant = await prisma.restaurant.findFirst({
       where: {
         tables: {
@@ -209,7 +184,6 @@ export class TableRepository {
       return null;
     }
 
-    // 2. Query RestaurantTable with explicit restaurantId (Safety-Net compliant!)
     return prisma.restaurantTable.findFirst({
       where: {
         restaurantId: candidateRestaurant.id,

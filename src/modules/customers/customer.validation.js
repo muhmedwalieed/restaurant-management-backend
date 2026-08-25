@@ -13,7 +13,7 @@ export const createCustomerSchema = z.object({
     .object({
       firstName: z.string().min(1).max(60).optional(),
       lastName: z.string().max(60).optional(),
-      name: z.string().min(1).max(100).optional(), // legacy full-name fallback
+      name: z.string().min(1).max(100).optional(),
       phone: z.string().min(3, "Valid phone number is required").max(30),
       phones: z.array(z.string().min(3).max(30)).optional(),
       notes: z.string().max(500).optional(),

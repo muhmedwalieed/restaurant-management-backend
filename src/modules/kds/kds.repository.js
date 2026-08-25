@@ -2,10 +2,7 @@ import prisma from "../../lib/prisma.js";
 import { AuthenticationError } from "../../shared/errors/index.js";
 
 export class KdsRepository {
-  /**
-   * Finds active kitchen orders for a branch with FIFO ordering (createdAt ASC).
-   * By default returns orders in 'CONFIRMED' or 'PREPARING' status.
-   */
+
   async findActiveKitchenOrders(tenantContext, branchId, { page = 1, limit = 20, status } = {}) {
     if (!tenantContext || !tenantContext.restaurantId) {
       throw new AuthenticationError("TenantContext with restaurantId is required");

@@ -3,10 +3,7 @@ import { ConflictError, NotFoundError } from "../../shared/errors/index.js";
 import { emitEvent, DomainEvent } from "../../shared/events/event-bus.js";
 
 export class CustomerService {
-  /**
-   * Derives firstName / lastName / full name. Accepts firstName+lastName,
-   * or a legacy full `name` as a fallback.
-   */
+
   normalizeName(payload) {
     const firstName = payload.firstName?.trim() || payload.name?.trim() || "";
     const lastName = payload.lastName?.trim() || null;
@@ -88,7 +85,6 @@ export class CustomerService {
       }
     }
 
-    // Keep existing first/last name when only a partial update is sent
     const names = this.normalizeName({ ...customer, ...payload });
     const phones = payload.phones
       ? [...new Set(payload.phones.map((p) => p.trim()).filter(Boolean))]
@@ -193,9 +189,6 @@ export class CustomerService {
     return customerRepository.softDeleteAddress(tenantContext, customerId, addressId);
   }
 
-  /**
-   * Helper to find or create customer by phone for order auto-link (Atomic transaction).
-   */
   async findOrCreateCustomerByPhone(tenantContext, { phone, name }) {
     if (!phone) return null;
 

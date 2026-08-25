@@ -13,7 +13,7 @@ describe("Menu Module Integration & Security Tests", () => {
 
   let tenantA;
   let ownerAToken;
-  let staffAToken; // Employee without menu.manage permission
+  let staffAToken;
 
   let tenantB;
   let ownerBToken;
@@ -33,7 +33,6 @@ describe("Menu Module Integration & Security Tests", () => {
       });
     });
 
-    // Setup Tenant A
     const regA = await authService.register({
       name: "Owner Menu A",
       email: `ownermenua-${Date.now()}@test.com`,
@@ -51,7 +50,6 @@ describe("Menu Module Integration & Security Tests", () => {
     });
     ownerAToken = loginA.accessToken;
 
-    // Create staff role without menu.manage permission for Tenant A
     const branchA = await prisma.branch.findFirst({ where: { restaurantId: tenantA.id } });
     const noMenuRole = await prisma.role.create({
       data: {
@@ -82,7 +80,6 @@ describe("Menu Module Integration & Security Tests", () => {
     });
     staffAToken = staffLogin.accessToken;
 
-    // Setup Tenant B
     const regB = await authService.register({
       name: "Owner Menu B",
       email: `ownermenub-${Date.now()}@test.com`,
@@ -158,7 +155,7 @@ describe("Menu Module Integration & Security Tests", () => {
         Authorization: `Bearer ${ownerAToken}`,
       },
       body: JSON.stringify({
-        name: "Main Courses", // Duplicate name!
+        name: "Main Courses",
       }),
     });
 
@@ -168,7 +165,7 @@ describe("Menu Module Integration & Security Tests", () => {
   });
 
   test("3. GET /api/v1/menu/categories lists tenant categories", async () => {
-    // Create second category
+
     const res2 = await fetch(`${baseUrl}/api/v1/menu/categories`, {
       method: "POST",
       headers: {
@@ -223,7 +220,7 @@ describe("Menu Module Integration & Security Tests", () => {
   });
 
   test("5. Cross-Tenant categoryId: Creating product with Tenant B category returns 404 Not Found", async () => {
-    // Tenant B creates a category
+
     const resCatB = await fetch(`${baseUrl}/api/v1/menu/categories`, {
       method: "POST",
       headers: {
@@ -237,15 +234,14 @@ describe("Menu Module Integration & Security Tests", () => {
     const bodyCatB = await resCatB.json();
     const categoryB = bodyCatB.data;
 
-    // Tenant A attempts to create product referencing Tenant B's category
     const res = await fetch(`${baseUrl}/api/v1/menu/products`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${ownerAToken}`, // Owner A
+        Authorization: `Bearer ${ownerAToken}`,
       },
       body: JSON.stringify({
-        categoryId: categoryB.id, // Category from Tenant B!
+        categoryId: categoryB.id,
         name: "Illegal Cross-Tenant Product",
         price: 10.0,
       }),
@@ -333,7 +329,7 @@ describe("Menu Module Integration & Security Tests", () => {
   test("11. Cross-Tenant Protection: Tenant B cannot access Tenant A's product (404 Not Found)", async () => {
     const res = await fetch(`${baseUrl}/api/v1/menu/products/${productA1.id}`, {
       headers: {
-        Authorization: `Bearer ${ownerBToken}`, // Token B
+        Authorization: `Bearer ${ownerBToken}`,
       },
     });
 
@@ -345,7 +341,7 @@ describe("Menu Module Integration & Security Tests", () => {
   test("12. RBAC: Employee without menu.manage permission gets 403 AuthorizationError", async () => {
     const res = await fetch(`${baseUrl}/api/v1/menu/categories`, {
       headers: {
-        Authorization: `Bearer ${staffAToken}`, // Staff token without menu.manage
+        Authorization: `Bearer ${staffAToken}`,
       },
     });
 

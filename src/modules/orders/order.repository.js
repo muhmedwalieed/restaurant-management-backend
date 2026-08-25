@@ -1,11 +1,9 @@
 import prisma from "../../lib/prisma.js";
-import { AuthenticationError, ConflictError } from "../../shared/errors/index.js";
+import { AuthenticationError, ConflictError, NotFoundError } from "../../shared/errors/index.js";
 import couponService from "../coupons/coupon.service.js";
 
 export class OrderRepository {
-  /**
-   * Finds idempotent key entry within 24 hours.
-   */
+
   async findIdempotencyKey(restaurantId, key) {
     if (!restaurantId) return null;
 
@@ -21,9 +19,6 @@ export class OrderRepository {
     });
   }
 
-  /**
-   * Calculates the next sequential order number for a branch.
-   */
   async findNextOrderNumber(restaurantId, branchId, tx = prisma) {
     const lastOrder = await tx.order.findFirst({
       where: {
@@ -37,9 +32,6 @@ export class OrderRepository {
     return (lastOrder?.orderNumber || 1000) + 1;
   }
 
-  /**
-   * Finds orders for a specific branch with filters and pagination.
-   */
   async findOrdersByBranch(tenantContext, branchId, { page = 1, limit = 20, status, type, source, tableId } = {}) {
     if (!tenantContext || !tenantContext.restaurantId) {
       throw new AuthenticationError("TenantContext with restaurantId is required");
@@ -80,10 +72,6 @@ export class OrderRepository {
     return { items, total };
   }
 
-  /**
-   * Finds orders across ALL branches of the tenant with filters and pagination —
-   * the unified "all orders in one place" view (optional branchId filter).
-   */
   async findOrdersByTenant(tenantContext, { page = 1, limit = 20, status, type, source, branchId, tableId } = {}) {
     if (!tenantContext || !tenantContext.restaurantId) {
       throw new AuthenticationError("TenantContext with restaurantId is required");
@@ -127,9 +115,6 @@ export class OrderRepository {
     return { items, total };
   }
 
-  /**
-   * Finds single order by ID under a specific branch.
-   */
   async findOrderById(tenantContext, branchId, orderId) {
     if (!tenantContext || !tenantContext.restaurantId) {
       throw new AuthenticationError("TenantContext with restaurantId is required");
@@ -177,18 +162,16 @@ export class OrderRepository {
     });
   }
 
-  /**
-   * Creates an order with items, status history, and optional idempotency key inside a single transaction.
-   */
   async createOrderTransaction(tenantContext, branchId, orderPayload, itemsPayload, idempotencyKey = null) {
     const restaurantId = tenantContext.restaurantId;
 
-    return prisma.$transaction(async (tx) => {
-      // 1. Calculate next orderNumber
+    const MAX_RETRIES = 3;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await prisma.$transaction(async (tx) => {
+
       const orderNumber = await this.findNextOrderNumber(restaurantId, branchId, tx);
 
-      // 1b. Apply coupon atomically (row-locked usage counter + server-side discount).
-      // A failed coupon (expired/usage-limit/conditions) rolls back the whole order.
       const subtotal = Number(orderPayload.subtotal);
       let discountAmount = Number(orderPayload.discountAmount || 0);
       if (orderPayload.couponId) {
@@ -201,7 +184,6 @@ export class OrderRepository {
       }
       const total = Math.max(0, subtotal - discountAmount);
 
-      // 2. Create Order
       const order = await tx.order.create({
         data: {
           orderNumber,
@@ -224,7 +206,6 @@ export class OrderRepository {
         },
       });
 
-      // 3. Create OrderItems
       const itemsToCreate = itemsPayload.map((item) => ({
         restaurantId,
         orderId: order.id,
@@ -235,13 +216,13 @@ export class OrderRepository {
         subtotal: item.subtotal,
         notes: item.notes || null,
         selectedModifiers: item.selectedModifiers || null,
+        round: item.round || 1,
       }));
 
       await tx.orderItem.createMany({
         data: itemsToCreate,
       });
 
-      // 4. Update Table Status to OCCUPIED if tableId provided (ADR-015 Table Lifecycle)
       if (orderPayload.tableId) {
         await tx.restaurantTable.updateMany({
           where: {
@@ -257,7 +238,6 @@ export class OrderRepository {
         });
       }
 
-      // 5. Create Initial OrderStatusHistory
       await tx.orderStatusHistory.create({
         data: {
           restaurantId,
@@ -269,7 +249,6 @@ export class OrderRepository {
         },
       });
 
-      // 6. Save IdempotencyKey if provided
       if (idempotencyKey) {
         const responseData = {
           statusCode: 201,
@@ -294,7 +273,6 @@ export class OrderRepository {
         });
       }
 
-      // Fetch full order with items for controller response
       return tx.order.findFirst({
         where: { id: order.id, restaurantId },
         include: {
@@ -308,14 +286,14 @@ export class OrderRepository {
           statusHistory: true,
         },
       });
-    });
+        });
+      } catch (err) {
+        if (err?.code === "P2002" && attempt < MAX_RETRIES - 1) continue;
+        throw err;
+      }
+    }
   }
 
-  /**
-   * Appends new items to an existing order (used for table-session order rounds).
-   * Keeps ONE real order per table session: the bill is the running total of all rounds.
-   * QR session orders carry no coupon/discount, so the existing discount is preserved.
-   */
   async appendItemsToOrder(tenantContext, branchId, orderId, itemsPayload) {
     const restaurantId = tenantContext.restaurantId;
     return prisma.$transaction(async (tx) => {
@@ -336,6 +314,7 @@ export class OrderRepository {
         subtotal: item.subtotal,
         notes: item.notes || null,
         selectedModifiers: item.selectedModifiers || null,
+        round: item.round || 1,
       }));
 
       await tx.orderItem.createMany({ data: itemsToCreate });
@@ -349,13 +328,22 @@ export class OrderRepository {
         data: { subtotal: newSubtotal, total: newTotal, version: { increment: 1 } },
       });
 
+      const roundAdded = Math.max(...itemsPayload.map((i) => Number(i.round || 1)));
+      await tx.orderStatusHistory.create({
+        data: {
+          restaurantId,
+          orderId: order.id,
+          fromStatus: order.status,
+          toStatus: order.status,
+          changedById: tenantContext.employeeId || null,
+          reason: `Order round ${roundAdded} added`,
+        },
+      });
+
       return order.id;
     });
   }
 
-  /**
-   * Executes Atomic Optimistic Update + Status History creation inside a single $transaction (Section 25.3).
-   */
   async updateOrderStatusWithHistoryTransaction(
     tenantContext,
     branchId,
@@ -399,12 +387,18 @@ export class OrderRepository {
         },
       });
 
-      // Table Release Policy (ADR-015): Release table to AVAILABLE if DELIVERED or CANCELLED and no active orders remain
       if (newStatus === "DELIVERED" || newStatus === "CANCELLED") {
         const orderData = await tx.order.findFirst({
           where: { id: orderId, branchId, restaurantId },
-          select: { tableId: true },
+          select: { tableId: true, couponId: true },
         });
+
+        if (newStatus === "CANCELLED" && orderData?.couponId) {
+          await tx.coupon.updateMany({
+            where: { id: orderData.couponId, restaurantId, timesUsed: { gt: 0 } },
+            data: { timesUsed: { decrement: 1 }, updatedAt: new Date() },
+          });
+        }
 
         if (orderData?.tableId) {
           const activeCount = await tx.order.count({
@@ -438,9 +432,6 @@ export class OrderRepository {
     });
   }
 
-  /**
-   * Executes Atomic Optimistic Order Payment update inside a single $transaction.
-   */
   async updateOrderPaymentWithHistoryTransaction(
     tenantContext,
     branchId,
@@ -519,9 +510,6 @@ export class OrderRepository {
     });
   }
 
-  /**
-   * Executes Atomic Optimistic Order Refund update inside a single $transaction.
-   */
   async updateOrderRefundWithHistoryTransaction(
     tenantContext,
     branchId,
@@ -573,9 +561,6 @@ export class OrderRepository {
     });
   }
 
-  /**
-   * Finds order status history timeline.
-   */
   async findOrderHistory(tenantContext, branchId, orderId) {
     const order = await this.findOrderById(tenantContext, branchId, orderId);
     if (!order) return null;

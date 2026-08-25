@@ -2,9 +2,7 @@ import prisma from "../../lib/prisma.js";
 import { AuthenticationError } from "../../shared/errors/index.js";
 
 export class WhatsAppRepository {
-  /**
-   * Finds the latest WhatsAppConnection for a tenant.
-   */
+
   async findConnectionByTenant(tenantContext) {
     if (!tenantContext || !tenantContext.restaurantId) {
       throw new AuthenticationError("TenantContext with restaurantId is required");
@@ -18,9 +16,6 @@ export class WhatsAppRepository {
     });
   }
 
-  /**
-   * Finds WhatsAppConnection by ID under a specific tenant.
-   */
   async findConnectionById(tenantContext, id) {
     if (!tenantContext || !tenantContext.restaurantId) {
       throw new AuthenticationError("TenantContext with restaurantId is required");
@@ -34,9 +29,6 @@ export class WhatsAppRepository {
     });
   }
 
-  /**
-   * Finds WhatsAppConnection by providerAccountId under a specific tenant.
-   */
   async findConnectionByAccountId(tenantContext, providerAccountId) {
     if (!tenantContext || !tenantContext.restaurantId) {
       throw new AuthenticationError("TenantContext with restaurantId is required");
@@ -50,13 +42,9 @@ export class WhatsAppRepository {
     });
   }
 
-  /**
-   * Public Webhook Lookup: Resolves connection by providerPhoneNumberId across active tenants.
-   */
   async findConnectionByPhoneNumberId(providerPhoneNumberId) {
     if (!providerPhoneNumberId) return null;
 
-    // Safety-net compliant tenant candidate resolution
     const candidateRestaurant = await prisma.restaurant.findFirst({
       where: {
         whatsappConnections: {
@@ -80,14 +68,11 @@ export class WhatsAppRepository {
     });
   }
 
-  /**
-   * Creates a new connection enforcing Single Active Connection Policy (ADR-017) inside a $transaction.
-   */
   async createConnectionTransaction(tenantContext, connectionData) {
     const restaurantId = tenantContext.restaurantId;
 
     return prisma.$transaction(async (tx) => {
-      // 1. Deactivate existing connections for this tenant if new status is ACTIVE
+
       if (connectionData.status === "ACTIVE" || connectionData.status === undefined) {
         await tx.whatsAppConnection.updateMany({
           where: {
@@ -101,7 +86,6 @@ export class WhatsAppRepository {
         });
       }
 
-      // 2. Create new connection
       return tx.whatsAppConnection.create({
         data: {
           restaurantId,
@@ -116,9 +100,6 @@ export class WhatsAppRepository {
     });
   }
 
-  /**
-   * Updates a connection enforcing Single Active Connection Policy if status becomes ACTIVE.
-   */
   async updateConnectionTransaction(tenantContext, connectionId, data) {
     const restaurantId = tenantContext.restaurantId;
 
@@ -150,9 +131,6 @@ export class WhatsAppRepository {
     });
   }
 
-  /**
-   * Soft deactivates connection (status -> DISCONNECTED) to protect FK relation on WhatsAppMessage (ADR-017).
-   */
   async softDeactivateConnection(tenantContext, connectionId) {
     if (!tenantContext || !tenantContext.restaurantId) {
       throw new AuthenticationError("TenantContext with restaurantId is required");
@@ -169,8 +147,6 @@ export class WhatsAppRepository {
       },
     });
   }
-
-  // ==================== MESSAGES ====================
 
   async createMessage(tenantContext, messageData) {
     if (!tenantContext || !tenantContext.restaurantId) {
@@ -269,8 +245,6 @@ export class WhatsAppRepository {
       },
     });
   }
-
-  // ==================== WEBHOOK EVENTS ====================
 
   async findEventByEventId(tenantContext, eventId) {
     if (!tenantContext || !tenantContext.restaurantId) {

@@ -11,8 +11,8 @@ import env from "../../config/env.js";
 const router = Router();
 
 const authRateLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: env.NODE_ENV === "test" ? 1000 : 10, // 10 attempts per 15 minutes in production
+  windowMs: 15 * 60 * 1000,
+  max: env.NODE_ENV === "test" ? 1000 : 10,
   message: {
     success: false,
     error: {
@@ -24,7 +24,6 @@ const authRateLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-// Public endpoints
 router.post("/register", authRateLimiter, validate(registerSchema), (req, res, next) => {
   authController.register(req, res, next);
 });
@@ -37,7 +36,6 @@ router.post("/refresh", authRateLimiter, validate(refreshTokenSchema), (req, res
   authController.refresh(req, res, next);
 });
 
-// Authenticated endpoints
 router.post("/logout", authenticate, requireTenantContext, (req, res, next) => {
   authController.logout(req, res, next);
 });

@@ -17,12 +17,8 @@ export const ALLOWED_IMAGE_TYPES = {
   "image/gif": ".gif",
 };
 
-export const MAX_IMAGE_SIZE = 2 * 1024 * 1024; // 2 MB
+export const MAX_IMAGE_SIZE = 2 * 1024 * 1024;
 
-/**
- * Disk storage: random UUID filename + extension derived from the MIME type,
- * never from the client-supplied original name (prevents path/extension tricks).
- */
 const storage = multer.diskStorage({
   destination: UPLOADS_DIR,
   filename: (req, file, cb) => {
@@ -43,11 +39,6 @@ export const uploadImageMiddleware = multer({
   },
 });
 
-/**
- * Verifies the first bytes of an uploaded file match a real image signature,
- * so a spoofed MIME type can't smuggle an arbitrary file through.
- * @returns {{ ok: boolean, type: string|null }}
- */
 export function sniffImage(filePath) {
   let header;
   try {
@@ -58,19 +49,18 @@ export function sniffImage(filePath) {
 
   const b = header.subarray(0, 12);
 
-  // JPEG: FF D8 FF
   if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) {
     return { ok: true, type: "image/jpeg" };
   }
-  // PNG: 89 50 4E 47 0D 0A 1A 0A
+
   if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) {
     return { ok: true, type: "image/png" };
   }
-  // WEBP: RIFF....WEBP
+
   if (b.subarray(0, 4).toString("latin1") === "RIFF" && b.subarray(8, 12).toString("latin1") === "WEBP") {
     return { ok: true, type: "image/webp" };
   }
-  // GIF: GIF87a / GIF89a
+
   const gif = b.subarray(0, 6).toString("latin1");
   if (gif === "GIF87a" || gif === "GIF89a") {
     return { ok: true, type: "image/gif" };

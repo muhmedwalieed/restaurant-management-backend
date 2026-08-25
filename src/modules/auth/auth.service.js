@@ -9,17 +9,12 @@ import redis from "../../config/redis.js";
 import logger from "../../config/logger.js";
 import prisma from "../../lib/prisma.js";
 
-/**
- * Computes SHA-256 hash of a refresh token.
- */
 function hashRefreshToken(token) {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
 export class AuthService {
-  /**
-   * Registers a new Restaurant + Owner Employee in a single transaction.
-   */
+
   async register(data) {
     const ownerPasswordHash = await hashPassword(data.password);
 
@@ -51,9 +46,6 @@ export class AuthService {
     };
   }
 
-  /**
-   * Handles Employee Login with Single Active Session enforcement.
-   */
   async login({ email, password, device, ipAddress, forceLogout = false }) {
     const employee = await authRepository.findEmployeeByEmailForLogin(email);
 
@@ -71,8 +63,6 @@ export class AuthService {
     const restaurantId = employee.restaurantId;
     const employeeId = employee.id;
 
-    // Single Active Session Check (Fix #5):
-    // Check if an active session exists on a DIFFERENT device fingerprint
     const otherDeviceSession = await authRepository.findActiveSessionOnDifferentDevice(
       restaurantId,
       employeeId,
@@ -90,7 +80,6 @@ export class AuthService {
       }
     }
 
-    // Check if session exists on SAME device fingerprint
     let session = await authRepository.findActiveSessionByDevice(restaurantId, employeeId, device);
 
     const dummyRefreshToken = signRefreshToken({ employeeId, restaurantId });
@@ -108,7 +97,6 @@ export class AuthService {
       });
     }
 
-    // Generate JWT Tokens with sessionId in payload
     const tokenPayload = {
       sessionId: session.id,
       restaurantId: employee.restaurantId,
@@ -124,7 +112,6 @@ export class AuthService {
       employeeId: employee.id,
     });
 
-    // Update DB with actual refresh token hash
     const finalHash = hashRefreshToken(refreshToken);
     await authRepository.updateSessionRefreshHash(restaurantId, session.id, finalHash);
 
@@ -144,10 +131,6 @@ export class AuthService {
     };
   }
 
-  /**
-   * Returns the authenticated employee profile with role + permission keys.
-   * Source of truth for the Frontend User Context.
-   */
   async me(tenantContext) {
     if (!tenantContext?.employeeId || !tenantContext?.restaurantId) {
       throw new AuthenticationError("Tenant context is required");
@@ -187,9 +170,6 @@ export class AuthService {
       throw new NotFoundError("Employee not found");
     }
 
-    // Owner bypass: an owner ALWAYS holds every permission key, regardless of
-    // RolePermission rows (a tenant registered before later permissions were
-    // seeded would otherwise miss them). Matches authorize.middleware.js.
     if (employee.role.isSystem && employee.role.name === "owner") {
       return {
         ...employee,
@@ -219,9 +199,6 @@ export class AuthService {
     };
   }
 
-  /**
-   * Handles Token Refresh with Rotation & Employee re-validation (Fix #4).
-   */
   async refresh({ refreshToken }) {
     if (!refreshToken) {
       throw new AuthenticationError("Refresh token is required");
@@ -244,14 +221,12 @@ export class AuthService {
       throw new AuthenticationError("Invalid or revoked refresh token");
     }
 
-    // Employee Re-validation (Fix #4):
     const employee = session.employee;
     if (!employee || employee.status !== "ACTIVE" || employee.deletedAt !== null) {
       await authRepository.endSession(session.restaurantId, session.id);
       throw new AuthenticationError("Employee account is inactive or deleted");
     }
 
-    // Token Rotation: Generate new Access & Refresh tokens, invalidate old hash
     const newAccessToken = signAccessToken({
       sessionId: session.id,
       restaurantId: session.restaurantId,
@@ -275,9 +250,6 @@ export class AuthService {
     };
   }
 
-  /**
-   * Handles normal Logout for current session.
-   */
   async logout(tenantContext) {
     if (!tenantContext || !tenantContext.sessionId) {
       return;
@@ -285,15 +257,11 @@ export class AuthService {
     await authRepository.endSession(tenantContext.restaurantId, tenantContext.sessionId);
   }
 
-  /**
-   * Force logouts target employee & invalidates Redis permission cache (Fix #2).
-   */
   async forceLogout(tenantContext, targetEmployeeId) {
     if (!tenantContext || !tenantContext.restaurantId) {
       throw new AuthenticationError("TenantContext required");
     }
 
-    // Self force-logout check (Fix #2):
     if (tenantContext.employeeId === targetEmployeeId) {
       throw new BusinessRuleError("You cannot force logout your active session");
     }
@@ -308,7 +276,6 @@ export class AuthService {
       metadata: { byEmployeeId: tenantContext.employeeId || null },
     });
 
-    // Immediate Redis Permission Cache Invalidation
     try {
       await redis.del(`permissions:${targetEmployeeId}`);
     } catch (err) {

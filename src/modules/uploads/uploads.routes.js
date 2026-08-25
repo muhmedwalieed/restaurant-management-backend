@@ -8,7 +8,6 @@ import { requireTenantContext } from "../../shared/middleware/tenant-context.js"
 const router = Router();
 router.use(authenticate, requireTenantContext);
 
-// Throttle uploads so a single account can't fill the disk in a burst.
 const uploadLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 20,

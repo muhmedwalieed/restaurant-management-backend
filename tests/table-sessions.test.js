@@ -101,14 +101,13 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
     assert.match(body.data.pin, /^\d{4}$/);
     sessionState = { sessionId: body.data.sessionId, pin: body.data.pin };
 
-    // Opening a session marks the table as OCCUPIED.
     const tableAfterStart = await prisma.restaurantTable.findFirst({
       where: { id: table.id, restaurantId: tenant.id },
     });
     assert.equal(tableAfterStart.status, "OCCUPIED");
   });
 
-  test("2. Two customers join with name + PIN", async () => {
+  test("2. Two customers join with name + PIN (join never leaks the PIN)", async () => {
     const j1 = await fetch(`${baseUrl}/api/v1/sessions/${table.qrToken}/join`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -118,6 +117,9 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
     const b1 = await j1.json();
     assert.equal(b1.success, true);
     assert.equal(b1.data.id, sessionState.sessionId);
+    assert.ok(b1.data.memberToken, "join should return a member token");
+    assert.equal(b1.data.pin, undefined, "join must never expose the PIN");
+    sessionState.tokenA = b1.data.memberToken;
 
     const j2 = await fetch(`${baseUrl}/api/v1/sessions/${table.qrToken}/join`, {
       method: "POST",
@@ -125,14 +127,17 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
       body: JSON.stringify({ name: "سارة", pin: sessionState.pin }),
     });
     assert.equal(j2.status, 200);
-    assert.equal((await j2.json()).success, true);
+    const b2 = await j2.json();
+    assert.equal(b2.success, true);
+    assert.ok(b2.data.memberToken);
+    sessionState.tokenB = b2.data.memberToken;
   });
 
   test("3. Members add items to the shared cart", async () => {
     const a1 = await fetch(`${baseUrl}/api/v1/sessions/${sessionState.sessionId}/items`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ productId: product1.id, quantity: 2, addedByName: "أحمد" }),
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionState.tokenA}` },
+      body: JSON.stringify({ productId: product1.id, quantity: 2 }),
     });
     assert.equal(a1.status, 200);
     const a1Body = await a1.json();
@@ -140,8 +145,8 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
 
     const a2 = await fetch(`${baseUrl}/api/v1/sessions/${sessionState.sessionId}/items`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ productId: product2.id, quantity: 1, addedByName: "سارة" }),
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionState.tokenB}` },
+      body: JSON.stringify({ productId: product2.id, quantity: 1 }),
     });
     assert.equal(a2.status, 200);
     const a2Body = await a2.json();
@@ -152,14 +157,14 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
   test("4. Submitting the draft creates order round #1 (AWAITING_CONFIRMATION) with per-member breakdown", async () => {
     const res = await fetch(`${baseUrl}/api/v1/sessions/${sessionState.sessionId}/submit`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionState.tokenA}` },
     });
     assert.equal(res.status, 200);
     const body = await res.json();
     const s = body.data;
 
     assert.equal(s.status, "AWAITING_CONFIRMATION");
-    // Current cart is now empty (items moved into the order round)
+
     assert.equal(s.items.length, 0);
     assert.equal(s.total, 0);
     assert.equal(s.orders.length, 1);
@@ -170,7 +175,6 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
     assert.equal(order.total, 125);
     assert.equal(order.items.length, 2);
 
-    // Per-member breakdown
     const ahmed = order.byMember.find((m) => m.name === "أحمد");
     const sara = order.byMember.find((m) => m.name === "سارة");
     assert.ok(ahmed, "member أحمد should have a bill row");
@@ -184,8 +188,8 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
   test("5. Customers cannot add items while an order is awaiting confirmation", async () => {
     const res = await fetch(`${baseUrl}/api/v1/sessions/${sessionState.sessionId}/items`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ productId: product1.id, quantity: 1, addedByName: "أحمد" }),
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionState.tokenA}` },
+      body: JSON.stringify({ productId: product1.id, quantity: 1 }),
     });
     assert.equal(res.status, 422);
     const body = await res.json();
@@ -201,7 +205,7 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
     const body = await res.json();
     const s = body.data;
 
-    assert.equal(s.status, "ACTIVE"); // open for the next round
+    assert.equal(s.status, "ACTIVE");
     assert.equal(s.orders.length, 1);
     const order = s.orders[0];
     assert.equal(order.status, "CONFIRMED");
@@ -209,7 +213,6 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
     assert.ok(order.confirmedAt);
     assert.equal(s.confirmedOrderId, order.orderId);
 
-    // The real order exists in the orders table
     const realOrder = await prisma.order.findFirst({
       where: { id: order.orderId, restaurantId: tenant.id },
     });
@@ -220,18 +223,18 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
   });
 
   test("7. Customers can place a second round after confirmation", async () => {
-    // Round 2: new items allowed again
+
     const a1 = await fetch(`${baseUrl}/api/v1/sessions/${sessionState.sessionId}/items`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ productId: product1.id, quantity: 1, addedByName: "سارة" }),
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionState.tokenB}` },
+      body: JSON.stringify({ productId: product1.id, quantity: 1 }),
     });
     assert.equal(a1.status, 200);
     assert.equal((await a1.json()).data.total, 50);
 
     const sub = await fetch(`${baseUrl}/api/v1/sessions/${sessionState.sessionId}/submit`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionState.tokenB}` },
     });
     assert.equal(sub.status, 200);
     const subBody = await sub.json();
@@ -258,19 +261,22 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
     );
     assert.equal(s.orders[1].byMember[0].name, "سارة");
 
-    // Both rounds must reference the SAME real order (one order per session).
     assert.equal(s.orders[0].orderId, s.orders[1].orderId);
     assert.equal(s.confirmedOrderId, s.orders[0].orderId);
 
-    // The single real order holds the items of BOTH rounds and the running total.
     const realOrder = await prisma.order.findFirst({
       where: { id: s.orders[0].orderId, restaurantId: tenant.id },
       include: { items: true },
     });
     assert.ok(realOrder);
-    assert.equal(realOrder.items.length, 3); // 2 (round 1) + 1 (round 2)
-    assert.equal(Number(realOrder.subtotal), 175); // 125 + 50
+    assert.equal(realOrder.items.length, 3);
+    assert.equal(Number(realOrder.subtotal), 175);
     assert.equal(Number(realOrder.total), 175);
+
+    assert.deepEqual(
+      realOrder.items.map((i) => i.round).sort(),
+      [1, 1, 2]
+    );
   });
 
   test("9. Items of a confirmed order round cannot be edited", async () => {
@@ -280,7 +286,7 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
 
     const res = await fetch(`${baseUrl}/api/v1/sessions/${sessionState.sessionId}/items/${itemId}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionState.tokenA}` },
       body: JSON.stringify({ quantity: 5 }),
     });
     assert.equal(res.status, 422);
@@ -295,7 +301,6 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
     assert.equal(close.status, 200);
     assert.equal((await close.json()).data.status, "CLOSED");
 
-    // Closing the session frees the table back to AVAILABLE.
     const tableAfterClose = await prisma.restaurantTable.findFirst({
       where: { id: table.id, restaurantId: tenant.id },
     });
@@ -303,13 +308,13 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
 
     const sub = await fetch(`${baseUrl}/api/v1/sessions/${sessionState.sessionId}/submit`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionState.tokenA}` },
     });
     assert.equal(sub.status, 422);
   });
 
   test("11. Staff endpoint returns the session PIN; public endpoint never leaks it", async () => {
-    // Start a fresh session so there is a PIN to expose.
+
     const start = await fetch(`${baseUrl}/api/v1/tables/start`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${ownerToken}` },
@@ -319,7 +324,6 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
     const started = (await start.json()).data;
     assert.match(started.pin, /^\d{4}$/);
 
-    // Staff projection (GET /tables/table/:tableId/session) includes the PIN.
     const staff = await fetch(`${baseUrl}/api/v1/tables/table/${table.id}/session`, {
       headers: { Authorization: `Bearer ${ownerToken}` },
     });
@@ -327,13 +331,11 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
     const staffBody = await staff.json();
     assert.equal(staffBody.data.pin, started.pin);
 
-    // Public projection (GET /sessions/:id) must NOT include the PIN.
     const pub = await fetch(`${baseUrl}/api/v1/sessions/${started.sessionId}`);
     assert.equal(pub.status, 200);
     const pubBody = await pub.json();
     assert.equal(pubBody.data.pin, undefined);
 
-    // Cleanup this extra session.
     await prisma.tableSession.deleteMany({ where: { id: started.sessionId } });
   });
 
@@ -345,7 +347,6 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
     });
     const started = (await start.json()).data;
 
-    // Force the stored PIN to null to simulate a legacy session.
     await prisma.tableSession.update({ where: { id: started.sessionId }, data: { pin: null } });
 
     const regen = await fetch(`${baseUrl}/api/v1/tables/${started.sessionId}/regenerate-pin`, {
@@ -358,14 +359,12 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
     assert.match(regenBody.data.pin, /^\d{4}$/);
     assert.notEqual(regenBody.data.pin, started.pin);
 
-    // Staff view now exposes the regenerated PIN.
     const staff = await fetch(`${baseUrl}/api/v1/tables/table/${table.id}/session`, {
       headers: { Authorization: `Bearer ${ownerToken}` },
     });
     const staffBody = await staff.json();
     assert.equal(staffBody.data.pin, regenBody.data.pin);
 
-    // Cleanup.
     await prisma.tableSession.deleteMany({ where: { id: started.sessionId } });
   });
 
@@ -377,24 +376,26 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
     });
     const { sessionId, pin } = (await start.json()).data;
 
-    await fetch(`${baseUrl}/api/v1/sessions/${table.qrToken}/join`, {
+    const join = await fetch(`${baseUrl}/api/v1/sessions/${table.qrToken}/join`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: "كريم", pin }),
     });
+    const memberToken = (await join.json()).data.memberToken;
+    const auth = { "Content-Type": "application/json", Authorization: `Bearer ${memberToken}` };
+
     const add = await fetch(`${baseUrl}/api/v1/sessions/${sessionId}/items`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ productId: product1.id, quantity: 1, addedByName: "كريم" }),
+      headers: auth,
+      body: JSON.stringify({ productId: product1.id, quantity: 1 }),
     });
     const addBody = await add.json();
     assert.equal(add.status, 200);
     const itemId = addBody.data.items[0].id;
 
-    // Update quantity to 3 → total 150
     const up = await fetch(`${baseUrl}/api/v1/sessions/${sessionId}/items/${itemId}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: auth,
       body: JSON.stringify({ quantity: 3 }),
     });
     assert.equal(up.status, 200);
@@ -404,13 +405,76 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
     assert.equal(Number(updated.total), 150);
     assert.equal(upBody.data.total, 150);
 
-    // Remove the item → empty cart
     const rm = await fetch(`${baseUrl}/api/v1/sessions/${sessionId}/items/${itemId}`, {
       method: "DELETE",
-      headers: { "Content-Type": "application/json" },
+      headers: auth,
     });
     assert.equal(rm.status, 200);
     assert.equal((await rm.json()).data.items.length, 0);
+
+    await prisma.tableSession.deleteMany({ where: { id: sessionId } });
+  });
+
+  test("13a. Item mutations require a valid member token (401 without one)", async () => {
+    const res = await fetch(`${baseUrl}/api/v1/sessions/${sessionState.sessionId}/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ productId: product1.id, quantity: 1 }),
+    });
+    assert.equal(res.status, 401);
+  });
+
+  test("14. Staff can return a pending order to the customer, who then edits and re-submits", async () => {
+    const start = await fetch(`${baseUrl}/api/v1/tables/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${ownerToken}` },
+      body: JSON.stringify({ tableId: table.id }),
+    });
+    const { sessionId, pin } = (await start.json()).data;
+
+    const join = await fetch(`${baseUrl}/api/v1/sessions/${table.qrToken}/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "ليلى", pin }),
+    });
+    const memberToken = (await join.json()).data.memberToken;
+    const auth = { "Content-Type": "application/json", Authorization: `Bearer ${memberToken}` };
+
+    await fetch(`${baseUrl}/api/v1/sessions/${sessionId}/items`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ productId: product1.id, quantity: 2 }),
+    });
+    const sub = await fetch(`${baseUrl}/api/v1/sessions/${sessionId}/submit`, {
+      method: "POST",
+      headers: auth,
+    });
+    assert.equal(sub.status, 200);
+    assert.equal((await sub.json()).data.status, "AWAITING_CONFIRMATION");
+
+    const reject = await fetch(`${baseUrl}/api/v1/tables/${sessionId}/reject-order`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${ownerToken}` },
+    });
+    assert.equal(reject.status, 200);
+    const rejected = (await reject.json()).data;
+    assert.equal(rejected.status, "ACTIVE");
+
+    assert.equal(rejected.items.length, 1);
+    assert.equal(rejected.orders[0].status, "CANCELLED");
+
+    const itemId = rejected.items[0].id;
+    await fetch(`${baseUrl}/api/v1/sessions/${sessionId}/items/${itemId}`, {
+      method: "PATCH",
+      headers: auth,
+      body: JSON.stringify({ quantity: 1 }),
+    });
+    const resub = await fetch(`${baseUrl}/api/v1/sessions/${sessionId}/submit`, {
+      method: "POST",
+      headers: auth,
+    });
+    assert.equal(resub.status, 200);
+    assert.equal((await resub.json()).data.status, "AWAITING_CONFIRMATION");
 
     await prisma.tableSession.deleteMany({ where: { id: sessionId } });
   });

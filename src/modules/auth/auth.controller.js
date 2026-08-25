@@ -29,7 +29,6 @@ export class AuthController {
         forceLogout: body.forceLogout,
       });
 
-      // Optionally set HttpOnly cookie
       res.cookie("accessToken", data.accessToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",

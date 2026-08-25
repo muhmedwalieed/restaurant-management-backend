@@ -1,10 +1,6 @@
 import { DomainEvent, onEvent } from "./event-bus.js";
 import { broadcastToRestaurant } from "../../lib/socket.js";
 
-/**
- * Real-time layer: maps domain events to Socket.IO broadcasts on the tenant room.
- * Consumers (the frontend) re-fetch their affected react-query keys on these events.
- */
 export function registerRealtimeSubscriptions() {
   onEvent(DomainEvent.ORDER_CREATED, (p) =>
     broadcastToRestaurant(p.restaurantId, "order.created", p)

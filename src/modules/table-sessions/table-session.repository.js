@@ -3,8 +3,7 @@ import { NotFoundError } from "../../shared/errors/index.js";
 
 export class TableSessionRepository {
   async findTableByQrToken(qrToken, restaurantId) {
-    // Use raw query to bypass the tenant safety-net's findFirst restrictions and
-    // reliably look up by QR token (QR tokens are globally unique).
+
     const rows = await prisma.$queryRaw`
       SELECT id, restaurant_id, branch_id, label FROM tables WHERE qr_token = ${qrToken} AND restaurant_id = ${restaurantId} AND deleted_at IS NULL LIMIT 1
     `;
@@ -68,7 +67,6 @@ export class TableSessionRepository {
     });
   }
 
-  /** Link all currently-unsubmitted session items to a submitted order. */
   async linkItemsToOrder(sessionId, orderId) {
     await prisma.tableSessionItem.updateMany({
       where: { sessionId, sessionOrderId: null },
@@ -102,18 +100,24 @@ export class TableSessionRepository {
     });
   }
 
-  async updatePin(sessionId, pin, pinHash) {
+  async unlinkOrderItems(sessionId, orderId) {
+    await prisma.tableSessionItem.updateMany({
+      where: { sessionId, sessionOrderId: orderId },
+      data: { sessionOrderId: null },
+    });
+  }
+
+  async updatePin(sessionId, restaurantId, pin, pinHash) {
     await prisma.tableSession.update({
-      where: { id: sessionId },
+      where: { id: sessionId, restaurantId },
       data: { pin, pinHash },
     });
   }
 
-  /** Mark a table OCCUPIED (session opened) or AVAILABLE (session closed). */
   async setTableStatus(tableId, restaurantId, status) {
     const where =
       status === "AVAILABLE"
-        ? { id: tableId, restaurantId, status: "OCCUPIED" } // only free tables we occupied
+        ? { id: tableId, restaurantId, status: "OCCUPIED" }
         : { id: tableId, restaurantId };
     await prisma.restaurantTable.updateMany({ where, data: { status } });
   }
@@ -144,9 +148,9 @@ export class TableSessionRepository {
     });
   }
 
-  async lockout(sessionId, failedAttempts, lockoutLevel, lockoutUntil) {
+  async lockout(sessionId, restaurantId, failedAttempts, lockoutLevel, lockoutUntil) {
     await prisma.tableSession.update({
-      where: { id: sessionId },
+      where: { id: sessionId, restaurantId },
       data: { failedAttempts, lockoutLevel, lockoutUntil },
     });
   }

@@ -5,10 +5,7 @@ import { ExternalServiceError, AuthorizationError } from "../../../shared/errors
 let simulateOutageGlobal = false;
 
 export class MockProvider extends WhatsAppProviderInterface {
-  /**
-   * Sets static outage flag for testing 502 ExternalServiceError handling.
-   * @param {boolean} flag
-   */
+
   static setSimulateOutage(flag) {
     simulateOutageGlobal = Boolean(flag);
   }

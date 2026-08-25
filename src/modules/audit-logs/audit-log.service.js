@@ -1,10 +1,6 @@
 import auditLogRepository from "./audit-log.repository.js";
 import { NotFoundError } from "../../shared/errors/index.js";
 
-/**
- * Audit action constants (Module 18). Append-only: entries are created internally
- * by services (admin actions) and by the domain-event subscription (entity changes).
- */
 export const AuditAction = Object.freeze({
   ORDER_CREATED: "ORDER_CREATED",
   ORDER_STATUS_CHANGED: "ORDER_STATUS_CHANGED",
@@ -40,9 +36,6 @@ export class AuditLogService {
     return entry;
   }
 
-  /**
-   * Internal API used by services to record an admin/sensitive action.
-   */
   async record(tenantContext, { branchId, actorEmployeeId, action, entityType, entityId, metadata, ipAddress }) {
     return auditLogRepository.createAuditLog(tenantContext, {
       branchId,

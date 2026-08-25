@@ -30,7 +30,6 @@ router.delete("/:id", authorize("coupons.manage"), (req, res, next) => {
   couponController.remove(req, res, next);
 });
 
-// Checkout helper — validating a code before submitting an order is part of order creation.
 router.post("/validate", authorize("orders.create"), validate(validateCouponSchema), (req, res, next) => {
   couponController.validate(req, res, next);
 });

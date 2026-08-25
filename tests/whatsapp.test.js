@@ -38,7 +38,6 @@ describe("Module 9 — WhatsApp Integration Module Tests", () => {
       });
     });
 
-    // Setup Tenant A
     const regA = await authService.register({
       name: "Owner WA A",
       email: `ownerwaa-${Date.now()}@test.com`,
@@ -62,7 +61,6 @@ describe("Module 9 — WhatsApp Integration Module Tests", () => {
 
     const passwordHash = await bcrypt.hash("Password123!", 10);
 
-    // Manager A Role (whatsapp.manage + whatsapp.view)
     const waPerms = await prisma.permission.findMany({
       where: { key: { in: ["whatsapp.manage", "whatsapp.view"] } },
     });
@@ -96,7 +94,6 @@ describe("Module 9 — WhatsApp Integration Module Tests", () => {
     });
     managerAToken = managerLogin.accessToken;
 
-    // View-Only Role (whatsapp.view only)
     const viewPerm = await prisma.permission.findFirst({
       where: { key: "whatsapp.view" },
     });
@@ -130,7 +127,6 @@ describe("Module 9 — WhatsApp Integration Module Tests", () => {
     });
     viewOnlyToken = viewLogin.accessToken;
 
-    // Setup Tenant B
     const regB = await authService.register({
       name: "Owner WA B",
       email: `ownerwab-${Date.now()}@test.com`,
@@ -215,7 +211,7 @@ describe("Module 9 — WhatsApp Integration Module Tests", () => {
         Authorization: `Bearer ${managerAToken}`,
       },
       body: JSON.stringify({
-        providerAccountId: accountIdA, // Duplicate!
+        providerAccountId: accountIdA,
         providerPhoneNumberId: phoneIdA,
       }),
     });
@@ -508,7 +504,6 @@ describe("Module 9 — WhatsApp Integration Module Tests", () => {
       .update(rawBodyStr)
       .digest("hex");
 
-    // First request
     const res1 = await fetch(`${baseUrl}/api/webhooks/whatsapp`, {
       method: "POST",
       headers: {
@@ -519,7 +514,6 @@ describe("Module 9 — WhatsApp Integration Module Tests", () => {
     });
     assert.equal(res1.status, 200);
 
-    // Second request (Duplicate replay attempt)
     const res2 = await fetch(`${baseUrl}/api/webhooks/whatsapp`, {
       method: "POST",
       headers: {
@@ -535,7 +529,7 @@ describe("Module 9 — WhatsApp Integration Module Tests", () => {
     const count = await prisma.whatsAppMessage.count({
       where: { restaurantId: tenantA.id, providerMessageId: "wamid_idempotent_msg_1001" },
     });
-    assert.equal(count, 1); // Only 1 message saved!
+    assert.equal(count, 1);
   });
 
   test("16. Delivery Status Webhook Updates: Update target message status to READ", async () => {
@@ -584,7 +578,7 @@ describe("Module 9 — WhatsApp Integration Module Tests", () => {
   });
 
   test("17. Webhook Retry Pipeline: POST /api/v1/whatsapp/webhooks/retry processes FAILED events", async () => {
-    // Manually insert a FAILED WebhookEvent
+
     const failedEventPayload = {
       entry: [
         {
@@ -647,7 +641,7 @@ describe("Module 9 — WhatsApp Integration Module Tests", () => {
   });
 
   test("19. Reconnecting a previously disconnected account returns 409 ConflictError (not 500)", async () => {
-    // Disconnect (soft deactivation)
+
     const disconnectRes = await fetch(`${baseUrl}/api/v1/whatsapp/connection`, {
       method: "DELETE",
       headers: {
@@ -656,7 +650,6 @@ describe("Module 9 — WhatsApp Integration Module Tests", () => {
     });
     assert.equal(disconnectRes.status, 200);
 
-    // Re-POST same providerAccountId while a DISCONNECTED row exists
     const reconnectRes = await fetch(`${baseUrl}/api/v1/whatsapp/connection`, {
       method: "POST",
       headers: {
@@ -673,7 +666,6 @@ describe("Module 9 — WhatsApp Integration Module Tests", () => {
     const body = await reconnectRes.json();
     assert.equal(body.error.code, "CONFLICT_ERROR");
 
-    // Restore ACTIVE for any subsequent state assumptions
     const restoreRes = await fetch(`${baseUrl}/api/v1/whatsapp/connection`, {
       method: "PATCH",
       headers: {
@@ -690,11 +682,11 @@ describe("Module 9 — WhatsApp Integration Module Tests", () => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${ownerBToken}`, // Token B!
+        Authorization: `Bearer ${ownerBToken}`,
       },
       body: JSON.stringify({
         providerAccountId: "waba_acc_tenant_b_999",
-        providerPhoneNumberId: phoneIdA, // Already active under Tenant A!
+        providerPhoneNumberId: phoneIdA,
       }),
     });
 
@@ -704,7 +696,7 @@ describe("Module 9 — WhatsApp Integration Module Tests", () => {
   });
 
   test("21. Inbound duplicate providerMessageId does not create a duplicate message (retry safety)", async () => {
-    // wamid_inbound_1001 already exists from Test 13
+
     const webhookPayload = {
       entry: [
         {
@@ -715,7 +707,7 @@ describe("Module 9 — WhatsApp Integration Module Tests", () => {
                 messages: [
                   {
                     from: "+201055554444",
-                    id: "wamid_inbound_1001", // Existing message id!
+                    id: "wamid_inbound_1001",
                     text: { body: "Duplicate inbound body" },
                   },
                 ],
@@ -746,6 +738,6 @@ describe("Module 9 — WhatsApp Integration Module Tests", () => {
     const count = await prisma.whatsAppMessage.count({
       where: { restaurantId: tenantA.id, providerMessageId: "wamid_inbound_1001" },
     });
-    assert.equal(count, 1); // No duplicate!
+    assert.equal(count, 1);
   });
 });

@@ -2,9 +2,7 @@ import prisma from "../../lib/prisma.js";
 import { AuthenticationError } from "../../shared/errors/index.js";
 
 export class CustomerRepository {
-  /**
-   * Finds customer list for a restaurant with pagination and search.
-   */
+
   async findCustomers(tenantContext, { page = 1, limit = 20, q } = {}) {
     if (!tenantContext || !tenantContext.restaurantId) {
       throw new AuthenticationError("TenantContext with restaurantId is required");
@@ -52,9 +50,6 @@ export class CustomerRepository {
     return { items, total };
   }
 
-  /**
-   * Finds single active customer by ID within a tenant.
-   */
   async findCustomerById(tenantContext, customerId) {
     if (!tenantContext || !tenantContext.restaurantId) {
       throw new AuthenticationError("TenantContext with restaurantId is required");
@@ -82,9 +77,6 @@ export class CustomerRepository {
     });
   }
 
-  /**
-   * Finds active customer by phone within a tenant.
-   */
   async findCustomerByPhone(tenantContext, phone) {
     if (!tenantContext || !tenantContext.restaurantId) {
       throw new AuthenticationError("TenantContext with restaurantId is required");
@@ -99,9 +91,6 @@ export class CustomerRepository {
     });
   }
 
-  /**
-   * Creates new customer record (with optional extra phone numbers).
-   */
   async createCustomer(tenantContext, payload) {
     if (!tenantContext || !tenantContext.restaurantId) {
       throw new AuthenticationError("TenantContext with restaurantId is required");
@@ -137,10 +126,6 @@ export class CustomerRepository {
     });
   }
 
-  /**
-   * Updates customer using mandatory findFirst ownership check -> updateMany pattern (Section 12.3).
-   * Also syncs the phone-number set when provided.
-   */
   async updateCustomer(tenantContext, customerId, payload) {
     const existing = await this.findCustomerById(tenantContext, customerId);
     if (!existing) return null;
@@ -181,9 +166,6 @@ export class CustomerRepository {
     return this.findCustomerById(tenantContext, customerId);
   }
 
-  /**
-   * Soft deletes customer using findFirst ownership check -> updateMany pattern (Section 14.3).
-   */
   async softDeleteCustomer(tenantContext, customerId) {
     const existing = await this.findCustomerById(tenantContext, customerId);
     if (!existing) return null;
@@ -202,9 +184,6 @@ export class CustomerRepository {
     return existing;
   }
 
-  /**
-   * Finds customer orders across all branches of the tenant.
-   */
   async findCustomerOrders(tenantContext, customerId, { page = 1, limit = 20 } = {}) {
     if (!tenantContext || !tenantContext.restaurantId) {
       throw new AuthenticationError("TenantContext with restaurantId is required");
@@ -238,9 +217,6 @@ export class CustomerRepository {
     return { items, total };
   }
 
-  /**
-   * Address Methods
-   */
   async findAddresses(tenantContext, customerId) {
     const customer = await this.findCustomerById(tenantContext, customerId);
     if (!customer) return null;
@@ -368,7 +344,6 @@ export class CustomerRepository {
         data: { deletedAt: new Date(), isDefault: false },
       });
 
-      // If the deleted address was default, promote the next latest active address
       if (existing.isDefault) {
         const nextDefault = await tx.customerAddress.findFirst({
           where: { customerId, restaurantId, deletedAt: null },

@@ -3,10 +3,6 @@ import { AuditAction } from "./audit-log.service.js";
 import auditLogService from "./audit-log.service.js";
 import logger from "../../config/logger.js";
 
-/**
- * Registers Domain Event listeners (Section 29) that persist audit entries for
- * order/chat entity changes. Fire-and-forget: failures are logged, never break the flow.
- */
 function safe(listener) {
   return (payload) => {
     listener(payload).catch((err) => {
@@ -84,7 +80,6 @@ export function registerAuditLogSubscriptions() {
   );
 }
 
-// Register listeners as a side-effect so importing the module wires the bus (Section 29).
 registerAuditLogSubscriptions();
 
 export default registerAuditLogSubscriptions;

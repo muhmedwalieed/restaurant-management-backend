@@ -12,10 +12,6 @@ export class KdsService {
     return branch;
   }
 
-  /**
-   * Retrieves active kitchen orders (CONFIRMED and PREPARING by default) ordered FIFO.
-   * Server-side calculates elapsedMinutes from createdAt.
-   */
   async getActiveKitchenOrders(tenantContext, branchId, { page = 1, limit = 20, status } = {}) {
     await this.verifyBranchOwnership(tenantContext, branchId);
 
@@ -68,10 +64,6 @@ export class KdsService {
     };
   }
 
-  /**
-   * Delegates kitchen preparation status update directly to existing Order Engine.
-   * Preserves single source of truth for State Machine validation (422) & Optimistic Locking (409).
-   */
   async updateKitchenOrderStatus(tenantContext, branchId, orderId, { newStatus, expectedVersion, reason }) {
     return orderService.updateOrderStatus(tenantContext, branchId, orderId, {
       newStatus,

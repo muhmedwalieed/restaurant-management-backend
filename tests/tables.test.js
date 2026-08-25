@@ -15,7 +15,7 @@ describe("Tables & QR Module Integration Tests", () => {
   let mainBranchA;
   let secondaryBranchA;
   let ownerAToken;
-  let staffAToken; // Employee without tables.manage permission
+  let staffAToken;
 
   let tenantB;
   let mainBranchB;
@@ -35,7 +35,6 @@ describe("Tables & QR Module Integration Tests", () => {
       });
     });
 
-    // Setup Tenant A
     const regA = await authService.register({
       name: "Owner Table A",
       email: `ownertablea-${Date.now()}@test.com`,
@@ -49,7 +48,6 @@ describe("Tables & QR Module Integration Tests", () => {
       where: { restaurantId: tenantA.id, isMain: true },
     });
 
-    // Create a secondary branch for Tenant A
     secondaryBranchA = await prisma.branch.create({
       data: {
         restaurantId: tenantA.id,
@@ -66,7 +64,6 @@ describe("Tables & QR Module Integration Tests", () => {
     });
     ownerAToken = loginA.accessToken;
 
-    // Create staff role without tables.manage permission for Tenant A
     const noTablesRole = await prisma.role.create({
       data: {
         restaurantId: tenantA.id,
@@ -95,7 +92,6 @@ describe("Tables & QR Module Integration Tests", () => {
     });
     staffAToken = staffLogin.accessToken;
 
-    // Setup Tenant B
     const regB = await authService.register({
       name: "Owner Table B",
       email: `ownertableb-${Date.now()}@test.com`,
@@ -116,7 +112,6 @@ describe("Tables & QR Module Integration Tests", () => {
     });
     ownerBToken = loginB.accessToken;
 
-    // Seed a category and product for Tenant A public menu test
     const category = await prisma.category.create({
       data: {
         restaurantId: tenantA.id,
@@ -194,7 +189,7 @@ describe("Tables & QR Module Integration Tests", () => {
         Authorization: `Bearer ${ownerAToken}`,
       },
       body: JSON.stringify({
-        label: "T-01", // Duplicate label!
+        label: "T-01",
       }),
     });
 
@@ -211,7 +206,7 @@ describe("Tables & QR Module Integration Tests", () => {
         Authorization: `Bearer ${ownerAToken}`,
       },
       body: JSON.stringify({
-        label: "T-01", // Same label, different branch!
+        label: "T-01",
       }),
     });
 
@@ -244,7 +239,7 @@ describe("Tables & QR Module Integration Tests", () => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${ownerAToken}`, // Owner A targeting Branch B
+        Authorization: `Bearer ${ownerAToken}`,
       },
       body: JSON.stringify({
         label: "T-99",
@@ -296,7 +291,7 @@ describe("Tables & QR Module Integration Tests", () => {
   test("9. Cross-Tenant Protection: Tenant B cannot access Tenant A's table (404 Not Found)", async () => {
     const res = await fetch(`${baseUrl}/api/v1/branches/${mainBranchA.id}/tables/${tableA1.id}`, {
       headers: {
-        Authorization: `Bearer ${ownerBToken}`, // Token B
+        Authorization: `Bearer ${ownerBToken}`,
       },
     });
 
@@ -321,7 +316,7 @@ describe("Tables & QR Module Integration Tests", () => {
   test("11. RBAC: Employee without tables.manage permission gets 403 AuthorizationError", async () => {
     const res = await fetch(`${baseUrl}/api/v1/branches/${mainBranchA.id}/tables`, {
       headers: {
-        Authorization: `Bearer ${staffAToken}`, // Staff token without tables.manage
+        Authorization: `Bearer ${staffAToken}`,
       },
     });
 

@@ -27,8 +27,6 @@ export const createCouponSchema = z.object({
     }),
 });
 
-// Update schema has NO `.default()` on any field so a partial PATCH only applies
-// what was actually sent (a missing `type`/`minSubtotal`/`isActive` must NOT reset them).
 export const updateCouponSchema = z.object({
   body: z
     .object({

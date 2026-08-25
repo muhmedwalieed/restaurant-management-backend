@@ -5,9 +5,7 @@ import branchRepository from "../branches/branch.repository.js";
 import { NotFoundError, BusinessRuleError } from "../../shared/errors/index.js";
 
 export class PhoneOrderService {
-  /**
-   * Caller search — finds (or auto-creates) the customer by phone and returns their recent orders.
-   */
+
   async lookup(tenantContext, { phone }) {
     const customer = await customerService.findOrCreateCustomerByPhone(tenantContext, {
       phone,
@@ -39,16 +37,12 @@ export class PhoneOrderService {
     };
   }
 
-  /**
-   * Creates a phone order (source forced to PHONE, customer linked, default address used for delivery).
-   */
   async createPhoneOrder(tenantContext, branchId, { type, customerPhone, customerName, address, items, notes }) {
     const customer = await customerService.findOrCreateCustomerByPhone(tenantContext, {
       phone: customerPhone,
       name: customerName || `عميل هاتف ${customerPhone}`,
     });
 
-    // Use the address the cashier typed in; fall back to the customer's saved default address.
     let orderAddress = address?.trim();
     if (type === "DELIVERY" && !orderAddress) {
       const defaultAddress = await phoneOrderRepository.findDefaultAddress(tenantContext, customer.id);

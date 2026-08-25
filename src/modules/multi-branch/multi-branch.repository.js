@@ -2,10 +2,7 @@ import prisma from "../../lib/prisma.js";
 import { AuthenticationError } from "../../shared/errors/index.js";
 
 export class MultiBranchRepository {
-  /**
-   * Employees who can operate in a branch: their home branch matches, OR they were
-   * explicitly granted access via EmployeeBranchAccess (Module 19 — Branch users).
-   */
+
   async findBranchUsers(tenantContext, branchId) {
     this.assertTenant(tenantContext);
     return prisma.employee.findMany({
@@ -26,9 +23,6 @@ export class MultiBranchRepository {
     });
   }
 
-  /**
-   * Existing EmployeeBranchAccess row for an employee+branch.
-   */
   async findEmployeeAccess(tenantContext, employeeId, branchId) {
     this.assertTenant(tenantContext);
     return prisma.employeeBranchAccess.findFirst({
@@ -36,9 +30,6 @@ export class MultiBranchRepository {
     });
   }
 
-  /**
-   * Grants an employee access to an additional branch.
-   */
   async grantBranchAccess(tenantContext, employeeId, branchId) {
     this.assertTenant(tenantContext);
     return prisma.employeeBranchAccess.create({
@@ -50,9 +41,6 @@ export class MultiBranchRepository {
     });
   }
 
-  /**
-   * Revokes an employee's access to a branch (removes the EmployeeBranchAccess row).
-   */
   async revokeBranchAccess(tenantContext, employeeId, branchId) {
     this.assertTenant(tenantContext);
     const result = await prisma.employeeBranchAccess.deleteMany({
@@ -61,9 +49,6 @@ export class MultiBranchRepository {
     return result.count;
   }
 
-  /**
-   * Finds an employee within the tenant (for grant/revoke validation).
-   */
   async findEmployee(tenantContext, employeeId) {
     this.assertTenant(tenantContext);
     return prisma.employee.findFirst({
@@ -72,9 +57,6 @@ export class MultiBranchRepository {
     });
   }
 
-  /**
-   * Finds a branch within the tenant.
-   */
   async findBranch(tenantContext, branchId) {
     this.assertTenant(tenantContext);
     return prisma.branch.findFirst({
@@ -83,9 +65,6 @@ export class MultiBranchRepository {
     });
   }
 
-  /**
-   * All branches an employee can access (home branch + granted access) — the branch switcher.
-   */
   async findEmployeeBranches(tenantContext, employeeId) {
     this.assertTenant(tenantContext);
     const employee = await prisma.employee.findFirst({
@@ -107,10 +86,6 @@ export class MultiBranchRepository {
     });
   }
 
-  /**
-   * Every branch in the tenant — used by owners / branch managers so the branch
-   * switcher matches what the branches management page shows.
-   */
   async findAllBranches(tenantContext) {
     this.assertTenant(tenantContext);
     return prisma.branch.findMany({

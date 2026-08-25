@@ -22,7 +22,6 @@ import whatsappRouter from "../modules/whatsapp/whatsapp.routes.js";
 
 const router = Router();
 
-// Module 2, 3, 4, 5, 6, 7, 8 & 9 API Routes mounted under /api
 router.use("/v1/auth", authRouter);
 router.use("/v1/employees", employeesRouter);
 router.use("/v1/roles", rolesRouter);

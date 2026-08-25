@@ -2,9 +2,7 @@ import prisma from "../../lib/prisma.js";
 import { AuthenticationError } from "../../shared/errors/index.js";
 
 export class CouponRepository {
-  /**
-   * Lists coupons for a restaurant with pagination + filters.
-   */
+
   async findCoupons(tenantContext, { page = 1, limit = 20, isActive, type, q } = {}) {
     this.assertTenant(tenantContext);
     const skip = (page - 1) * limit;
@@ -30,9 +28,6 @@ export class CouponRepository {
     return { items, total };
   }
 
-  /**
-   * Finds an active (non-deleted) coupon by id within the tenant.
-   */
   async findCouponById(tenantContext, couponId) {
     this.assertTenant(tenantContext);
     return prisma.coupon.findFirst({
@@ -41,9 +36,6 @@ export class CouponRepository {
     });
   }
 
-  /**
-   * Finds an active (non-deleted) coupon by code within the tenant.
-   */
   async findCouponByCode(tenantContext, code) {
     this.assertTenant(tenantContext);
     return prisma.coupon.findFirst({
@@ -51,9 +43,6 @@ export class CouponRepository {
     });
   }
 
-  /**
-   * Creates a coupon.
-   */
   async createCoupon(tenantContext, data) {
     this.assertTenant(tenantContext);
     return prisma.coupon.create({
@@ -75,9 +64,6 @@ export class CouponRepository {
     });
   }
 
-  /**
-   * Updates a coupon (ownership enforced via restaurantId in where).
-   */
   async updateCoupon(tenantContext, couponId, data) {
     this.assertTenant(tenantContext);
     const result = await prisma.coupon.updateMany({
@@ -102,9 +88,6 @@ export class CouponRepository {
     return result.count;
   }
 
-  /**
-   * Soft-deletes a coupon (historical orders keep the coupon reference via SetNull-safe soft delete).
-   */
   async softDeleteCoupon(tenantContext, couponId) {
     this.assertTenant(tenantContext);
     const result = await prisma.coupon.updateMany({

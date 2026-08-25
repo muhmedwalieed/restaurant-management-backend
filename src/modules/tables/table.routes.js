@@ -15,10 +15,9 @@ import env from "../../config/env.js";
 
 const router = Router();
 
-// Public rate limiter for unauthenticated table QR scan endpoint
 const publicTableRateLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: env.NODE_ENV === "test" ? 1000 : 60, // 60 requests per 15 minutes in production
+  windowMs: 15 * 60 * 1000,
+  max: env.NODE_ENV === "test" ? 1000 : 60,
   message: {
     success: false,
     error: {
@@ -30,15 +29,10 @@ const publicTableRateLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-// ==================== PUBLIC TABLE MENU ENDPOINT (No auth required) ====================
 router.get("/menu/table/:qrToken", publicTableRateLimiter, validate(publicTableMenuParamsSchema), (req, res, next) => {
   tableController.resolveTableMenu(req, res, next);
 });
 
-// ==================== AUTHENTICATED BRANCH TABLES PIPELINE ====================
-// Scoped strictly to /branches/:branchId/tables so it doesn't intercept other /v1 routes.
-// Read endpoints accept tables.view OR tables.manage (cashier POS needs to pick a table);
-// write endpoints require tables.manage.
 const branchTableRouter = Router({ mergeParams: true });
 branchTableRouter.use(authenticate, requireTenantContext);
 

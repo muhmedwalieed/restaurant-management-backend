@@ -3,18 +3,19 @@ import { randomInt } from "crypto";
 import tableSessionRepository from "./table-session.repository.js";
 import { emitEvent, DomainEvent } from "../../shared/events/event-bus.js";
 import { NotFoundError, ValidationError, BusinessRuleError } from "../../shared/errors/index.js";
+import { signAccessToken } from "../../utils/jwt.js";
 import prisma from "../../lib/prisma.js";
 
 const PIN_LENGTH = 4;
-// Doubling lockout: attempt fail numbers that trigger a lockout, and the base delay.
+
 const LOCKOUT_LEVELS = [
-  { failAfter: 3, baseSeconds: 60 }, // 3 fails -> 60s, then 120s, 240s...
+  { failAfter: 3, baseSeconds: 60 },
 ];
 
 export class TableSessionService {
-  /** Resolve the restaurantId that owns a QR table token (public helper). */
+
   async resolveRestaurantId(qrToken) {
-    // Safety-net: must scope by a restaurantId; find the owning restaurant first.
+
     const row = await prisma.$queryRaw`
       SELECT t."restaurant_id" FROM "tables" t WHERE t."qr_token" = ${qrToken} LIMIT 1
     `;
@@ -22,7 +23,6 @@ export class TableSessionService {
     return row[0].restaurant_id;
   }
 
-  /** Resolve the restaurantId that owns a session (public helpers). */
   async resolveRestaurantIdForSession(sessionId) {
     const row = await prisma.$queryRaw`
       SELECT s."restaurant_id" FROM "table_sessions" s WHERE s."id" = ${sessionId} LIMIT 1
@@ -30,10 +30,7 @@ export class TableSessionService {
     if (!row || !row[0]) throw new NotFoundError("Session not found");
     return row[0].restaurant_id;
   }
-  /**
-   * Employee starts a session on a table and gets a 4-digit PIN.
-   * `tableId` may be the table id or its QR token.
-   */
+
   async startSession(tenantContext, tableId) {
     const byToken = await tableSessionRepository.findTableByQrToken(tableId, tenantContext.restaurantId);
     const table =
@@ -73,9 +70,6 @@ export class TableSessionService {
     return { sessionId: session.id, pin };
   }
 
-  /**
-   * Customer joins with name + PIN. Applies doubling lockout on failures.
-   */
   async joinSession(restaurantId, tableId, { name, pin }) {
     const table = await tableSessionRepository.findTableByQrToken(tableId, restaurantId);
     if (!table) throw new NotFoundError("Table not found");
@@ -99,16 +93,21 @@ export class TableSessionService {
         levelIndex = Math.floor(failed / level.failAfter);
         lockoutUntil = new Date(now + level.baseSeconds * Math.pow(2, levelIndex) * 1000);
       }
-      await tableSessionRepository.lockout(session.id, failed, levelIndex, lockoutUntil);
+      await tableSessionRepository.lockout(session.id, restaurantId, failed, levelIndex, lockoutUntil);
       const threshold = LOCKOUT_LEVELS[0].failAfter;
       const remaining = Math.max(0, threshold - failed);
       throw new ValidationError(`Wrong PIN. ${remaining} attempt(s) remaining`);
     }
 
-    // reset failures on success
-    await tableSessionRepository.lockout(session.id, 0, 0, null);
+    await tableSessionRepository.lockout(session.id, restaurantId, 0, 0, null);
 
     const member = await tableSessionRepository.addMember(restaurantId, session.id, name);
+    const memberToken = signAccessToken({
+      type: "table-member",
+      restaurantId,
+      sessionId: session.id,
+      memberId: member.id,
+    });
     emitEvent(DomainEvent.TABLE_SESSION_UPDATED, {
       restaurantId,
       branchId: session.branchId,
@@ -118,16 +117,19 @@ export class TableSessionService {
       memberName: name,
     });
 
-    return this.publicSession(restaurantId, session.id, member.id);
+    return { ...(await this.publicSession(restaurantId, session.id)), memberToken };
   }
 
-  /**
-   * Customer adds an item to the shared cart (draft — not a real order).
-   */
-  async addItem(restaurantId, sessionId, { productId, quantity, addedByName }) {
+  async addItem(restaurantId, sessionId, memberId, { productId, quantity }) {
     const session = await tableSessionRepository.findSessionById(restaurantId, sessionId);
     if (!session) throw new NotFoundError("Session not found");
     if (session.status !== "ACTIVE") throw new BusinessRuleError("Session is no longer open for adding items");
+
+    const member = await prisma.tableSessionMember.findFirst({
+      where: { id: memberId, sessionId },
+      select: { name: true },
+    });
+    const addedByName = member?.name || "عميل";
 
     const product = await prisma.product.findFirst({
       where: { id: productId, restaurantId, isAvailable: true, status: "ACTIVE", deletedAt: null },
@@ -197,18 +199,14 @@ export class TableSessionService {
     return this.publicSession(restaurantId, sessionId);
   }
 
-  /** Items can only be edited while they belong to the current cart or the pending (unconfirmed) order. */
   assertItemEditable(session, item) {
-    if (!item.sessionOrderId) return; // part of the current cart
+    if (!item.sessionOrderId) return;
     const order = (session.orders || []).find((o) => o.id === item.sessionOrderId);
     if (order && order.status !== "AWAITING_CONFIRMATION") {
       throw new BusinessRuleError("Cannot modify an item of a confirmed order");
     }
   }
 
-  /**
-   * Customer calls the waiter to the table.
-   */
   async callWaiter(restaurantId, sessionId, tableId, { requesterName, note }) {
     const session = await tableSessionRepository.findSessionById(restaurantId, sessionId);
     if (!session) throw new NotFoundError("Session not found");
@@ -224,10 +222,6 @@ export class TableSessionService {
     return { ok: true, message: `The waiter has been called${note ? `: ${note}` : ""}` };
   }
 
-  /**
-   * Customer submits the current cart as a new order round for the waiter to review.
-   * The session stays open so customers can keep ordering later (multiple orders per session).
-   */
   async submitDraft(restaurantId, sessionId) {
     const session = await tableSessionRepository.findSessionById(restaurantId, sessionId);
     if (!session) throw new NotFoundError("Session not found");
@@ -253,10 +247,6 @@ export class TableSessionService {
     return this.publicSession(restaurantId, sessionId);
   }
 
-  /**
-   * Waiter reviews/edits the pending order and confirms -> becomes a real order.
-   * The session returns to ACTIVE so customers can place another round of orders.
-   */
   async confirmSession(tenantContext, sessionId) {
     const session = await tableSessionRepository.findSessionById(tenantContext.restaurantId, sessionId);
     if (!session) throw new NotFoundError("Session not found");
@@ -266,7 +256,6 @@ export class TableSessionService {
     if (!pendingOrder) throw new BusinessRuleError("No order is awaiting confirmation");
     if (pendingOrder.items.length === 0) throw new BusinessRuleError("Cannot confirm an empty order");
 
-    // Server-side price snapshots for the round (same pricing as createOrder).
     const snapshotItems = [];
     for (const i of pendingOrder.items) {
       const product = await prisma.product.findFirst({
@@ -288,12 +277,10 @@ export class TableSessionService {
         subtotal: unitPrice * i.quantity,
         notes: null,
         selectedModifiers: null,
+        round: pendingOrder.orderNumber,
       });
     }
 
-    // One real order per session: later rounds are appended to the same order, so the
-    // customer's bill is the running total of every round. Only create a new order for
-    // the first round (or if the existing one reached a terminal state).
     const existingOrder = session.confirmedOrderId
       ? await prisma.order.findFirst({
           where: { id: session.confirmedOrderId, restaurantId: tenantContext.restaurantId },
@@ -356,7 +343,6 @@ export class TableSessionService {
     return this.publicSession(tenantContext.restaurantId, sessionId);
   }
 
-  /** Staff: roll a new 4-digit PIN for an open session (also fixes legacy sessions with no stored PIN). */
   async regeneratePin(tenantContext, sessionId) {
     const session = await tableSessionRepository.findSessionById(tenantContext.restaurantId, sessionId);
     if (!session) throw new NotFoundError("Session not found");
@@ -364,7 +350,7 @@ export class TableSessionService {
 
     const pin = String(randomInt(0, 10000)).padStart(PIN_LENGTH, "0");
     const pinHash = await bcrypt.hash(pin, 10);
-    await tableSessionRepository.updatePin(sessionId, pin, pinHash);
+    await tableSessionRepository.updatePin(sessionId, tenantContext.restaurantId, pin, pinHash);
 
     emitEvent(DomainEvent.TABLE_SESSION_UPDATED, {
       restaurantId: tenantContext.restaurantId,
@@ -376,11 +362,36 @@ export class TableSessionService {
     return { sessionId, pin };
   }
 
+  async rejectPendingOrder(tenantContext, sessionId) {
+    const session = await tableSessionRepository.findSessionById(tenantContext.restaurantId, sessionId);
+    if (!session) throw new NotFoundError("Session not found");
+    if (session.status === "CLOSED") throw new BusinessRuleError("Session is closed");
+
+    const pendingOrder = await tableSessionRepository.findPendingOrder(sessionId);
+    if (!pendingOrder) throw new BusinessRuleError("No order is awaiting confirmation");
+
+    await tableSessionRepository.unlinkOrderItems(sessionId, pendingOrder.id);
+    await prisma.tableSessionOrder.updateMany({
+      where: { id: pendingOrder.id, sessionId },
+      data: { status: "CANCELLED" },
+    });
+    await tableSessionRepository.setSessionStatus(tenantContext.restaurantId, sessionId, "ACTIVE");
+
+    emitEvent(DomainEvent.TABLE_SESSION_UPDATED, {
+      restaurantId: tenantContext.restaurantId,
+      branchId: session.branchId,
+      sessionId,
+      tableId: session.tableId,
+      action: "rejected",
+      orderNumber: pendingOrder.orderNumber,
+    });
+    return this.publicSession(tenantContext.restaurantId, sessionId);
+  }
+
   async getSession(restaurantId, sessionId) {
     return this.publicSession(restaurantId, sessionId);
   }
 
-  /** Staff: find the active session for a specific table (or null). */
   async getActiveSessionForTable(tenantContext, tableId) {
     const table = await prisma.restaurantTable.findFirst({
       where: { id: tableId, restaurantId: tenantContext.restaurantId, deletedAt: null },
@@ -391,16 +402,16 @@ export class TableSessionService {
     return this.publicSession(tenantContext.restaurantId, session.id, { includePin: true });
   }
 
-  /** Staff: get a session including the plaintext PIN (never exposed on public endpoints). */
   async getStaffSession(tenantContext, sessionId) {
     return this.publicSession(tenantContext.restaurantId, sessionId, { includePin: true });
   }
 
-  /** Staff: list live sessions for a branch (active / awaiting confirmation). */
   async listBranchSessions(tenantContext, branchId) {
     const sessions = await tableSessionRepository.findSessionsByBranch(tenantContext.restaurantId, branchId);
     return sessions.map((s) => {
       const currentItems = (s.items || []).filter((i) => !i.sessionOrderId);
+      const ordersProjection = (s.orders || []).map((o) => this.orderProjection(o));
+      const currentTotal = currentItems.reduce((acc, i) => acc + Number(i.unitPrice) * i.quantity, 0);
       return {
         id: s.id,
         status: s.status,
@@ -408,14 +419,14 @@ export class TableSessionService {
         tableLabel: s.table?.label || null,
         members: s.members || [],
         itemCount: currentItems.length,
-        total: currentItems.reduce((acc, i) => acc + Number(i.unitPrice) * i.quantity, 0),
+        total: currentTotal,
+        grandTotal: currentTotal + ordersProjection.reduce((acc, o) => acc + Number(o.total || 0), 0),
         confirmedOrderId: s.confirmedOrderId,
-        orders: (s.orders || []).map((o) => this.orderProjection(o)),
+        orders: ordersProjection,
       };
     });
   }
 
-  /** Shape a single order round for the public/staff projections. */
   orderProjection(order) {
     return {
       id: order.id,
@@ -438,7 +449,6 @@ export class TableSessionService {
     };
   }
 
-  /** Group order items by who added them (per-person bill breakdown). */
   groupByMember(items) {
     const map = new Map();
     for (const item of items) {
@@ -458,11 +468,13 @@ export class TableSessionService {
     return Array.from(map.values());
   }
 
-  /** Public (customer-safe) projection of a session. PIN is only included for staff callers. */
   async publicSession(restaurantId, sessionId, { includePin = false } = {}) {
     const session = await tableSessionRepository.findSessionById(restaurantId, sessionId);
     if (!session) throw new NotFoundError("Session not found");
     const currentItems = (session.items || []).filter((i) => !i.sessionOrderId);
+    const currentTotal = currentItems.reduce((s, i) => s + Number(i.unitPrice) * i.quantity, 0);
+    const ordersProjection = (session.orders || []).map((o) => this.orderProjection(o));
+    const grandTotal = currentTotal + ordersProjection.reduce((acc, o) => acc + Number(o.total || 0), 0);
     return {
       id: session.id,
       status: session.status,
@@ -479,8 +491,9 @@ export class TableSessionService {
         addedByName: i.addedByName,
         total: Number(i.unitPrice) * i.quantity,
       })),
-      total: currentItems.reduce((s, i) => s + Number(i.unitPrice) * i.quantity, 0),
-      orders: (session.orders || []).map((o) => this.orderProjection(o)),
+      total: currentTotal,
+      grandTotal,
+      orders: ordersProjection,
       confirmedOrderId: session.confirmedOrderId,
     };
   }

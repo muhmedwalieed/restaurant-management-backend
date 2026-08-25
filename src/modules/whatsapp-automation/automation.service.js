@@ -28,9 +28,7 @@ const RESET_KEYWORDS = new Set([
 ]);
 
 export class WhatsAppAutomationService {
-  /**
-   * Retrieves active conversation or creates/re-opens one (ADR-021).
-   */
+
   async getOrCreateConversation(tenantContext, connection, customerPhone) {
     let conv = await automationRepository.findConversationByPhone(
       tenantContext,
@@ -54,9 +52,6 @@ export class WhatsAppAutomationService {
     return conv;
   }
 
-  /**
-   * Core WhatsApp Automation Flow Engine (Section 26.2).
-   */
   async handleInboundMessage(tenantContext, connection, messageData) {
     const customerPhone = messageData.fromPhone;
     const content = (messageData.content || "").trim();
@@ -65,7 +60,6 @@ export class WhatsAppAutomationService {
     const conv = await this.getOrCreateConversation(tenantContext, connection, customerPhone);
     const normalized = content.toLowerCase();
 
-    // 1. Explicit Reset Keyword Check (ADR-023)
     if (RESET_KEYWORDS.has(normalized)) {
       await automationRepository.resetConversation(tenantContext, conv.id);
       await whatsAppService.sendMessage(tenantContext, {
@@ -75,21 +69,19 @@ export class WhatsAppAutomationService {
       return;
     }
 
-    // 2. Human Handoff Guard (Section 28 / ADR-023)
     if (conv.status === "WAITING_AGENT") {
-      // Paused for support agent interaction — record the customer message into the inbox (Module 11).
+
       try {
         const { inboxService } = await import("../inbox/inbox.service.js");
         await inboxService.recordCustomerMessage(tenantContext, conv.id, customerPhone, content);
       } catch (err) {
-        // Non-fatal: inbox sync must never break the webhook ack.
+
       }
       return;
     }
 
     const currentCart = Array.isArray(conv.cart) ? conv.cart : [];
 
-    // 3. Explicit Text Keyword Intent Matching (Highest Priority)
     if (normalized.includes("menu") || normalized.includes("منيو") || normalized.includes("قائمة")) {
       return this.sendCategoriesMenu(tenantContext, conv, customerPhone);
     }
@@ -114,9 +106,6 @@ export class WhatsAppAutomationService {
       return this.triggerHandoff(tenantContext, conv, customerPhone);
     }
 
-    // 4. State-Dependent Navigation (Contextual Logic)
-
-    // State A: MAIN_MENU / MENU_CATEGORY -> Selecting Category by Index Number
     if (conv.state === "MAIN_MENU" || conv.state === "MENU_CATEGORY") {
       const selectedIndex = parseInt(content, 10) - 1;
       const { items: categories } = await menuRepository.findCategories(tenantContext, { limit: 20 });
@@ -156,7 +145,6 @@ export class WhatsAppAutomationService {
       }
     }
 
-    // State B: PRODUCT_SELECT -> Selecting Product by Index Number
     if (conv.state === "PRODUCT_SELECT" && conv.selectedCategoryId) {
       const selectedIndex = parseInt(content, 10) - 1;
       const { items: products } = await menuRepository.findProducts(tenantContext, {
@@ -194,7 +182,6 @@ export class WhatsAppAutomationService {
       }
     }
 
-    // State C: ADDRESS -> Inputting Delivery Address Text
     if (conv.state === "ADDRESS") {
       await automationRepository.updateConversation(tenantContext, conv.id, {
         state: "CONFIRM_ORDER",
@@ -217,7 +204,6 @@ export class WhatsAppAutomationService {
       return;
     }
 
-    // State D: CONFIRM_ORDER -> Confirming Order
     if (conv.state === "CONFIRM_ORDER" && (normalized === "confirm" || normalized === "نعم" || normalized === "تاكيد" || normalized === "تأكيد")) {
       if (currentCart.length === 0) {
         await whatsAppService.sendMessage(tenantContext, {
@@ -227,7 +213,6 @@ export class WhatsAppAutomationService {
         return;
       }
 
-      // 1. Main Branch Resolution Strategy (ADR-024)
       const { items: branches } = await branchRepository.findBranches(
         tenantContext,
         { limit: 20 }
@@ -242,7 +227,6 @@ export class WhatsAppAutomationService {
         return;
       }
 
-      // 2. Delegate to OrderService.createOrder (Section 24 / ADR-022)
       const orderService = (await import("../orders/order.service.js")).default;
 
       const orderPayload = {
@@ -261,7 +245,6 @@ export class WhatsAppAutomationService {
         const orderResult = await orderService.createOrder(tenantContext, mainBranch.id, orderPayload);
         const orderData = orderResult.data || orderResult;
 
-        // 3. Reset Conversation State
         await automationRepository.updateConversation(tenantContext, conv.id, {
           state: "WELCOME",
           cart: [],
@@ -284,7 +267,6 @@ export class WhatsAppAutomationService {
       }
     }
 
-    // 5. Initial / WELCOME State Option Number Handlers
     if (normalized === "1") {
       return this.sendCategoriesMenu(tenantContext, conv, customerPhone);
     }
@@ -304,14 +286,12 @@ export class WhatsAppAutomationService {
       return this.triggerHandoff(tenantContext, conv, customerPhone);
     }
 
-    // Default Fallback Greeting
     await whatsAppService.sendMessage(tenantContext, {
       to: customerPhone,
       text: WELCOME_TEXT,
     });
   }
 
-  // Helper Methods for Modular Intent Executions
   async sendCategoriesMenu(tenantContext, conv, customerPhone) {
     const { items: categories } = await menuRepository.findCategories(tenantContext, { limit: 20 });
     if (!categories || categories.length === 0) {
@@ -425,16 +405,13 @@ export class WhatsAppAutomationService {
       text: "👨‍💼 *تم تحويل المحادثة إلى أحد ممثلي خدمة العملاء.*\nسيتواصل معك أحد موظفينا في أقرب وقت.",
     });
 
-    // Create the inbox conversation for support agents (Module 11 Unified Inbox).
     try {
       const { inboxService } = await import("../inbox/inbox.service.js");
       await inboxService.createFromWhatsApp(tenantContext, conv, customerPhone);
     } catch (err) {
-      // Non-fatal: handoff already persisted — inbox creation is best-effort.
+
     }
   }
-
-  // ==================== ADMIN METHODS ====================
 
   async listConversations(tenantContext, query = {}) {
     const page = query.page ? parseInt(query.page, 10) : 1;

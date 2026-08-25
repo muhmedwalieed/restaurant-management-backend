@@ -118,7 +118,7 @@ export class EmployeeRepository {
   }
 
   async updateEmployee(tenantContext, id, data) {
-    // Explicit tenant scoping check first
+
     const existing = await this.findEmployeeById(tenantContext, id);
     if (!existing) {
       return null;

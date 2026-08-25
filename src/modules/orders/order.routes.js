@@ -20,10 +20,9 @@ import env from "../../config/env.js";
 
 const router = Router();
 
-// Public rate limiter for unauthenticated public order submissions
 const publicOrderRateLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: env.NODE_ENV === "test" ? 1000 : 30, // 30 requests per 15 minutes in production
+  windowMs: 15 * 60 * 1000,
+  max: env.NODE_ENV === "test" ? 1000 : 30,
   message: {
     success: false,
     error: {
@@ -35,7 +34,6 @@ const publicOrderRateLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-// ==================== PUBLIC ORDER ENDPOINT (Unauthenticated) ====================
 router.post("/orders/public", publicOrderRateLimiter, validate(publicOrderSchema), (req, res, next) => {
   orderController.createPublicOrder(req, res, next);
 });
@@ -44,7 +42,6 @@ router.get("/orders/track", publicOrderRateLimiter, validate(trackOrderQuerySche
   orderController.trackOrder(req, res, next);
 });
 
-// ==================== POS ORDERING PIPELINE ====================
 const branchPosRouter = Router({ mergeParams: true });
 branchPosRouter.use(authenticate, requireTenantContext);
 
@@ -54,7 +51,6 @@ branchPosRouter.post("/", authorize("orders.create"), validate(posOrderSchema), 
 
 router.use("/branches/:branchId/pos/orders", branchPosRouter);
 
-// ==================== TENANT-WIDE ORDERS (unified view: all branches, all sources) ====================
 const tenantOrderRouter = Router();
 tenantOrderRouter.use(authenticate, requireTenantContext);
 
@@ -64,7 +60,6 @@ tenantOrderRouter.get("/", authorize("orders.view"), validate(orderQuerySchema),
 
 router.use("/orders", tenantOrderRouter);
 
-// ==================== AUTHENTICATED BRANCH ORDERS PIPELINE ====================
 const branchOrderRouter = Router({ mergeParams: true });
 branchOrderRouter.use(authenticate, requireTenantContext);
 

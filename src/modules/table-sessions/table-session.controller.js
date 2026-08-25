@@ -49,13 +49,11 @@ export class TableSessionController {
 
   async addItem(req, res, next) {
     try {
-      const { id } = req.params;
       const body = req.body ?? {};
-      const restaurantId = await tableSessionService.resolveRestaurantIdForSession(id);
-      const result = await tableSessionService.addItem(restaurantId, id, {
+      const { restaurantId, sessionId } = req.memberContext;
+      const result = await tableSessionService.addItem(restaurantId, sessionId, req.memberContext.memberId, {
         productId: body.productId,
         quantity: body.quantity,
-        addedByName: body.addedByName,
       });
       return sendSuccess(res, { data: result });
     } catch (error) {
@@ -65,10 +63,10 @@ export class TableSessionController {
 
   async updateItem(req, res, next) {
     try {
-      const { id, itemId } = req.params;
+      const { itemId } = req.params;
       const body = req.body ?? {};
-      const restaurantId = await tableSessionService.resolveRestaurantIdForSession(id);
-      const result = await tableSessionService.updateItem(restaurantId, id, itemId, {
+      const { restaurantId, sessionId } = req.memberContext;
+      const result = await tableSessionService.updateItem(restaurantId, sessionId, itemId, {
         quantity: body.quantity,
       });
       return sendSuccess(res, { data: result });
@@ -79,9 +77,9 @@ export class TableSessionController {
 
   async removeItem(req, res, next) {
     try {
-      const { id, itemId } = req.params;
-      const restaurantId = await tableSessionService.resolveRestaurantIdForSession(id);
-      const result = await tableSessionService.removeItem(restaurantId, id, itemId);
+      const { itemId } = req.params;
+      const { restaurantId, sessionId } = req.memberContext;
+      const result = await tableSessionService.removeItem(restaurantId, sessionId, itemId);
       return sendSuccess(res, { data: result });
     } catch (error) {
       next(error);
@@ -90,10 +88,9 @@ export class TableSessionController {
 
   async callWaiter(req, res, next) {
     try {
-      const { id } = req.params;
       const body = req.body ?? {};
-      const restaurantId = await tableSessionService.resolveRestaurantIdForSession(id);
-      const result = await tableSessionService.callWaiter(restaurantId, id, body.tableId, {
+      const { restaurantId, sessionId } = req.memberContext;
+      const result = await tableSessionService.callWaiter(restaurantId, sessionId, body.tableId, {
         requesterName: body.requesterName,
         note: body.note,
       });
@@ -105,9 +102,8 @@ export class TableSessionController {
 
   async submitDraft(req, res, next) {
     try {
-      const { id } = req.params;
-      const restaurantId = await tableSessionService.resolveRestaurantIdForSession(id);
-      const result = await tableSessionService.submitDraft(restaurantId, id);
+      const { restaurantId, sessionId } = req.memberContext;
+      const result = await tableSessionService.submitDraft(restaurantId, sessionId);
       return sendSuccess(res, { data: result });
     } catch (error) {
       next(error);
@@ -138,6 +134,15 @@ export class TableSessionController {
     try {
       const result = await tableSessionService.regeneratePin(req.tenantContext, req.params.id);
       return sendSuccess(res, { message: "PIN regenerated", data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async rejectPendingOrder(req, res, next) {
+    try {
+      const result = await tableSessionService.rejectPendingOrder(req.tenantContext, req.params.id);
+      return sendSuccess(res, { message: "Order returned to customer", data: result });
     } catch (error) {
       next(error);
     }

@@ -5,28 +5,16 @@ import menuRepository from "../menu/menu.repository.js";
 import { ConflictError, NotFoundError } from "../../shared/errors/index.js";
 import env from "../../config/env.js";
 
-/**
- * Generates a cryptographically secure random 32-character hex token.
- * @returns {string}
- */
 function generateQrToken() {
   return crypto.randomBytes(16).toString("hex");
 }
 
-/**
- * Formats full QR URL payload — points to the FRONTEND public table-menu page.
- * Scanning the QR opens the public menu page in the browser.
- * @param {string} qrToken
- * @returns {string}
- */
 function buildQrUrl(qrToken) {
   return `${env.CLIENT_URL}/menu/table/${qrToken}`;
 }
 
 export class TableService {
-  /**
-   * Helper to verify target branch belongs to tenant.
-   */
+
   async verifyBranchOwnership(tenantContext, branchId) {
     const branch = await branchRepository.findBranchById(tenantContext, branchId);
     if (!branch) {
@@ -79,16 +67,13 @@ export class TableService {
   async createTable(tenantContext, branchId, data) {
     await this.verifyBranchOwnership(tenantContext, branchId);
 
-    // 1. Check duplicate table label within branch
     const existing = await tableRepository.findTableByLabel(tenantContext, branchId, data.label);
     if (existing) {
       throw new ConflictError(`Table with label '${data.label}' already exists in this branch`);
     }
 
-    // 2. Generate secure QR token
     const qrToken = generateQrToken();
 
-    // 3. Whitelist payload
     const table = await tableRepository.createTable(tenantContext, branchId, {
       label: data.label,
       capacity: data.capacity !== undefined ? data.capacity : 2,
@@ -105,7 +90,6 @@ export class TableService {
   async updateTable(tenantContext, branchId, tableId, data) {
     const existing = await this.getTableById(tenantContext, branchId, tableId);
 
-    // If changing label, check uniqueness within branch
     if (data.label && data.label.toLowerCase() !== existing.label.toLowerCase()) {
       const duplicate = await tableRepository.findTableByLabel(tenantContext, branchId, data.label);
       if (duplicate) {
@@ -154,7 +138,6 @@ export class TableService {
       throw new NotFoundError("Invalid or expired QR code token");
     }
 
-    // Resolve restaurant public menu
     const menuData = await menuRepository.getPublicMenuBySlugOrId({ restaurantId: table.restaurantId });
     if (!menuData) {
       throw new NotFoundError("Restaurant menu not available");

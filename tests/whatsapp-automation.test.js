@@ -43,7 +43,6 @@ describe("Module 10 — WhatsApp Automation Module Tests", () => {
       });
     });
 
-    // Setup Tenant A
     const regA = await authService.register({
       name: "Owner Auto A",
       email: `ownerautoa-${Date.now()}@test.com`,
@@ -105,7 +104,6 @@ describe("Module 10 — WhatsApp Automation Module Tests", () => {
 
     const passwordHash = await bcrypt.hash("Password123!", 10);
 
-    // Manager A Role (whatsapp.manage + whatsapp.view)
     const waPerms = await prisma.permission.findMany({
       where: { key: { in: ["whatsapp.manage", "whatsapp.view"] } },
     });
@@ -139,7 +137,6 @@ describe("Module 10 — WhatsApp Automation Module Tests", () => {
     });
     managerAToken = managerLogin.accessToken;
 
-    // View-Only Role
     const viewPerm = await prisma.permission.findFirst({
       where: { key: "whatsapp.view" },
     });
@@ -173,7 +170,6 @@ describe("Module 10 — WhatsApp Automation Module Tests", () => {
     });
     viewOnlyToken = viewLogin.accessToken;
 
-    // Setup Tenant B
     const regB = await authService.register({
       name: "Owner Auto B",
       email: `ownerautob-${Date.now()}@test.com`,
@@ -227,7 +223,6 @@ describe("Module 10 — WhatsApp Automation Module Tests", () => {
     await disconnectRedis();
   });
 
-  // Helper to send inbound webhook message
   async function sendInboundText(text, msgId = `wamid_auto_${Date.now()}`) {
     const payload = {
       object: "whatsapp_business_account",
@@ -367,18 +362,17 @@ describe("Module 10 — WhatsApp Automation Module Tests", () => {
 
     assert.equal(conv.state, "WELCOME");
     const cart = conv.cart;
-    assert.equal(cart.length, 0); // Cart cleared!
+    assert.equal(cart.length, 0);
 
-    // Verify created Order in DB
     const order = await prisma.order.findFirst({
       where: { restaurantId: tenantA.id, source: "WHATSAPP" },
       include: { items: true, customer: true },
     });
 
     assert.ok(order);
-    assert.equal(order.branchId, branchA.id); // Main branch resolved!
+    assert.equal(order.branchId, branchA.id);
     assert.equal(Number(order.total), 120.0);
-    assert.ok(order.customerId); // Customer auto-linked!
+    assert.ok(order.customerId);
   });
 
   test("9. Order Tracking Flow: Inbound '4' returns status of last created order", async () => {
@@ -401,11 +395,9 @@ describe("Module 10 — WhatsApp Automation Module Tests", () => {
 
     assert.equal(conv.status, "WAITING_AGENT");
 
-    // Subsequent message while WAITING_AGENT pauses bot
     const subRes = await sendInboundText("random message during handoff");
     assert.equal(subRes.status, 200);
 
-    // Inbound reset keyword 'restart' restores ACTIVE status
     const resetRes = await sendInboundText("restart");
     assert.equal(resetRes.status, 200);
 
@@ -417,7 +409,7 @@ describe("Module 10 — WhatsApp Automation Module Tests", () => {
   });
 
   test("12. CLOSED Conversation Re-Opening (ADR-021): Customer texting on CLOSED conversation re-opens record", async () => {
-    // Close conversation via repository
+
     await prisma.whatsAppConversation.updateMany({
       where: { id: conversationA.id, restaurantId: tenantA.id },
       data: { status: "CLOSED" },

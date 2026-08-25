@@ -4,9 +4,6 @@ import { NotFoundError } from "../../shared/errors/index.js";
 
 const ACTIVE_ORDER_STATUSES = ["PENDING", "CONFIRMED", "PREPARING", "READY", "OUT_FOR_DELIVERY"];
 
-/**
- * YYYY-MM-DD key in the restaurant's local time for day grouping.
- */
 function dayKey(date) {
   const d = new Date(date);
   const y = d.getFullYear();
@@ -29,9 +26,7 @@ function startOfDaysAgo(days) {
 }
 
 export class DashboardService {
-  /**
-   * Verifies the requested branch (if any) belongs to the tenant (cross-tenant → 404).
-   */
+
   async resolveBranch(tenantContext, branchId) {
     if (!branchId) return null;
     const branch = await branchRepository.findBranchById(tenantContext, branchId);
@@ -41,9 +36,6 @@ export class DashboardService {
     return branch;
   }
 
-  /**
-   * Restaurant-level KPI summary (Section 6 — Module 15 Sales/Orders dashboards).
-   */
   async getSummary(tenantContext, { branchId, from, to }) {
     await this.resolveBranch(tenantContext, branchId);
     const filters = { branchId, from, to };
@@ -82,17 +74,11 @@ export class DashboardService {
     };
   }
 
-  /**
-   * Channel stats — orders + revenue split by OrderSource (WHATSAPP/QR/WEBSITE/CASHIER/PHONE).
-   */
   async getChannelStats(tenantContext, { branchId, from, to }) {
     await this.resolveBranch(tenantContext, branchId);
     return dashboardRepository.groupOrdersBySource(tenantContext, { branchId, from, to });
   }
 
-  /**
-   * Order status + payment status distribution.
-   */
   async getOrderStatusStats(tenantContext, { branchId, from, to }) {
     await this.resolveBranch(tenantContext, branchId);
     const filters = { branchId, from, to };
@@ -103,9 +89,6 @@ export class DashboardService {
     return { byStatus, byPayment };
   }
 
-  /**
-   * Branch comparison (Module 19): orders/revenue per branch, sorted by revenue desc.
-   */
   async getBranchComparison(tenantContext, { from, to }) {
     const { byBranch, paidByBranch, branches } = await dashboardRepository.branchComparison(tenantContext, { from, to });
 
@@ -132,9 +115,6 @@ export class DashboardService {
       .sort((a, b) => b.revenue - a.revenue);
   }
 
-  /**
-   * Daily sales trend — orders + revenue per day (defaults to last 7 days).
-   */
   async getSalesTrend(tenantContext, { branchId, from, to, days = 7 }) {
     await this.resolveBranch(tenantContext, branchId);
 
@@ -163,9 +143,6 @@ export class DashboardService {
       .sort((a, b) => a.date.localeCompare(b.date));
   }
 
-  /**
-   * Employee performance — payments collected + status actions per employee.
-   */
   async getEmployeePerformance(tenantContext, { branchId, from, to }) {
     await this.resolveBranch(tenantContext, branchId);
     return dashboardRepository.employeePerformance(tenantContext, { branchId, from, to });

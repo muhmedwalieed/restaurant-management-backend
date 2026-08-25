@@ -2,7 +2,6 @@ import menuService from "./menu.service.js";
 import { sendSuccess } from "../../shared/utils/response.js";
 
 export class MenuController {
-  // ==================== CATEGORIES ====================
 
   async listCategories(req, res, next) {
     try {
@@ -74,8 +73,6 @@ export class MenuController {
       next(error);
     }
   }
-
-  // ==================== PRODUCTS ====================
 
   async listProducts(req, res, next) {
     try {
@@ -150,8 +147,6 @@ export class MenuController {
     }
   }
 
-  // ==================== PRODUCT MODIFIERS (ADD-ONS) ====================
-
   async listModifiers(req, res, next) {
     try {
       const modifiers = await menuService.listModifiers(req.tenantContext, req.params.id);
@@ -209,8 +204,6 @@ export class MenuController {
       next(error);
     }
   }
-
-  // ==================== PUBLIC MENU ====================
 
   async getPublicMenu(req, res, next) {
     try {

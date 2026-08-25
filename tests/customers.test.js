@@ -35,7 +35,6 @@ describe("Customer Management & CRM Module Integration Tests", () => {
       });
     });
 
-    // Setup Tenant A
     const regA = await authService.register({
       name: "Owner Customer A",
       email: `ownercustomera-${Date.now()}@test.com`,
@@ -59,7 +58,6 @@ describe("Customer Management & CRM Module Integration Tests", () => {
 
     const passwordHash = await bcrypt.hash("Password123!", 10);
 
-    // Staff with view only permission for Tenant A
     const viewPermission = await prisma.permission.findFirst({
       where: { key: "customers.view" },
     });
@@ -94,7 +92,6 @@ describe("Customer Management & CRM Module Integration Tests", () => {
     });
     viewOnlyStaffToken = viewOnlyLogin.accessToken;
 
-    // Staff without any customer permissions
     const noCustomerRole = await prisma.role.create({
       data: {
         restaurantId: tenantA.id,
@@ -122,7 +119,6 @@ describe("Customer Management & CRM Module Integration Tests", () => {
     });
     noCustomersStaffToken = noCustLogin.accessToken;
 
-    // Setup Tenant B
     const regB = await authService.register({
       name: "Owner Customer B",
       email: `ownercustomerb-${Date.now()}@test.com`,
@@ -234,7 +230,7 @@ describe("Customer Management & CRM Module Integration Tests", () => {
       },
       body: JSON.stringify({
         name: "Jane Doe",
-        phone: "+201012345678", // Same phone!
+        phone: "+201012345678",
       }),
     });
 
@@ -252,7 +248,7 @@ describe("Customer Management & CRM Module Integration Tests", () => {
       },
       body: JSON.stringify({
         name: "Tenant B Customer",
-        phone: "+201012345678", // Same phone in different tenant
+        phone: "+201012345678",
       }),
     });
 
@@ -381,7 +377,7 @@ describe("Customer Management & CRM Module Integration Tests", () => {
   });
 
   test("10. GET /api/v1/customers/:id/orders returns customer order history", async () => {
-    // Create an order linked to createdCustomerA
+
     customerOrderA = await prisma.order.create({
       data: {
         orderNumber: 2001,
@@ -411,7 +407,7 @@ describe("Customer Management & CRM Module Integration Tests", () => {
   test("11. Cross-Tenant Protection: Tenant B cannot access Tenant A's customer or addresses (404 Not Found)", async () => {
     const resCustomer = await fetch(`${baseUrl}/api/v1/customers/${createdCustomerA.id}`, {
       headers: {
-        Authorization: `Bearer ${ownerBToken}`, // Token B
+        Authorization: `Bearer ${ownerBToken}`,
       },
     });
 
@@ -421,7 +417,7 @@ describe("Customer Management & CRM Module Integration Tests", () => {
       `${baseUrl}/api/v1/customers/${createdCustomerA.id}/addresses/${createdAddressA.id}`,
       {
         headers: {
-          Authorization: `Bearer ${ownerBToken}`, // Token B
+          Authorization: `Bearer ${ownerBToken}`,
         },
       }
     );
@@ -434,7 +430,7 @@ describe("Customer Management & CRM Module Integration Tests", () => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${viewOnlyStaffToken}`, // Token with customers.view ONLY
+        Authorization: `Bearer ${viewOnlyStaffToken}`,
       },
       body: JSON.stringify({
         name: "Unauthorized Create",
@@ -450,7 +446,7 @@ describe("Customer Management & CRM Module Integration Tests", () => {
   test("13. RBAC Protection: Staff without customer permissions receives 403 on GET /customers", async () => {
     const res = await fetch(`${baseUrl}/api/v1/customers`, {
       headers: {
-        Authorization: `Bearer ${noCustomersStaffToken}`, // Token without customer permissions
+        Authorization: `Bearer ${noCustomersStaffToken}`,
       },
     });
 
@@ -479,7 +475,7 @@ describe("Customer Management & CRM Module Integration Tests", () => {
     });
 
     const listBody = await listRes.json();
-    assert.equal(listBody.data.length, 0); // Excluded after soft delete
+    assert.equal(listBody.data.length, 0);
   });
 
   test("15. DELETE /api/v1/customers/:id soft deletes customer profile", async () => {
@@ -492,7 +488,6 @@ describe("Customer Management & CRM Module Integration Tests", () => {
 
     assert.equal(res.status, 200);
 
-    // Re-fetch customer — should return 404 Not Found
     const getRes = await fetch(`${baseUrl}/api/v1/customers/${createdCustomerA.id}`, {
       headers: {
         Authorization: `Bearer ${ownerAToken}`,
@@ -503,7 +498,7 @@ describe("Customer Management & CRM Module Integration Tests", () => {
   });
 
   test("16. Fix 4: Re-creating customer with soft-deleted phone returns 409 ConflictError", async () => {
-    // Phone of createdCustomerA was "+201012345678" and it is now soft-deleted!
+
     const res = await fetch(`${baseUrl}/api/v1/customers`, {
       method: "POST",
       headers: {
@@ -526,12 +521,12 @@ describe("Customer Management & CRM Module Integration Tests", () => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${ownerAToken}`, // Tenant A Token
+        Authorization: `Bearer ${ownerAToken}`,
       },
       body: JSON.stringify({
         name: "Mass Assignment Test",
         phone: "+201055554444",
-        restaurantId: tenantB.id, // Injected Tenant B ID!
+        restaurantId: tenantB.id,
         id: "injected_custom_id_123",
       }),
     });
@@ -540,8 +535,8 @@ describe("Customer Management & CRM Module Integration Tests", () => {
     const body = await res.json();
 
     assert.equal(body.success, true);
-    assert.equal(body.data.restaurantId, tenantA.id); // Created under Tenant A!
-    assert.notEqual(body.data.id, "injected_custom_id_123"); // ID generated safely!
+    assert.equal(body.data.restaurantId, tenantA.id);
+    assert.notEqual(body.data.id, "injected_custom_id_123");
   });
 
   test("18. Fix 5: 401 Unauthorized when requesting /customers without Authorization header", async () => {
@@ -554,7 +549,7 @@ describe("Customer Management & CRM Module Integration Tests", () => {
   test("19. Fix 5: Cross-Tenant Order History: GET /customers/:idA/orders from Tenant B returns 404 NotFoundError", async () => {
     const res = await fetch(`${baseUrl}/api/v1/customers/${createdCustomerA.id}/orders`, {
       headers: {
-        Authorization: `Bearer ${ownerBToken}`, // Token B
+        Authorization: `Bearer ${ownerBToken}`,
       },
     });
 
@@ -564,7 +559,7 @@ describe("Customer Management & CRM Module Integration Tests", () => {
   });
 
   test("20. Fix 5: Cross-Tenant Address Actions: PATCH/DELETE on Tenant A address from Tenant B returns 404", async () => {
-    // Create new customer & address for test
+
     const custTemp = await prisma.customer.create({
       data: {
         restaurantId: tenantA.id,
@@ -581,7 +576,6 @@ describe("Customer Management & CRM Module Integration Tests", () => {
       },
     });
 
-    // Patch attempt from Tenant B
     const patchRes = await fetch(`${baseUrl}/api/v1/customers/${custTemp.id}/addresses/${addrTemp.id}`, {
       method: "PATCH",
       headers: {
@@ -592,7 +586,6 @@ describe("Customer Management & CRM Module Integration Tests", () => {
     });
     assert.equal(patchRes.status, 404);
 
-    // Delete attempt from Tenant B
     const deleteRes = await fetch(`${baseUrl}/api/v1/customers/${custTemp.id}/addresses/${addrTemp.id}`, {
       method: "DELETE",
       headers: {
@@ -603,7 +596,7 @@ describe("Customer Management & CRM Module Integration Tests", () => {
   });
 
   test("21. Fix 6: Default Address Auto-Creation & Auto-Promotion on Soft-Delete", async () => {
-    // 1. Create fresh customer
+
     const cust = await prisma.customer.create({
       data: {
         restaurantId: tenantA.id,
@@ -612,7 +605,6 @@ describe("Customer Management & CRM Module Integration Tests", () => {
       },
     });
 
-    // 2. First address created without specifying isDefault -> should automatically be isDefault: true
     const resAddr1 = await fetch(`${baseUrl}/api/v1/customers/${cust.id}/addresses`, {
       method: "POST",
       headers: {
@@ -629,7 +621,6 @@ describe("Customer Management & CRM Module Integration Tests", () => {
     const bodyAddr1 = await resAddr1.json();
     assert.equal(bodyAddr1.data.isDefault, true);
 
-    // 3. Second address created with isDefault: true -> becomes default
     const resAddr2 = await fetch(`${baseUrl}/api/v1/customers/${cust.id}/addresses`, {
       method: "POST",
       headers: {
@@ -647,7 +638,6 @@ describe("Customer Management & CRM Module Integration Tests", () => {
     const bodyAddr2 = await resAddr2.json();
     assert.equal(bodyAddr2.data.isDefault, true);
 
-    // 4. Soft delete second address (which is default) -> first address should be promoted to isDefault: true
     const delRes = await fetch(`${baseUrl}/api/v1/customers/${cust.id}/addresses/${bodyAddr2.data.id}`, {
       method: "DELETE",
       headers: {
@@ -657,7 +647,6 @@ describe("Customer Management & CRM Module Integration Tests", () => {
 
     assert.equal(delRes.status, 200);
 
-    // 5. Verify remaining address list -> Addr1 is now default!
     const listRes = await fetch(`${baseUrl}/api/v1/customers/${cust.id}/addresses`, {
       headers: {
         Authorization: `Bearer ${ownerAToken}`,

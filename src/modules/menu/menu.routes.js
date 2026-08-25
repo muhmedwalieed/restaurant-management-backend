@@ -20,10 +20,9 @@ import env from "../../config/env.js";
 
 const router = Router();
 
-// Public unauthenticated endpoint rate limiter (Section 19: rate limit public endpoints)
 const publicMenuRateLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: env.NODE_ENV === "test" ? 1000 : 60, // 60 requests per 15 minutes in production
+  windowMs: 15 * 60 * 1000,
+  max: env.NODE_ENV === "test" ? 1000 : 60,
   message: {
     success: false,
     error: {
@@ -35,16 +34,12 @@ const publicMenuRateLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-// ==================== PUBLIC MENU ENDPOINT (No auth required) ====================
 router.get("/public", publicMenuRateLimiter, validate(publicMenuQuerySchema), (req, res, next) => {
   menuController.getPublicMenu(req, res, next);
 });
 
-// ==================== AUTHENTICATED TENANT PIPELINE ====================
-// Pipeline: authenticate -> requireTenantContext -> authorize("menu.manage") -> validate(schema)
 router.use(authenticate, requireTenantContext);
 
-// ------------ CATEGORIES ------------
 router.get("/categories", authorizeAny("menu.view", "menu.manage"), validate(categoryQuerySchema), (req, res, next) => {
   menuController.listCategories(req, res, next);
 });
@@ -65,7 +60,6 @@ router.delete("/categories/:id", authorize("menu.manage"), (req, res, next) => {
   menuController.deleteCategory(req, res, next);
 });
 
-// ------------ PRODUCTS ------------
 router.get("/products", authorizeAny("menu.view", "menu.manage"), validate(productQuerySchema), (req, res, next) => {
   menuController.listProducts(req, res, next);
 });
@@ -86,7 +80,6 @@ router.delete("/products/:id", authorize("menu.manage"), (req, res, next) => {
   menuController.deleteProduct(req, res, next);
 });
 
-// ------------ PRODUCT MODIFIERS (ADD-ONS) ------------
 router.get("/products/:id/modifiers", authorizeAny("menu.view", "menu.manage"), (req, res, next) => {
   menuController.listModifiers(req, res, next);
 });

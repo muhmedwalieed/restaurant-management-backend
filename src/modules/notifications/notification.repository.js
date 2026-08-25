@@ -2,9 +2,7 @@ import prisma from "../../lib/prisma.js";
 import { AuthenticationError } from "../../shared/errors/index.js";
 
 export class NotificationRepository {
-  /**
-   * Lists notifications targeted at a specific employee (self-scoped).
-   */
+
   async findNotifications(tenantContext, employeeId, { page = 1, limit = 20, unreadOnly, type } = {}) {
     this.assertTenant(tenantContext);
     const skip = (page - 1) * limit;
@@ -28,9 +26,6 @@ export class NotificationRepository {
     return { items, total };
   }
 
-  /**
-   * Unread count for an employee.
-   */
   async countUnread(tenantContext, employeeId) {
     this.assertTenant(tenantContext);
     return prisma.notification.count({
@@ -38,9 +33,6 @@ export class NotificationRepository {
     });
   }
 
-  /**
-   * Marks a single notification as read (ownership enforced via where).
-   */
   async markRead(tenantContext, employeeId, notificationId) {
     this.assertTenant(tenantContext);
     const result = await prisma.notification.updateMany({
@@ -50,9 +42,6 @@ export class NotificationRepository {
     return result.count;
   }
 
-  /**
-   * Marks all notifications of an employee as read.
-   */
   async markAllRead(tenantContext, employeeId) {
     this.assertTenant(tenantContext);
     const result = await prisma.notification.updateMany({
@@ -62,9 +51,6 @@ export class NotificationRepository {
     return result.count;
   }
 
-  /**
-   * Creates a notification row.
-   */
   async createNotification(tenantContext, { targetEmployeeId, branchId, type, title, body, referenceType, referenceId }) {
     this.assertTenant(tenantContext);
     return prisma.notification.create({
@@ -81,9 +67,6 @@ export class NotificationRepository {
     });
   }
 
-  /**
-   * Finds the notification preference row for an employee.
-   */
   async findPreference(tenantContext, employeeId) {
     this.assertTenant(tenantContext);
     return prisma.notificationPreference.findFirst({
@@ -91,9 +74,6 @@ export class NotificationRepository {
     });
   }
 
-  /**
-   * Upserts the preference row.
-   */
   async upsertPreference(tenantContext, employeeId, disabledTypes) {
     this.assertTenant(tenantContext);
     return prisma.notificationPreference.upsert({
@@ -107,9 +87,6 @@ export class NotificationRepository {
     });
   }
 
-  /**
-   * Active (non-deleted) employees in a branch — notification targets for order events.
-   */
   async findBranchEmployees(tenantContext, branchId) {
     this.assertTenant(tenantContext);
     return prisma.employee.findMany({
@@ -123,9 +100,6 @@ export class NotificationRepository {
     });
   }
 
-  /**
-   * Preference rows for a set of employees (to honor disabled types).
-   */
   async findPreferencesForEmployees(tenantContext, employeeIds) {
     this.assertTenant(tenantContext);
     return prisma.notificationPreference.findMany({

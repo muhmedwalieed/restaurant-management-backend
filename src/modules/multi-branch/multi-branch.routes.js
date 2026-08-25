@@ -6,7 +6,6 @@ import { authorize } from "../auth/authorize.middleware.js";
 import { requireTenantContext } from "../../shared/middleware/tenant-context.js";
 import { validate } from "../../shared/middleware/validate.js";
 
-// Branch users: mounted at /v1/branches/:branchId/users
 const branchUsersRouter = Router({ mergeParams: true });
 branchUsersRouter.use(authenticate, requireTenantContext);
 
@@ -22,7 +21,6 @@ branchUsersRouter.delete("/:employeeId", authorize("branches.manage"), (req, res
   multiBranchController.revokeAccess(req, res, next);
 });
 
-// My accessible branches (branch switcher): mounted at /v1/employees/me/branches
 const myBranchesRouter = Router();
 myBranchesRouter.use(authenticate, requireTenantContext);
 

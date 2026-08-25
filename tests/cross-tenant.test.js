@@ -15,7 +15,7 @@ describe("Cross-Tenant Isolation & IDOR Security Tests (Real DB & Repository)", 
   let tenantContextB;
 
   before(async () => {
-    // 1. Create Test Fixtures in real DB
+
     restaurantA = await prisma.restaurant.create({
       data: {
         name: "Test Restaurant Alpha",
@@ -54,7 +54,7 @@ describe("Cross-Tenant Isolation & IDOR Security Tests (Real DB & Repository)", 
   });
 
   after(async () => {
-    // Cleanup created test records from database to maintain a clean DB state
+
     if (restaurantA?.id || restaurantB?.id) {
       const ids = [restaurantA?.id, restaurantB?.id].filter(Boolean);
       await prisma.auditLog.deleteMany({ where: { restaurantId: { in: ids } } });
@@ -90,12 +90,12 @@ describe("Cross-Tenant Isolation & IDOR Security Tests (Real DB & Repository)", 
   });
 
   test("Tenant Safety-Net Extension throws when query executed without restaurantId", async () => {
-    // Attempting a raw findFirst on Branch without restaurantId should trigger safety net violation in test mode
+
     await assert.rejects(
       async () => {
         await prisma.branch.findFirst({
           where: {
-            id: branchA.id, // Missing restaurantId!
+            id: branchA.id,
           },
         });
       },

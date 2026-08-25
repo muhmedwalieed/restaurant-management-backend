@@ -2,11 +2,6 @@ import { DomainEvent, onEvent } from "../../shared/events/event-bus.js";
 import notificationService from "./notification.service.js";
 import logger from "../../config/logger.js";
 
-/**
- * Registers in-process Domain Event listeners (Section 29) that convert business
- * events into in-app notifications. Listeners are fire-and-forget: a consumer
- * failure is logged and never breaks the producer flow.
- */
 function safe(listener) {
   return (payload) => {
     listener(payload).catch((err) => {
@@ -76,7 +71,6 @@ export function registerNotificationSubscriptions() {
   );
 }
 
-// Register listeners as a side-effect so importing the module wires the bus (Section 29).
 registerNotificationSubscriptions();
 
 export default registerNotificationSubscriptions;

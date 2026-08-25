@@ -1,13 +1,13 @@
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
 import tableSessionController from "./table-session.controller.js";
+import { requireMember } from "./require-member.middleware.js";
 import { authenticate } from "../auth/authenticate.middleware.js";
 import { authorize } from "../auth/authorize.middleware.js";
 import { requireTenantContext } from "../../shared/middleware/tenant-context.js";
 import { validate } from "../../shared/middleware/validate.js";
 import { z } from "zod";
 
-// Public (customer) endpoints — reachable from the QR/menu page.
 const joinSchema = z.object({
   body: z.object({ name: z.string().min(1).max(60), pin: z.string().length(4) }),
 });
@@ -15,7 +15,6 @@ const addItemSchema = z.object({
   body: z.object({
     productId: z.string().min(1),
     quantity: z.coerce.number().int().min(1),
-    addedByName: z.string().max(60).optional(),
   }),
 });
 const updateItemSchema = z.object({
@@ -43,23 +42,22 @@ router.post("/sessions/:qrToken/join", customerLimiter, validate(joinSchema), (r
   tableSessionController.joinSession(req, res, next)
 );
 router.get("/sessions/:id", customerLimiter, (req, res, next) => tableSessionController.getSession(req, res, next));
-router.post("/sessions/:id/items", customerLimiter, validate(addItemSchema), (req, res, next) =>
+router.post("/sessions/:id/items", requireMember, customerLimiter, validate(addItemSchema), (req, res, next) =>
   tableSessionController.addItem(req, res, next)
 );
-router.patch("/sessions/:id/items/:itemId", customerLimiter, validate(updateItemSchema), (req, res, next) =>
+router.patch("/sessions/:id/items/:itemId", requireMember, customerLimiter, validate(updateItemSchema), (req, res, next) =>
   tableSessionController.updateItem(req, res, next)
 );
-router.delete("/sessions/:id/items/:itemId", customerLimiter, (req, res, next) =>
+router.delete("/sessions/:id/items/:itemId", requireMember, customerLimiter, (req, res, next) =>
   tableSessionController.removeItem(req, res, next)
 );
-router.post("/sessions/:id/call-waiter", customerLimiter, validate(callWaiterSchema), (req, res, next) =>
+router.post("/sessions/:id/call-waiter", requireMember, customerLimiter, validate(callWaiterSchema), (req, res, next) =>
   tableSessionController.callWaiter(req, res, next)
 );
-router.post("/sessions/:id/submit", customerLimiter, (req, res, next) =>
+router.post("/sessions/:id/submit", requireMember, customerLimiter, (req, res, next) =>
   tableSessionController.submitDraft(req, res, next)
 );
 
-// Staff endpoints — start/confirm/close a session.
 const staffRouter = Router({ mergeParams: true });
 staffRouter.use(authenticate, requireTenantContext);
 
@@ -76,6 +74,9 @@ staffRouter.post("/:id/close", authorize("orders.create"), (req, res, next) =>
 );
 staffRouter.post("/:id/regenerate-pin", authorize("orders.create"), (req, res, next) =>
   tableSessionController.regeneratePin(req, res, next)
+);
+staffRouter.post("/:id/reject-order", authorize("orders.create"), (req, res, next) =>
+  tableSessionController.rejectPendingOrder(req, res, next)
 );
 staffRouter.get("/:id", (req, res, next) => tableSessionController.getSessionStaff(req, res, next));
 

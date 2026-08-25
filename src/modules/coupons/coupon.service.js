@@ -2,12 +2,6 @@ import couponRepository from "./coupon.repository.js";
 import { BusinessRuleError, ConflictError, NotFoundError } from "../../shared/errors/index.js";
 import { AuditAction, auditLogService } from "../audit-logs/audit-log.service.js";
 
-/**
- * Validates that a coupon is currently usable (status, window, usage limit, conditions)
- * and computes the server-side discount for the given order.
- *
- * Returns { discountAmount } or throws the appropriate domain error.
- */
 function validateCouponRules(coupon, orderSubtotal, items) {
   if (!coupon || coupon.deletedAt) {
     throw new NotFoundError("Coupon not found or access denied");
@@ -27,7 +21,6 @@ function validateCouponRules(coupon, orderSubtotal, items) {
     throw new BusinessRuleError("Coupon usage limit has been reached");
   }
 
-  // Product-restricted coupons discount only the eligible line items.
   const applicableIds = Array.isArray(coupon.applicableProductIds) ? coupon.applicableProductIds : [];
   let eligibleSubtotal = Number(orderSubtotal);
   if (applicableIds.length > 0) {
@@ -153,10 +146,6 @@ export class CouponService {
     return { message: "Coupon deactivated successfully" };
   }
 
-  /**
-   * Checkout helper — validates a coupon code and returns the computed discount WITHOUT
-   * incrementing usage. Used by the frontend before order submission.
-   */
   async validateCoupon(tenantContext, { code, subtotal, items }) {
     const coupon = await couponRepository.findCouponByCode(tenantContext, code.toUpperCase());
     const { discountAmount } = validateCouponRules(coupon, subtotal, items);
@@ -171,24 +160,11 @@ export class CouponService {
     };
   }
 
-  /**
-   * Resolves a coupon code to its id (null when missing) for the order engine.
-   * Full validity checks happen later under row lock during order creation.
-   */
   async getCouponIdByCode(tenantContext, code) {
     const coupon = await couponRepository.findCouponByCode(tenantContext, code.toUpperCase());
     return coupon ? coupon.id : null;
   }
 
-  /**
-   * Applies a coupon atomically inside the order-creation transaction.
-   *
-   * - Locks the coupon row with `SELECT ... FOR UPDATE` (Section 15.2) to serialize the
-   *   shared usage-limit counter under concurrent promotional traffic.
-   * - Validates usage/expiry/conditions, computes the discount server-side, then
-   *   increments `timesUsed` in the same transaction as the order — a failed order
-   *   never consumes a usage slot.
-   */
   async applyCouponForOrderInTransaction(tx, tenantContext, { couponId, orderSubtotal, items }) {
     const restaurantId = tenantContext.restaurantId;
 

@@ -2,7 +2,6 @@ import menuRepository from "./menu.repository.js";
 import { BusinessRuleError, ConflictError, NotFoundError } from "../../shared/errors/index.js";
 
 export class MenuService {
-  // ==================== CATEGORIES ====================
 
   async listCategories(tenantContext, { page = 1, limit = 20, status } = {}) {
     const { items, total } = await menuRepository.findCategories(tenantContext, { page, limit, status });
@@ -28,13 +27,12 @@ export class MenuService {
   }
 
   async createCategory(tenantContext, data) {
-    // 1. Check duplicate category name
+
     const existing = await menuRepository.findCategoryByName(tenantContext, data.name);
     if (existing) {
       throw new ConflictError(`Category with name '${data.name}' already exists`);
     }
 
-    // Whitelist update payload
     return menuRepository.createCategory(tenantContext, {
       name: data.name,
       description: data.description || null,
@@ -46,7 +44,6 @@ export class MenuService {
   async updateCategory(tenantContext, categoryId, data) {
     const existing = await this.getCategoryById(tenantContext, categoryId);
 
-    // If changing name, check uniqueness
     if (data.name && data.name.toLowerCase() !== existing.name.toLowerCase()) {
       const duplicate = await menuRepository.findCategoryByName(tenantContext, data.name);
       if (duplicate) {
@@ -68,7 +65,6 @@ export class MenuService {
   async deleteCategory(tenantContext, categoryId) {
     const category = await this.getCategoryById(tenantContext, categoryId);
 
-    // Check if category still contains any non-deleted products
     const nonDeletedProductsCount = await menuRepository.countNonDeletedProductsByCategoryId(tenantContext, categoryId);
     if (nonDeletedProductsCount > 0) {
       throw new BusinessRuleError("Cannot delete category containing products. Delete or reassign products first.");
@@ -77,8 +73,6 @@ export class MenuService {
     await menuRepository.softDeleteCategory(tenantContext, categoryId);
     return { message: `Category '${category.name}' deleted successfully` };
   }
-
-  // ==================== PRODUCTS ====================
 
   async listProducts(tenantContext, { page = 1, limit = 20, categoryId, isAvailable, status, search } = {}) {
     const { items, total } = await menuRepository.findProducts(tenantContext, {
@@ -112,19 +106,17 @@ export class MenuService {
   }
 
   async createProduct(tenantContext, data) {
-    // 1. Verify category exists in tenant
+
     const category = await menuRepository.findCategoryById(tenantContext, data.categoryId);
     if (!category) {
       throw new NotFoundError("Target category not found in this restaurant");
     }
 
-    // 2. Check duplicate product name
     const existing = await menuRepository.findProductByName(tenantContext, data.name);
     if (existing) {
       throw new ConflictError(`Product with name '${data.name}' already exists`);
     }
 
-    // Whitelist update payload
     return menuRepository.createProduct(tenantContext, {
       categoryId: data.categoryId,
       name: data.name,
@@ -139,7 +131,6 @@ export class MenuService {
   async updateProduct(tenantContext, productId, data) {
     const existing = await this.getProductById(tenantContext, productId);
 
-    // If changing categoryId, verify new category belongs to tenant
     if (data.categoryId && data.categoryId !== existing.categoryId) {
       const category = await menuRepository.findCategoryById(tenantContext, data.categoryId);
       if (!category) {
@@ -147,7 +138,6 @@ export class MenuService {
       }
     }
 
-    // If changing name, check uniqueness
     if (data.name && data.name.toLowerCase() !== existing.name.toLowerCase()) {
       const duplicate = await menuRepository.findProductByName(tenantContext, data.name);
       if (duplicate) {
@@ -174,8 +164,6 @@ export class MenuService {
     await menuRepository.softDeleteProduct(tenantContext, productId);
     return { message: `Product '${product.name}' deleted successfully` };
   }
-
-  // ==================== PRODUCT MODIFIERS (ADD-ONS) ====================
 
   async listModifiers(tenantContext, productId) {
     await this.getProductById(tenantContext, productId);
@@ -219,8 +207,6 @@ export class MenuService {
     await menuRepository.softDeleteModifier(tenantContext, productId, modifierId);
     return { message: "Modifier deleted successfully" };
   }
-
-  // ==================== PUBLIC MENU ====================
 
   async getPublicMenu({ restaurantSlug, restaurantId }) {
     if (!restaurantSlug && !restaurantId) {

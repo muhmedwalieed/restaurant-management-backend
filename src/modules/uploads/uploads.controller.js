@@ -4,11 +4,7 @@ import { ValidationError } from "../../shared/errors/index.js";
 import { sniffImage } from "../../lib/uploads.js";
 
 export class UploadsController {
-  /**
-   * Saves a validated image and returns its public path.
-   * The file was already filtered by multer (MIME + size); here we verify the
-   * actual bytes are an image (magic bytes) before exposing it.
-   */
+
   async uploadImage(req, res, next) {
     try {
       if (!req.file) {

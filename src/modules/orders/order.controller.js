@@ -26,9 +26,6 @@ export class OrderController {
     }
   }
 
-  /**
-   * Tenant-wide orders list (all branches, unified view).
-   */
   async listAllOrders(req, res, next) {
     try {
       const query = req.validated?.query ?? req.query ?? {};

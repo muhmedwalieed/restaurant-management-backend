@@ -4,17 +4,14 @@ import tableRepository from "../tables/table.repository.js";
 import couponService from "../coupons/coupon.service.js";
 import { emitEvent, DomainEvent } from "../../shared/events/event-bus.js";
 import prisma from "../../lib/prisma.js";
-import { BusinessRuleError, NotFoundError } from "../../shared/errors/index.js";
+import { BusinessRuleError, NotFoundError, AuthorizationError } from "../../shared/errors/index.js";
+import { getEmployeePermissions } from "../auth/authorize.middleware.js";
 
-/**
- * Validates Order State Machine Transitions (Section 25.1).
- */
 function validateStateTransition(currentStatus, newStatus, orderType) {
   if (currentStatus === newStatus) {
-    return; // No-op
+    return;
   }
 
-  // Terminal states cannot be changed
   if (currentStatus === "DELIVERED" || currentStatus === "CANCELLED") {
     throw new BusinessRuleError(`Order is in terminal state '${currentStatus}' and cannot be updated`);
   }
@@ -67,9 +64,6 @@ export class OrderService {
     };
   }
 
-  /**
-   * Lists orders across ALL branches of the tenant — the unified orders view.
-   */
   async listAllOrders(tenantContext, { page = 1, limit = 20, status, type, source, branchId, tableId } = {}) {
     const { items, total } = await orderRepository.findOrdersByTenant(tenantContext, {
       page,
@@ -104,14 +98,9 @@ export class OrderService {
     return order;
   }
 
-  /**
-   * Single Unified Order Creation Logic for ALL channels (Section 24).
-   * Supports Idempotency Key 24h caching (ADR-009).
-   */
   async createOrder(tenantContext, branchId, payload, idempotencyKey = null) {
     const restaurantId = tenantContext.restaurantId;
 
-    // 1. Idempotency Check (ADR-009)
     if (idempotencyKey) {
       const cached = await orderRepository.findIdempotencyKey(restaurantId, idempotencyKey);
       if (cached) {
@@ -123,10 +112,8 @@ export class OrderService {
       }
     }
 
-    // 2. Verify Branch Ownership
     await this.verifyBranchOwnership(tenantContext, branchId);
 
-    // 3. Verify / Auto-Link Customer if provided (Fix 1 & Fix 3)
     if (!payload.customerId && payload.customerPhone) {
       const customerService = (await import("../customers/customer.service.js")).default;
       const customer = await customerService.findOrCreateCustomerByPhone(tenantContext, {
@@ -149,17 +136,12 @@ export class OrderService {
       }
     }
 
-    // 4. Verify Table if provided
     if (payload.tableId) {
       const table = await tableRepository.findTableById(tenantContext, branchId, payload.tableId);
       if (!table) {
         throw new NotFoundError("Table not found in target branch");
       }
 
-      // Single Active Order Per Table (enforced): reject creating a new order on a
-      // table that already has an active order (PENDING/CONFIRMED/PREPARING/READY).
-      // QR self-ordering sessions are the exception: each round is a deliberate new
-      // ticket for the same table (add-ons / multiple rounds), so the rule is relaxed.
       if (payload.source !== "QR") {
         const activeOrderOnTable = await prisma.order.findFirst({
           where: {
@@ -178,7 +160,6 @@ export class OrderService {
       }
     }
 
-    // 4. Server-Side Price Calculation & Product Snapshots
     let calculatedSubtotal = 0;
     const itemSnapshots = [];
 
@@ -234,13 +215,25 @@ export class OrderService {
         subtotal: itemSubtotal,
         notes: itemInput.notes || null,
         selectedModifiers: selectedModifiersList.length > 0 ? selectedModifiersList : null,
+        round: itemInput.round || 1,
       });
     }
 
-    // Coupon discounts are ALWAYS computed server-side under row lock (Module 16).
-    // When a coupon is attached, any client-supplied discountAmount is ignored.
     const hasCoupon = Boolean(payload.couponId);
     const discountAmount = hasCoupon ? 0 : payload.discountAmount ? Number(payload.discountAmount) : 0;
+    if (discountAmount > 0) {
+      if (!tenantContext?.employeeId) {
+        throw new AuthorizationError("Manual discounts require an authenticated employee");
+      }
+      const { isSystem, roleName, permissions } = await getEmployeePermissions(
+        tenantContext.employeeId,
+        tenantContext.restaurantId
+      );
+      const allowed = isSystem && roleName === "owner" ? true : permissions.includes("orders.discount");
+      if (!allowed) {
+        throw new AuthorizationError("You don't have permission to apply manual discounts");
+      }
+    }
 
     const orderPayload = {
       source: payload.source || "CASHIER",
@@ -256,7 +249,6 @@ export class OrderService {
       paymentMethod: payload.paymentMethod || null,
     };
 
-    // 5. Execute Order Transaction
     const order = await orderRepository.createOrderTransaction(
       tenantContext,
       branchId,
@@ -265,7 +257,6 @@ export class OrderService {
       idempotencyKey
     );
 
-    // Emit domain event for in-process consumers (notifications, audit-logs, realtime) — Section 29.
     emitEvent(DomainEvent.ORDER_CREATED, {
       restaurantId,
       branchId,
@@ -285,10 +276,6 @@ export class OrderService {
     };
   }
 
-  /**
-   * Updates Order Status using Optimistic Locking (ADR-008 & Section 25).
-   * Atomically updates status and creates status history in a single $transaction (Section 25.3).
-   */
   async updateOrderStatus(tenantContext, branchId, orderId, { newStatus, expectedVersion, reason }) {
     if (newStatus === "CANCELLED") {
       throw new BusinessRuleError("Cancellation is not allowed via status update endpoint. Use the /orders/:id/cancel endpoint");
@@ -296,10 +283,8 @@ export class OrderService {
 
     const order = await this.getOrderById(tenantContext, branchId, orderId);
 
-    // Validate State Transition
     validateStateTransition(order.status, newStatus, order.type);
 
-    // Execute Atomic Optimistic Update + Status History Creation
     await orderRepository.updateOrderStatusWithHistoryTransaction(
       tenantContext,
       branchId,
@@ -325,9 +310,6 @@ export class OrderService {
     return this.getOrderById(tenantContext, branchId, orderId);
   }
 
-  /**
-   * Cancels active order (Requires orders.cancel permission via cancel endpoint).
-   */
   async cancelOrder(tenantContext, branchId, orderId, { expectedVersion, reason }) {
     if (!reason || reason.trim().length === 0) {
       throw new BusinessRuleError("Cancellation reason is required");
@@ -339,7 +321,6 @@ export class OrderService {
       throw new BusinessRuleError(`Order is in terminal state '${order.status}' and cannot be cancelled`);
     }
 
-    // Execute Atomic Optimistic Update + Status History Creation for Cancellation
     await orderRepository.updateOrderStatusWithHistoryTransaction(
       tenantContext,
       branchId,
@@ -365,23 +346,16 @@ export class OrderService {
     return this.getOrderById(tenantContext, branchId, orderId);
   }
 
-  /**
-   * Gets Order Timeline History.
-   */
   async getOrderHistory(tenantContext, branchId, orderId) {
     await this.verifyBranchOwnership(tenantContext, branchId);
     return orderRepository.findOrderHistory(tenantContext, branchId, orderId);
   }
 
-  /**
-   * Public Order Submission via QR / Online (Unauthenticated endpoint).
-   */
   async createPublicOrder(payload, idempotencyKey = null) {
     let branchId = payload.branchId;
     let tableId = payload.tableId;
     let restaurantId = payload.restaurantId;
 
-    // Resolve via tableToken if provided
     if (payload.tableToken) {
       const table = await tableRepository.findTableByQrToken(payload.tableToken);
       if (!table || !table.branch || table.branch.status !== "ACTIVE") {
@@ -396,7 +370,6 @@ export class OrderService {
       throw new NotFoundError("Target restaurant not found");
     }
 
-    // Website ordering may not know the branch — resolve the restaurant's main branch.
     if (!branchId) {
       const tenantContext = { restaurantId };
       const mainBranch = await branchRepository.findMainBranch(tenantContext);
@@ -408,8 +381,6 @@ export class OrderService {
 
     const tenantContext = { restaurantId };
 
-    // Resolve a public coupon code to its id (full validity is enforced under row lock
-    // inside createOrder — expired/limit/condition failures reject the order there).
     if (payload.couponCode) {
       const couponId = await couponService.getCouponIdByCode(tenantContext, payload.couponCode);
       if (!couponId) {
@@ -434,9 +405,6 @@ export class OrderService {
     );
   }
 
-  /**
-   * Public order tracking (website) — resolves restaurant by slug, then the order by number + customer phone.
-   */
   async trackOrder({ slug, orderNumber, phone }) {
     const restaurant = await prisma.restaurant.findFirst({
       where: { slug, status: "ACTIVE" },
@@ -469,9 +437,6 @@ export class OrderService {
     return order;
   }
 
-  /**
-   * Cashier / POS Manual Order Submission.
-   */
   async createPosOrder(tenantContext, branchId, payload, idempotencyKey = null) {
     const type = payload.type || "DINE_IN";
 
@@ -503,9 +468,6 @@ export class OrderService {
     );
   }
 
-  /**
-   * Processes Order Payment.
-   */
   async processOrderPayment(tenantContext, branchId, orderId, payload) {
     const order = await this.getOrderById(tenantContext, branchId, orderId);
 
@@ -546,9 +508,6 @@ export class OrderService {
     return this.getOrderById(tenantContext, branchId, orderId);
   }
 
-  /**
-   * Processes Order Refund.
-   */
   async processOrderRefund(tenantContext, branchId, orderId, payload) {
     const order = await this.getOrderById(tenantContext, branchId, orderId);
 

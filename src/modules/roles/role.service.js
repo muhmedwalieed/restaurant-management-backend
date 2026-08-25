@@ -7,9 +7,6 @@ import logger from "../../config/logger.js";
 
 const RESERVED_ROLE_NAMES = new Set(["owner", "manager"]);
 
-/**
- * Invalidates Redis permission cache for an array of employee IDs.
- */
 async function invalidateEmployeesCache(employeeIds) {
   if (!employeeIds || employeeIds.length === 0) return;
   try {
@@ -28,10 +25,6 @@ export class RoleService {
     return roleRepository.findRoles(tenantContext);
   }
 
-  /**
-   * Returns the global permissions catalog grouped by module.
-   * Powers the Role form permission checkboxes.
-   */
   getPermissionsCatalog() {
     const grouped = [];
     for (const perm of GLOBAL_PERMISSIONS) {
@@ -58,7 +51,6 @@ export class RoleService {
   async createRole(tenantContext, { name, description, permissions }) {
     const normalizedName = name.trim().toLowerCase();
 
-    // Reserved role names check (Fix #3):
     if (RESERVED_ROLE_NAMES.has(normalizedName)) {
       throw new ConflictError(`System role name '${normalizedName}' is reserved and cannot be created`);
     }
@@ -91,7 +83,6 @@ export class RoleService {
       throw new NotFoundError("Role not found");
     }
 
-    // System role modification restriction (Fix #3):
     if (existing.isSystem) {
       throw new BusinessRuleError("System roles cannot be modified");
     }
@@ -117,7 +108,6 @@ export class RoleService {
       metadata: { name: updatedRole?.name || existing.name, permissionKeys: permissions },
     });
 
-    // Invalidate Redis cache for all employees holding this role
     const assignedEmpIds = await roleRepository.findAssignedEmployeeIds(tenantContext, id);
     await invalidateEmployeesCache(assignedEmpIds);
 

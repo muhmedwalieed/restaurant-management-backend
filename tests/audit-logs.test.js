@@ -46,7 +46,6 @@ describe("Module 18 — Audit Logs Integration Tests", () => {
 
     const uniq = Date.now();
 
-    // ===== Tenant A =====
     const regA = await authService.register({
       name: "Owner Audit A",
       email: `audita-${uniq}@test.com`,
@@ -64,7 +63,6 @@ describe("Module 18 — Audit Logs Integration Tests", () => {
 
     const passwordHash = await bcrypt.hash("Password123!", 10);
 
-    // Target employee (for force-logout) with an active session
     const basicRole = await prisma.role.create({ data: { restaurantId: tenantA.id, name: "Basic Role", description: "basic" } });
     const targetEmp = await prisma.employee.create({
       data: { restaurantId: tenantA.id, branchId: branchA.id, roleId: basicRole.id, name: "Target Emp", email: `target-${uniq}@test.com`, passwordHash },
@@ -72,7 +70,6 @@ describe("Module 18 — Audit Logs Integration Tests", () => {
     targetEmpId = targetEmp.id;
     await authService.login({ email: targetEmp.email, password: "Password123!", device: "Target", ipAddress: "127.0.0.1" });
 
-    // Employee without audit.view (RBAC 403)
     const noAuditRole = await prisma.role.create({ data: { restaurantId: tenantA.id, name: "No Audit Role", description: "no audit" } });
     const noAuditEmp = await prisma.employee.create({
       data: { restaurantId: tenantA.id, branchId: branchA.id, roleId: noAuditRole.id, name: "No Audit", email: `noaudit-${uniq}@test.com`, passwordHash },
@@ -80,7 +77,6 @@ describe("Module 18 — Audit Logs Integration Tests", () => {
     const noAuditLogin = await authService.login({ email: noAuditEmp.email, password: "Password123!", device: "NoAudit", ipAddress: "127.0.0.1" });
     noAuditToken = noAuditLogin.accessToken;
 
-    // ===== Tenant B =====
     const regB = await authService.register({
       name: "Owner Audit B",
       email: `auditb-${uniq}@test.com`,

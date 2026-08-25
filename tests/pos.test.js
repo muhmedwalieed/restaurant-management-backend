@@ -40,7 +40,6 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
       });
     });
 
-    // Setup Tenant A
     const regA = await authService.register({
       name: "Owner POS A",
       email: `ownerposa-${Date.now()}@test.com`,
@@ -106,7 +105,6 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
 
     const passwordHash = await bcrypt.hash("Password123!", 10);
 
-    // Cashier Role in Tenant A (orders.create, orders.view, orders.update, orders.payment, orders.refund)
     const posPerms = await prisma.permission.findMany({
       where: {
         key: {
@@ -144,7 +142,6 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
     });
     cashierAToken = cashierLogin.accessToken;
 
-    // View-Only Role
     const viewPerm = await prisma.permission.findFirst({
       where: { key: "orders.view" },
     });
@@ -178,7 +175,6 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
     });
     viewOnlyStaffToken = viewLogin.accessToken;
 
-    // Setup Tenant B
     const regB = await authService.register({
       name: "Owner POS B",
       email: `ownerposb-${Date.now()}@test.com`,
@@ -252,7 +248,7 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
     const body = await res.json();
 
     assert.equal(body.success, true);
-    assert.equal(body.data.source, "CASHIER"); // Default source when none supplied
+    assert.equal(body.data.source, "CASHIER");
     assert.equal(body.data.type, "DINE_IN");
     assert.equal(Number(body.data.total), 30.0);
     assert.equal(body.data.tableId, tableA1.id);
@@ -298,7 +294,7 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
       },
       body: JSON.stringify({
         type: "DINE_IN",
-        tableId: tableA1.id, // Already has an active order from test 1!
+        tableId: tableA1.id,
         items: [{ productId: productA2.id, quantity: 1 }],
       }),
     });
@@ -310,7 +306,7 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
   });
 
   test("3a. New order on a table AFTER its active order is cancelled succeeds (201)", async () => {
-    // Cancel the existing active order on tableA1 (from test 1) using owner (has orders.cancel)
+
     const cancelRes = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/orders/${posOrderDineIn.id}/cancel`, {
       method: "POST",
       headers: {
@@ -324,7 +320,6 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
     });
     assert.equal(cancelRes.status, 200);
 
-    // Now a new order on the same table is allowed
     const newOrderRes = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/pos/orders`, {
       method: "POST",
       headers: {
@@ -350,7 +345,7 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
         Authorization: `Bearer ${cashierAToken}`,
       },
       body: JSON.stringify({
-        type: "DINE_IN", // Missing tableId!
+        type: "DINE_IN",
         items: [{ productId: productA1.id, quantity: 1 }],
       }),
     });
@@ -368,7 +363,7 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
         Authorization: `Bearer ${cashierAToken}`,
       },
       body: JSON.stringify({
-        type: "DELIVERY", // Missing customer name / phone / address — validation rejects before the service
+        type: "DELIVERY",
         items: [{ productId: productA1.id, quantity: 1 }],
       }),
     });
@@ -411,7 +406,7 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
       },
       body: JSON.stringify({
         type: "DINE_IN",
-        tableId: tableA1.id, // Table belongs to Tenant A!
+        tableId: tableA1.id,
         items: [{ productId: productA1.id, quantity: 1 }],
       }),
     });
@@ -474,7 +469,7 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
       },
       body: JSON.stringify({
         paymentMethod: "CASH",
-        amount: 999.0, // Total is 15.0!
+        amount: 999.0,
         expectedVersion: posOrderDelivery.version,
       }),
     });
@@ -535,7 +530,7 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
       },
       body: JSON.stringify({
         paymentMethod: "CASH",
-        expectedVersion: 99, // Stale version!
+        expectedVersion: 99,
       }),
     });
 
@@ -586,7 +581,7 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
       body: JSON.stringify({
         type: "DINE_IN",
         tableId: freshTable.id,
-        paymentStatus: "PAID", // Injected!
+        paymentStatus: "PAID",
         items: [{ productId: productA1.id, quantity: 1 }],
       }),
     });
@@ -595,7 +590,7 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
     const body = await res.json();
 
     assert.equal(body.success, true);
-    assert.equal(body.data.paymentStatus, "PENDING"); // Safely ignored!
+    assert.equal(body.data.paymentStatus, "PENDING");
   });
 
   test("16. Payment Guard: Payment on cancelled order returns 422 BusinessRuleError", async () => {
@@ -674,7 +669,7 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${ownerBToken}`, // Token B!
+        Authorization: `Bearer ${ownerBToken}`,
       },
       body: JSON.stringify({
         paymentMethod: "CASH",
@@ -689,7 +684,7 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${ownerBToken}`, // Token B!
+        Authorization: `Bearer ${ownerBToken}`,
       },
       body: JSON.stringify({
         reason: "Cross tenant refund attempt",

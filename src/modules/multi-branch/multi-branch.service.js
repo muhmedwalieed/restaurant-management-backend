@@ -4,9 +4,7 @@ import { BusinessRuleError, ConflictError, NotFoundError, AuthorizationError } f
 import { getEmployeePermissions } from "../auth/authorize.middleware.js";
 
 export class MultiBranchService {
-  /**
-   * Lists employees who can operate in a branch (home + granted access).
-   */
+
   async listBranchUsers(tenantContext, branchId) {
     await this.verifyBranch(tenantContext, branchId);
     const users = await multiBranchRepository.findBranchUsers(tenantContext, branchId);
@@ -19,9 +17,6 @@ export class MultiBranchService {
     }));
   }
 
-  /**
-   * Grants an employee access to an additional branch.
-   */
   async grantAccess(tenantContext, branchId, employeeId) {
     const branch = await this.verifyBranch(tenantContext, branchId);
     const employee = await multiBranchRepository.findEmployee(tenantContext, employeeId);
@@ -58,9 +53,6 @@ export class MultiBranchService {
     }
   }
 
-  /**
-   * Revokes an employee's access to a branch (home branch cannot be revoked).
-   */
   async revokeAccess(tenantContext, branchId, employeeId) {
     const branch = await this.verifyBranch(tenantContext, branchId);
     const employee = await multiBranchRepository.findEmployee(tenantContext, employeeId);
@@ -88,13 +80,6 @@ export class MultiBranchService {
     return { message: "Branch access revoked successfully" };
   }
 
-  /**
-   * The employee's accessible branches (branch switcher for the frontend).
-   *
-   * Owners and users with `branches.manage` see EVERY branch in the tenant, matching
-   * what the branches management page shows. Everyone else (cashier, kitchen, ...)
-   * sees only their home branch plus the branches explicitly granted to them.
-   */
   async listMyBranches(tenantContext) {
     const { restaurantId, employeeId } = tenantContext;
     if (!employeeId) {

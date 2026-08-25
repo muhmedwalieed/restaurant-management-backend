@@ -1,14 +1,8 @@
 import prisma from "../../lib/prisma.js";
 import { AuthenticationError, NotFoundError } from "../../shared/errors/index.js";
 
-/**
- * Repository layer for Restaurant Tenant Root operations.
- */
 export class RestaurantRepository {
-  /**
-   * Finds restaurant profile for the current tenant.
-   * @param {object} tenantContext - { restaurantId }
-   */
+
   async findRestaurantById(tenantContext) {
     if (!tenantContext || !tenantContext.restaurantId) {
       throw new AuthenticationError("TenantContext with restaurantId is required");
@@ -47,11 +41,6 @@ export class RestaurantRepository {
     return restaurant;
   }
 
-  /**
-   * Updates restaurant profile fields (whitelist).
-   * @param {object} tenantContext - { restaurantId }
-   * @param {object} data - Whitelisted profile fields
-   */
   async updateRestaurantProfile(tenantContext, data) {
     if (!tenantContext || !tenantContext.restaurantId) {
       throw new AuthenticationError("TenantContext with restaurantId is required");
@@ -78,11 +67,6 @@ export class RestaurantRepository {
     });
   }
 
-  /**
-   * Updates restaurant status (ACTIVE / SUSPENDED / INACTIVE).
-   * @param {object} tenantContext - { restaurantId }
-   * @param {string} status
-   */
   async updateRestaurantStatus(tenantContext, status) {
     if (!tenantContext || !tenantContext.restaurantId) {
       throw new AuthenticationError("TenantContext with restaurantId is required");

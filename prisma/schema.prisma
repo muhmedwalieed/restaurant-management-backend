@@ -439,6 +439,7 @@ model OrderItem {
   subtotal          Decimal  @db.Decimal(10, 2)
   notes             String?
   selectedModifiers Json?    @map("selected_modifiers")
+  round             Int      @default(1) @map("round") // table-session order round (1 = first)
   createdAt         DateTime @default(now()) @map("created_at")
 
   restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Restrict)

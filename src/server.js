@@ -24,12 +24,11 @@ const io = new Server(httpServer, {
 
 setSocketIo(io);
 
-// Real-time: subscribe domain events → socket broadcasts to tenant rooms.
 registerRealtimeSubscriptions();
 
 io.on("connection", async (socket) => {
   try {
-    // Authenticate the socket with the same JWT used by the REST API.
+
     const token = socket.handshake.auth?.token;
     if (!token) {
       throw new Error("Authentication token required");
@@ -39,7 +38,6 @@ io.on("connection", async (socket) => {
       throw new Error("Invalid token payload");
     }
 
-    // Assert the DB session is still ACTIVE (matches authenticate middleware).
     const session = await prisma.session.findFirst({
       where: {
         id: payload.sessionId,

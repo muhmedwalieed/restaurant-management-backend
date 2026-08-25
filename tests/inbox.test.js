@@ -197,7 +197,7 @@ describe("Module 11 — Unified Inbox / Support Integration Tests", () => {
     assert.equal(note.isInternal, true);
 
     const after = await prisma.whatsAppMessage.count({ where: { restaurantId: tenantA.id, direction: "OUTBOUND" } });
-    assert.equal(after, before); // Internal note NOT sent to customer
+    assert.equal(after, before);
   });
 
   test("7. recordCustomerMessage captures CUSTOMER inbound as PENDING", async () => {
@@ -246,10 +246,8 @@ describe("Module 11 — Unified Inbox / Support Integration Tests", () => {
     assert.equal(body.error.code, "AUTHORIZATION_ERROR");
   });
 
-  // ==================== MODULE 12 — MANAGER TAKEOVER ====================
-
   test("13. Takeover: manager locks the conversation on themselves", async () => {
-    // Use the owner (manager) token — owner has chats.takeover via bypass
+
     const res = await fetch(`${baseUrl}/api/v1/inbox/conversations/${inboxConv.id}/takeover`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${ownerToken}` },
