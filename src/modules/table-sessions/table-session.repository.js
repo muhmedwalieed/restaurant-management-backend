@@ -102,6 +102,13 @@ export class TableSessionRepository {
     });
   }
 
+  async updatePin(sessionId, pin, pinHash) {
+    await prisma.tableSession.update({
+      where: { id: sessionId },
+      data: { pin, pinHash },
+    });
+  }
+
   async addMember(restaurantId, sessionId, name) {
     const member = await prisma.tableSessionMember.create({
       data: { sessionId, name },

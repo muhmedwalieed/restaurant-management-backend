@@ -74,6 +74,9 @@ staffRouter.post("/:id/confirm", authorize("orders.create"), (req, res, next) =>
 staffRouter.post("/:id/close", authorize("orders.create"), (req, res, next) =>
   tableSessionController.closeSession(req, res, next)
 );
+staffRouter.post("/:id/regenerate-pin", authorize("orders.create"), (req, res, next) =>
+  tableSessionController.regeneratePin(req, res, next)
+);
 staffRouter.get("/:id", (req, res, next) => tableSessionController.getSessionStaff(req, res, next));
 
 router.use("/tables", staffRouter);

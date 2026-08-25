@@ -307,6 +307,26 @@ export class TableSessionService {
     return this.publicSession(tenantContext.restaurantId, sessionId);
   }
 
+  /** Staff: roll a new 4-digit PIN for an open session (also fixes legacy sessions with no stored PIN). */
+  async regeneratePin(tenantContext, sessionId) {
+    const session = await tableSessionRepository.findSessionById(tenantContext.restaurantId, sessionId);
+    if (!session) throw new NotFoundError("Session not found");
+    if (session.status === "CLOSED") throw new BusinessRuleError("Session is closed");
+
+    const pin = String(randomInt(0, 10000)).padStart(PIN_LENGTH, "0");
+    const pinHash = await bcrypt.hash(pin, 10);
+    await tableSessionRepository.updatePin(sessionId, pin, pinHash);
+
+    emitEvent(DomainEvent.TABLE_SESSION_UPDATED, {
+      restaurantId: tenantContext.restaurantId,
+      branchId: session.branchId,
+      sessionId,
+      tableId: session.tableId,
+      action: "pin_regenerated",
+    });
+    return { sessionId, pin };
+  }
+
   async getSession(restaurantId, sessionId) {
     return this.publicSession(restaurantId, sessionId);
   }

@@ -134,6 +134,15 @@ export class TableSessionController {
     }
   }
 
+  async regeneratePin(req, res, next) {
+    try {
+      const result = await tableSessionService.regeneratePin(req.tenantContext, req.params.id);
+      return sendSuccess(res, { message: "PIN regenerated", data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async listBranchSessions(req, res, next) {
     try {
       const branchId = req.tenantContext.branchId;

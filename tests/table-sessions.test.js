@@ -310,6 +310,38 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
     // Cleanup this extra session.
     await prisma.tableSession.deleteMany({ where: { id: started.sessionId } });
   });
+
+  test("12. Staff can regenerate a PIN for an open session (fixes legacy null-pin sessions)", async () => {
+    const start = await fetch(`${baseUrl}/api/v1/tables/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${ownerToken}` },
+      body: JSON.stringify({ tableId: table.id }),
+    });
+    const started = (await start.json()).data;
+
+    // Force the stored PIN to null to simulate a legacy session.
+    await prisma.tableSession.update({ where: { id: started.sessionId }, data: { pin: null } });
+
+    const regen = await fetch(`${baseUrl}/api/v1/tables/${started.sessionId}/regenerate-pin`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${ownerToken}` },
+    });
+    assert.equal(regen.status, 200);
+    const regenBody = await regen.json();
+    assert.equal(regenBody.data.sessionId, started.sessionId);
+    assert.match(regenBody.data.pin, /^\d{4}$/);
+    assert.notEqual(regenBody.data.pin, started.pin);
+
+    // Staff view now exposes the regenerated PIN.
+    const staff = await fetch(`${baseUrl}/api/v1/tables/table/${table.id}/session`, {
+      headers: { Authorization: `Bearer ${ownerToken}` },
+    });
+    const staffBody = await staff.json();
+    assert.equal(staffBody.data.pin, regenBody.data.pin);
+
+    // Cleanup.
+    await prisma.tableSession.deleteMany({ where: { id: started.sessionId } });
+  });
 });
 
 let sessionState = {};
