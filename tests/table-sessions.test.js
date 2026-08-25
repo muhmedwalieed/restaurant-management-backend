@@ -281,6 +281,35 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
     });
     assert.equal(sub.status, 422);
   });
+
+  test("11. Staff endpoint returns the session PIN; public endpoint never leaks it", async () => {
+    // Start a fresh session so there is a PIN to expose.
+    const start = await fetch(`${baseUrl}/api/v1/tables/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${ownerToken}` },
+      body: JSON.stringify({ tableId: table.id }),
+    });
+    assert.equal(start.status, 201);
+    const started = (await start.json()).data;
+    assert.match(started.pin, /^\d{4}$/);
+
+    // Staff projection (GET /tables/table/:tableId/session) includes the PIN.
+    const staff = await fetch(`${baseUrl}/api/v1/tables/table/${table.id}/session`, {
+      headers: { Authorization: `Bearer ${ownerToken}` },
+    });
+    assert.equal(staff.status, 200);
+    const staffBody = await staff.json();
+    assert.equal(staffBody.data.pin, started.pin);
+
+    // Public projection (GET /sessions/:id) must NOT include the PIN.
+    const pub = await fetch(`${baseUrl}/api/v1/sessions/${started.sessionId}`);
+    assert.equal(pub.status, 200);
+    const pubBody = await pub.json();
+    assert.equal(pubBody.data.pin, undefined);
+
+    // Cleanup this extra session.
+    await prisma.tableSession.deleteMany({ where: { id: started.sessionId } });
+  });
 });
 
 let sessionState = {};

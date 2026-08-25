@@ -311,6 +311,7 @@ model TableSession {
   branchId             String    @map("branch_id")
   tableId              String    @map("table_id")
   pinHash              String    @map("pin_hash")
+  pin                  String?   @map("pin") // plaintext PIN (staff-only retrieval; pinHash is used for auth)
   status               String    @default("ACTIVE") @map("status") // ACTIVE | AWAITING_CONFIRMATION | CONFIRMED | CLOSED
   failedAttempts       Int       @default(0) @map("failed_attempts")
   lockoutLevel         Int       @default(0) @map("lockout_level")

@@ -57,6 +57,7 @@ export class TableSessionService {
       table.branchId,
       table.id,
       pinHash,
+      pin,
       tenantContext.employeeId
     );
 
@@ -318,7 +319,12 @@ export class TableSessionService {
     if (!table) throw new NotFoundError("Table not found");
     const session = await tableSessionRepository.findActiveSessionByTable(tenantContext.restaurantId, table.id);
     if (!session) return null;
-    return this.publicSession(tenantContext.restaurantId, session.id);
+    return this.publicSession(tenantContext.restaurantId, session.id, { includePin: true });
+  }
+
+  /** Staff: get a session including the plaintext PIN (never exposed on public endpoints). */
+  async getStaffSession(tenantContext, sessionId) {
+    return this.publicSession(tenantContext.restaurantId, sessionId, { includePin: true });
   }
 
   /** Staff: list live sessions for a branch (active / awaiting confirmation). */
@@ -383,8 +389,8 @@ export class TableSessionService {
     return Array.from(map.values());
   }
 
-  /** Public (customer-safe) projection of a session. */
-  async publicSession(restaurantId, sessionId) {
+  /** Public (customer-safe) projection of a session. PIN is only included for staff callers. */
+  async publicSession(restaurantId, sessionId, { includePin = false } = {}) {
     const session = await tableSessionRepository.findSessionById(restaurantId, sessionId);
     if (!session) throw new NotFoundError("Session not found");
     const currentItems = (session.items || []).filter((i) => !i.sessionOrderId);
@@ -393,6 +399,7 @@ export class TableSessionService {
       status: session.status,
       tableId: session.tableId,
       tableLabel: session.table?.label || null,
+      ...(includePin ? { pin: session.pin || null } : {}),
       members: session.members || [],
       items: currentItems.map((i) => ({
         id: i.id,

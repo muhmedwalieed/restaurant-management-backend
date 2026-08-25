@@ -35,9 +35,9 @@ export class TableSessionRepository {
     });
   }
 
-  async createSession(restaurantId, branchId, tableId, pinHash, createdByEmployeeId) {
+  async createSession(restaurantId, branchId, tableId, pinHash, pin, createdByEmployeeId) {
     return prisma.tableSession.create({
-      data: { restaurantId, branchId, tableId, pinHash, createdByEmployeeId },
+      data: { restaurantId, branchId, tableId, pinHash, pin, createdByEmployeeId },
     });
   }
 

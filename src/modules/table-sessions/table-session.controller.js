@@ -38,6 +38,15 @@ export class TableSessionController {
     }
   }
 
+  async getSessionStaff(req, res, next) {
+    try {
+      const result = await tableSessionService.getStaffSession(req.tenantContext, req.params.id);
+      return sendSuccess(res, { data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async addItem(req, res, next) {
     try {
       const { id } = req.params;
