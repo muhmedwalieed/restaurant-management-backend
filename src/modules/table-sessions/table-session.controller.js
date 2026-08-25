@@ -124,6 +124,25 @@ export class TableSessionController {
       next(error);
     }
   }
+
+  async listBranchSessions(req, res, next) {
+    try {
+      const branchId = req.tenantContext.branchId;
+      const result = await tableSessionService.listBranchSessions(req.tenantContext, branchId);
+      return sendSuccess(res, { data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async getActiveSessionForTable(req, res, next) {
+    try {
+      const result = await tableSessionService.getActiveSessionForTable(req.tenantContext, req.params.tableId);
+      return sendSuccess(res, { data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export const tableSessionController = new TableSessionController();

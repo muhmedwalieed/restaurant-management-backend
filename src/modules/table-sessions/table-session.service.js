@@ -272,6 +272,32 @@ export class TableSessionService {
     return this.publicSession(restaurantId, sessionId);
   }
 
+  /** Staff: find the active session for a specific table (or null). */
+  async getActiveSessionForTable(tenantContext, tableId) {
+    const table = await prisma.restaurantTable.findFirst({
+      where: { id: tableId, restaurantId: tenantContext.restaurantId, deletedAt: null },
+    });
+    if (!table) throw new NotFoundError("Table not found");
+    const session = await tableSessionRepository.findActiveSessionByTable(tenantContext.restaurantId, table.id);
+    if (!session) return null;
+    return this.publicSession(tenantContext.restaurantId, session.id);
+  }
+
+  /** Staff: list live sessions for a branch (active / awaiting confirmation). */
+  async listBranchSessions(tenantContext, branchId) {
+    const sessions = await tableSessionRepository.findSessionsByBranch(tenantContext.restaurantId, branchId);
+    return sessions.map((s) => ({
+      id: s.id,
+      status: s.status,
+      tableId: s.tableId,
+      tableLabel: s.table?.label || null,
+      members: s.members || [],
+      itemCount: (s.items || []).length,
+      total: (s.items || []).reduce((acc, i) => acc + Number(i.unitPrice) * i.quantity, 0),
+      confirmedOrderId: s.confirmedOrderId,
+    }));
+  }
+
   /** Public (customer-safe) projection of a session. */
   async publicSession(restaurantId, sessionId) {
     const session = await tableSessionRepository.findSessionById(restaurantId, sessionId);

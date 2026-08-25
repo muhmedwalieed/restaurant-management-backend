@@ -81,6 +81,18 @@ export class TableSessionRepository {
       data: { failedAttempts, lockoutLevel, lockoutUntil },
     });
   }
+
+  async findSessionsByBranch(restaurantId, branchId) {
+    return prisma.tableSession.findMany({
+      where: { restaurantId, branchId, status: { in: ["ACTIVE", "AWAITING_CONFIRMATION", "CONFIRMED"] } },
+      include: {
+        members: true,
+        items: { orderBy: { createdAt: "asc" } },
+        table: { select: { id: true, label: true } },
+      },
+      orderBy: { updatedAt: "desc" },
+    });
+  }
 }
 
 export const tableSessionRepository = new TableSessionRepository();
