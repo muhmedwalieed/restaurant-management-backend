@@ -312,6 +312,48 @@ export class OrderRepository {
   }
 
   /**
+   * Appends new items to an existing order (used for table-session order rounds).
+   * Keeps ONE real order per table session: the bill is the running total of all rounds.
+   * QR session orders carry no coupon/discount, so the existing discount is preserved.
+   */
+  async appendItemsToOrder(tenantContext, branchId, orderId, itemsPayload) {
+    const restaurantId = tenantContext.restaurantId;
+    return prisma.$transaction(async (tx) => {
+      const order = await tx.order.findFirst({
+        where: { id: orderId, restaurantId, branchId },
+      });
+      if (!order) {
+        throw new NotFoundError("Order not found");
+      }
+
+      const itemsToCreate = itemsPayload.map((item) => ({
+        restaurantId,
+        orderId: order.id,
+        productId: item.productId,
+        productName: item.productName,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        subtotal: item.subtotal,
+        notes: item.notes || null,
+        selectedModifiers: item.selectedModifiers || null,
+      }));
+
+      await tx.orderItem.createMany({ data: itemsToCreate });
+
+      const newSubtotal =
+        Number(order.subtotal) + itemsPayload.reduce((acc, i) => acc + Number(i.subtotal), 0);
+      const newTotal = Math.max(0, newSubtotal - Number(order.discountAmount || 0));
+
+      await tx.order.update({
+        where: { id: order.id, restaurantId },
+        data: { subtotal: newSubtotal, total: newTotal, version: { increment: 1 } },
+      });
+
+      return order.id;
+    });
+  }
+
+  /**
    * Executes Atomic Optimistic Update + Status History creation inside a single $transaction (Section 25.3).
    */
   async updateOrderStatusWithHistoryTransaction(

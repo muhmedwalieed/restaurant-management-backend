@@ -100,6 +100,12 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
     assert.ok(body.data.sessionId);
     assert.match(body.data.pin, /^\d{4}$/);
     sessionState = { sessionId: body.data.sessionId, pin: body.data.pin };
+
+    // Opening a session marks the table as OCCUPIED.
+    const tableAfterStart = await prisma.restaurantTable.findFirst({
+      where: { id: table.id, restaurantId: tenant.id },
+    });
+    assert.equal(tableAfterStart.status, "OCCUPIED");
   });
 
   test("2. Two customers join with name + PIN", async () => {
@@ -236,7 +242,7 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
     assert.equal(subBody.data.orders[1].total, 50);
   });
 
-  test("8. Confirming round #2 keeps the history of both orders", async () => {
+  test("8. Confirming round #2 keeps the history of both orders in ONE real order", async () => {
     const res = await fetch(`${baseUrl}/api/v1/tables/${sessionState.sessionId}/confirm`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${ownerToken}` },
@@ -251,6 +257,20 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
       ["CONFIRMED", "CONFIRMED"]
     );
     assert.equal(s.orders[1].byMember[0].name, "سارة");
+
+    // Both rounds must reference the SAME real order (one order per session).
+    assert.equal(s.orders[0].orderId, s.orders[1].orderId);
+    assert.equal(s.confirmedOrderId, s.orders[0].orderId);
+
+    // The single real order holds the items of BOTH rounds and the running total.
+    const realOrder = await prisma.order.findFirst({
+      where: { id: s.orders[0].orderId, restaurantId: tenant.id },
+      include: { items: true },
+    });
+    assert.ok(realOrder);
+    assert.equal(realOrder.items.length, 3); // 2 (round 1) + 1 (round 2)
+    assert.equal(Number(realOrder.subtotal), 175); // 125 + 50
+    assert.equal(Number(realOrder.total), 175);
   });
 
   test("9. Items of a confirmed order round cannot be edited", async () => {
@@ -274,6 +294,12 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
     });
     assert.equal(close.status, 200);
     assert.equal((await close.json()).data.status, "CLOSED");
+
+    // Closing the session frees the table back to AVAILABLE.
+    const tableAfterClose = await prisma.restaurantTable.findFirst({
+      where: { id: table.id, restaurantId: tenant.id },
+    });
+    assert.equal(tableAfterClose.status, "AVAILABLE");
 
     const sub = await fetch(`${baseUrl}/api/v1/sessions/${sessionState.sessionId}/submit`, {
       method: "POST",
@@ -341,6 +367,52 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
 
     // Cleanup.
     await prisma.tableSession.deleteMany({ where: { id: started.sessionId } });
+  });
+
+  test("13. Cart quantity update and item removal work on an open session", async () => {
+    const start = await fetch(`${baseUrl}/api/v1/tables/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${ownerToken}` },
+      body: JSON.stringify({ tableId: table.id }),
+    });
+    const { sessionId, pin } = (await start.json()).data;
+
+    await fetch(`${baseUrl}/api/v1/sessions/${table.qrToken}/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "كريم", pin }),
+    });
+    const add = await fetch(`${baseUrl}/api/v1/sessions/${sessionId}/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ productId: product1.id, quantity: 1, addedByName: "كريم" }),
+    });
+    const addBody = await add.json();
+    assert.equal(add.status, 200);
+    const itemId = addBody.data.items[0].id;
+
+    // Update quantity to 3 → total 150
+    const up = await fetch(`${baseUrl}/api/v1/sessions/${sessionId}/items/${itemId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ quantity: 3 }),
+    });
+    assert.equal(up.status, 200);
+    const upBody = await up.json();
+    const updated = upBody.data.items.find((i) => i.id === itemId);
+    assert.equal(updated.quantity, 3);
+    assert.equal(Number(updated.total), 150);
+    assert.equal(upBody.data.total, 150);
+
+    // Remove the item → empty cart
+    const rm = await fetch(`${baseUrl}/api/v1/sessions/${sessionId}/items/${itemId}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+    });
+    assert.equal(rm.status, 200);
+    assert.equal((await rm.json()).data.items.length, 0);
+
+    await prisma.tableSession.deleteMany({ where: { id: sessionId } });
   });
 });
 

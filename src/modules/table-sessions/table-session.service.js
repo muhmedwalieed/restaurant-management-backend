@@ -60,6 +60,7 @@ export class TableSessionService {
       pin,
       tenantContext.employeeId
     );
+    await tableSessionRepository.setTableStatus(table.id, tenantContext.restaurantId, "OCCUPIED");
 
     emitEvent(DomainEvent.TABLE_SESSION_UPDATED, {
       restaurantId: tenantContext.restaurantId,
@@ -163,7 +164,7 @@ export class TableSessionService {
     if (!item) throw new NotFoundError("Item not found");
     this.assertItemEditable(session, item);
 
-    await tableSessionRepository.updateItemQuantity(restaurantId, sessionId, itemId, quantity);
+    await tableSessionRepository.updateItemQuantity(sessionId, itemId, quantity);
     emitEvent(DomainEvent.TABLE_SESSION_UPDATED, {
       restaurantId,
       branchId: session.branchId,
@@ -184,7 +185,7 @@ export class TableSessionService {
     if (!item) throw new NotFoundError("Item not found");
     this.assertItemEditable(session, item);
 
-    await tableSessionRepository.deleteItem(restaurantId, sessionId, itemId);
+    await tableSessionRepository.deleteItem(sessionId, itemId);
     emitEvent(DomainEvent.TABLE_SESSION_UPDATED, {
       restaurantId,
       branchId: session.branchId,
@@ -265,19 +266,66 @@ export class TableSessionService {
     if (!pendingOrder) throw new BusinessRuleError("No order is awaiting confirmation");
     if (pendingOrder.items.length === 0) throw new BusinessRuleError("Cannot confirm an empty order");
 
-    // Create a real order via the order service (source QR, DINE_IN).
-    const orderService = (await import("../orders/order.service.js")).default;
-    const result = await orderService.createOrder(tenantContext, session.branchId, {
-      source: "QR",
-      type: "DINE_IN",
-      tableId: session.tableId,
-      items: pendingOrder.items.map((i) => ({ productId: i.productId, quantity: i.quantity })),
-    });
+    // Server-side price snapshots for the round (same pricing as createOrder).
+    const snapshotItems = [];
+    for (const i of pendingOrder.items) {
+      const product = await prisma.product.findFirst({
+        where: {
+          id: i.productId,
+          restaurantId: tenantContext.restaurantId,
+          isAvailable: true,
+          status: "ACTIVE",
+          deletedAt: null,
+        },
+      });
+      if (!product) throw new NotFoundError(`Product '${i.productId}' not found or unavailable`);
+      const unitPrice = Number(product.price);
+      snapshotItems.push({
+        productId: product.id,
+        productName: product.name,
+        quantity: i.quantity,
+        unitPrice,
+        subtotal: unitPrice * i.quantity,
+        notes: null,
+        selectedModifiers: null,
+      });
+    }
+
+    // One real order per session: later rounds are appended to the same order, so the
+    // customer's bill is the running total of every round. Only create a new order for
+    // the first round (or if the existing one reached a terminal state).
+    const existingOrder = session.confirmedOrderId
+      ? await prisma.order.findFirst({
+          where: { id: session.confirmedOrderId, restaurantId: tenantContext.restaurantId },
+        })
+      : null;
+    const canAppend =
+      existingOrder && ["PENDING", "CONFIRMED", "PREPARING", "READY"].includes(existingOrder.status);
+
+    let realOrderId;
+    if (canAppend) {
+      const orderRepository = (await import("../orders/order.repository.js")).default;
+      realOrderId = await orderRepository.appendItemsToOrder(
+        tenantContext,
+        session.branchId,
+        existingOrder.id,
+        snapshotItems
+      );
+    } else {
+      const orderService = (await import("../orders/order.service.js")).default;
+      const result = await orderService.createOrder(tenantContext, session.branchId, {
+        source: "QR",
+        type: "DINE_IN",
+        tableId: session.tableId,
+        items: snapshotItems.map((s) => ({ productId: s.productId, quantity: s.quantity })),
+      });
+      realOrderId = result.data.id;
+    }
 
     const total = pendingOrder.items.reduce((acc, i) => acc + Number(i.unitPrice) * i.quantity, 0);
-    await tableSessionRepository.confirmOrder(sessionId, pendingOrder.id, result.data.id, total);
+    await tableSessionRepository.confirmOrder(sessionId, pendingOrder.id, realOrderId, total);
     await tableSessionRepository.setSessionStatus(tenantContext.restaurantId, sessionId, "ACTIVE", {
-      confirmedOrderId: result.data.id,
+      confirmedOrderId: realOrderId,
     });
 
     emitEvent(DomainEvent.TABLE_SESSION_UPDATED, {
@@ -286,7 +334,7 @@ export class TableSessionService {
       sessionId,
       tableId: session.tableId,
       action: "confirmed",
-      orderId: result.data.id,
+      orderId: realOrderId,
       orderNumber: pendingOrder.orderNumber,
     });
     return this.publicSession(tenantContext.restaurantId, sessionId);
@@ -297,6 +345,7 @@ export class TableSessionService {
     if (!session) throw new NotFoundError("Session not found");
     await tableSessionRepository.cancelPendingOrders(sessionId);
     const updated = await tableSessionRepository.setSessionStatus(tenantContext.restaurantId, sessionId, "CLOSED");
+    await tableSessionRepository.setTableStatus(session.tableId, tenantContext.restaurantId, "AVAILABLE");
     emitEvent(DomainEvent.TABLE_SESSION_UPDATED, {
       restaurantId: tenantContext.restaurantId,
       branchId: session.branchId,

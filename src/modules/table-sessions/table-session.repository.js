@@ -109,6 +109,15 @@ export class TableSessionRepository {
     });
   }
 
+  /** Mark a table OCCUPIED (session opened) or AVAILABLE (session closed). */
+  async setTableStatus(tableId, restaurantId, status) {
+    const where =
+      status === "AVAILABLE"
+        ? { id: tableId, restaurantId, status: "OCCUPIED" } // only free tables we occupied
+        : { id: tableId, restaurantId };
+    await prisma.restaurantTable.updateMany({ where, data: { status } });
+  }
+
   async addMember(restaurantId, sessionId, name) {
     const member = await prisma.tableSessionMember.create({
       data: { sessionId, name },
@@ -122,16 +131,16 @@ export class TableSessionRepository {
     });
   }
 
-  async updateItemQuantity(restaurantId, sessionId, itemId, quantity) {
+  async updateItemQuantity(sessionId, itemId, quantity) {
     await prisma.tableSessionItem.updateMany({
-      where: { id: itemId, sessionId, restaurantId },
+      where: { id: itemId, sessionId },
       data: { quantity },
     });
   }
 
-  async deleteItem(restaurantId, sessionId, itemId) {
+  async deleteItem(sessionId, itemId) {
     await prisma.tableSessionItem.deleteMany({
-      where: { id: itemId, sessionId, restaurantId },
+      where: { id: itemId, sessionId },
     });
   }
 
