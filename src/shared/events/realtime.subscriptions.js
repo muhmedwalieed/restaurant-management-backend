@@ -24,6 +24,9 @@ export function registerRealtimeSubscriptions() {
   onEvent(DomainEvent.CUSTOMER_UPDATED, (p) =>
     broadcastToRestaurant(p.restaurantId, "customer.updated", p)
   );
+  onEvent(DomainEvent.TABLE_SESSION_UPDATED, (p) =>
+    broadcastToRestaurant(p.restaurantId, "tableSession.updated", p)
+  );
 }
 
 export default registerRealtimeSubscriptions;

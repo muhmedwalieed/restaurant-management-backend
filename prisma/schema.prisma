@@ -122,6 +122,7 @@ model Restaurant {
   customers              Customer[]
   customerAddresses      CustomerAddress[]
   customerPhones         CustomerPhone[]
+  tableSessions          TableSession[]
   whatsappConnections    WhatsAppConnection[]
   whatsappMessages       WhatsAppMessage[]
   webhookEvents          WebhookEvent[]
@@ -162,6 +163,7 @@ model Branch {
   settings       BranchSettings?
   tables         RestaurantTable[]
   orders         Order[]
+  tableSessions  TableSession[]
   coupons        Coupon[]
   notifications  Notification[]
   auditLogs      AuditLog[]
@@ -288,12 +290,69 @@ model RestaurantTable {
   restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
   branch     Branch     @relation(fields: [branchId], references: [id], onDelete: Cascade)
   orders     Order[]
+  sessions   TableSession[]
 
   @@unique([branchId, label])
   @@index([restaurantId])
   @@index([branchId])
   @@index([branchId, status])
   @@map("tables")
+}
+
+model TableSession {
+  id                   String    @id @default(cuid())
+  restaurantId         String    @map("restaurant_id")
+  branchId             String    @map("branch_id")
+  tableId              String    @map("table_id")
+  pinHash              String    @map("pin_hash")
+  status               String    @default("ACTIVE") @map("status") // ACTIVE | AWAITING_CONFIRMATION | CONFIRMED | CLOSED
+  failedAttempts       Int       @default(0) @map("failed_attempts")
+  lockoutLevel         Int       @default(0) @map("lockout_level")
+  lockoutUntil         DateTime? @map("lockout_until")
+  createdByEmployeeId  String?   @map("created_by_employee_id")
+  confirmedOrderId     String?   @map("confirmed_order_id")
+  closedAt             DateTime? @map("closed_at")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  restaurant Restaurant        @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  branch     Branch            @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  table      RestaurantTable   @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  members    TableSessionMember[]
+  items      TableSessionItem[]
+
+  @@index([restaurantId, tableId, status])
+  @@index([restaurantId, status])
+  @@map("table_sessions")
+}
+
+model TableSessionMember {
+  id        String   @id @default(cuid())
+  sessionId String   @map("session_id")
+  name      String
+  joinedAt  DateTime @default(now()) @map("joined_at")
+
+  session TableSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@map("table_session_members")
+}
+
+model TableSessionItem {
+  id          String  @id @default(cuid())
+  sessionId   String  @map("session_id")
+  productId   String  @map("product_id")
+  productName String  @map("product_name")
+  unitPrice   Decimal @map("unit_price") @db.Decimal(10, 2)
+  quantity    Int     @default(1)
+  addedByName String? @map("added_by_name")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  session TableSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@map("table_session_items")
 }
 
 model Order {

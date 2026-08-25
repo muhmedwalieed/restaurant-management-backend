@@ -11,6 +11,7 @@ export const DomainEvent = Object.freeze({
   CHAT_ASSIGNED: "chat.assigned",
   CONVERSATION_UPDATED: "conversation.updated",
   CUSTOMER_UPDATED: "customer.updated",
+  TABLE_SESSION_UPDATED: "tableSession.updated",
 });
 
 const emitter = new EventEmitter();
