@@ -12,6 +12,7 @@ export const GLOBAL_PERMISSIONS = [
   { key: "orders.view", description: "View branch orders and order timeline history" },
   { key: "orders.create", description: "Create new branch orders" },
   { key: "orders.update", description: "Update order details and advance order state machine" },
+  { key: "kds.view", description: "View the kitchen display screen (KDS)" },
   { key: "orders.discount", description: "Apply manual discounts to orders" },
   { key: "orders.cancel", description: "Cancel active orders and record cancellation reason" },
   { key: "orders.payment", description: "Process order payment transactions" },
