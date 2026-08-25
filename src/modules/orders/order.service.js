@@ -158,19 +158,23 @@ export class OrderService {
 
       // Single Active Order Per Table (enforced): reject creating a new order on a
       // table that already has an active order (PENDING/CONFIRMED/PREPARING/READY).
-      const activeOrderOnTable = await prisma.order.findFirst({
-        where: {
-          restaurantId,
-          branchId,
-          tableId: payload.tableId,
-          status: { in: ["PENDING", "CONFIRMED", "PREPARING", "READY"] },
-        },
-        select: { id: true, orderNumber: true },
-      });
-      if (activeOrderOnTable) {
-        throw new BusinessRuleError(
-          `Table already has an active order (#${activeOrderOnTable.orderNumber}). A table can only have one active order at a time`
-        );
+      // QR self-ordering sessions are the exception: each round is a deliberate new
+      // ticket for the same table (add-ons / multiple rounds), so the rule is relaxed.
+      if (payload.source !== "QR") {
+        const activeOrderOnTable = await prisma.order.findFirst({
+          where: {
+            restaurantId,
+            branchId,
+            tableId: payload.tableId,
+            status: { in: ["PENDING", "CONFIRMED", "PREPARING", "READY"] },
+          },
+          select: { id: true, orderNumber: true },
+        });
+        if (activeOrderOnTable) {
+          throw new BusinessRuleError(
+            `Table already has an active order (#${activeOrderOnTable.orderNumber}). A table can only have one active order at a time`
+          );
+        }
       }
     }
 

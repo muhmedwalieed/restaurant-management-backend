@@ -154,8 +154,15 @@ export class TableSessionService {
   }
 
   async updateItem(restaurantId, sessionId, itemId, { quantity }) {
-    await tableSessionRepository.updateItemQuantity(restaurantId, sessionId, itemId, quantity);
     const session = await tableSessionRepository.findSessionById(restaurantId, sessionId);
+    if (!session) throw new NotFoundError("Session not found");
+    if (session.status === "CLOSED") throw new BusinessRuleError("Session is closed");
+
+    const item = (session.items || []).find((i) => i.id === itemId);
+    if (!item) throw new NotFoundError("Item not found");
+    this.assertItemEditable(session, item);
+
+    await tableSessionRepository.updateItemQuantity(restaurantId, sessionId, itemId, quantity);
     emitEvent(DomainEvent.TABLE_SESSION_UPDATED, {
       restaurantId,
       branchId: session.branchId,
@@ -168,8 +175,15 @@ export class TableSessionService {
   }
 
   async removeItem(restaurantId, sessionId, itemId) {
-    await tableSessionRepository.deleteItem(restaurantId, sessionId, itemId);
     const session = await tableSessionRepository.findSessionById(restaurantId, sessionId);
+    if (!session) throw new NotFoundError("Session not found");
+    if (session.status === "CLOSED") throw new BusinessRuleError("Session is closed");
+
+    const item = (session.items || []).find((i) => i.id === itemId);
+    if (!item) throw new NotFoundError("Item not found");
+    this.assertItemEditable(session, item);
+
+    await tableSessionRepository.deleteItem(restaurantId, sessionId, itemId);
     emitEvent(DomainEvent.TABLE_SESSION_UPDATED, {
       restaurantId,
       branchId: session.branchId,
@@ -179,6 +193,15 @@ export class TableSessionService {
       itemId,
     });
     return this.publicSession(restaurantId, sessionId);
+  }
+
+  /** Items can only be edited while they belong to the current cart or the pending (unconfirmed) order. */
+  assertItemEditable(session, item) {
+    if (!item.sessionOrderId) return; // part of the current cart
+    const order = (session.orders || []).find((o) => o.id === item.sessionOrderId);
+    if (order && order.status !== "AWAITING_CONFIRMATION") {
+      throw new BusinessRuleError("Cannot modify an item of a confirmed order");
+    }
   }
 
   /**
@@ -200,36 +223,46 @@ export class TableSessionService {
   }
 
   /**
-   * Customer submits the draft cart for the waiter to review (not a real order yet).
+   * Customer submits the current cart as a new order round for the waiter to review.
+   * The session stays open so customers can keep ordering later (multiple orders per session).
    */
   async submitDraft(restaurantId, sessionId) {
     const session = await tableSessionRepository.findSessionById(restaurantId, sessionId);
     if (!session) throw new NotFoundError("Session not found");
     if (session.status !== "ACTIVE") throw new BusinessRuleError("Session is not in an open state");
 
-    const updated = await tableSessionRepository.setSessionStatus(restaurantId, sessionId, "AWAITING_CONFIRMATION");
+    const currentItems = (session.items || []).filter((i) => !i.sessionOrderId);
+    if (currentItems.length === 0) throw new BusinessRuleError("Cart is empty — add items before submitting");
+
+    const orderNumber = await tableSessionRepository.nextOrderNumber(sessionId);
+    const total = currentItems.reduce((acc, i) => acc + Number(i.unitPrice) * i.quantity, 0);
+    const order = await tableSessionRepository.createOrder(sessionId, orderNumber, total);
+    await tableSessionRepository.linkItemsToOrder(sessionId, order.id);
+    await tableSessionRepository.setSessionStatus(restaurantId, sessionId, "AWAITING_CONFIRMATION");
+
     emitEvent(DomainEvent.TABLE_SESSION_UPDATED, {
       restaurantId,
       branchId: session.branchId,
       sessionId,
       tableId: session.tableId,
       action: "submitted",
+      orderNumber,
     });
     return this.publicSession(restaurantId, sessionId);
   }
 
   /**
-   * Waiter reviews/edits the draft and confirms -> becomes a real order.
+   * Waiter reviews/edits the pending order and confirms -> becomes a real order.
+   * The session returns to ACTIVE so customers can place another round of orders.
    */
   async confirmSession(tenantContext, sessionId) {
     const session = await tableSessionRepository.findSessionById(tenantContext.restaurantId, sessionId);
     if (!session) throw new NotFoundError("Session not found");
-    if (session.status !== "AWAITING_CONFIRMATION" && session.status !== "ACTIVE") {
-      throw new BusinessRuleError("Session is not awaiting confirmation");
-    }
-    if (!session.items || session.items.length === 0) {
-      throw new BusinessRuleError("Cannot confirm an empty order");
-    }
+    if (session.status === "CLOSED") throw new BusinessRuleError("Session is closed");
+
+    const pendingOrder = await tableSessionRepository.findPendingOrder(sessionId);
+    if (!pendingOrder) throw new BusinessRuleError("No order is awaiting confirmation");
+    if (pendingOrder.items.length === 0) throw new BusinessRuleError("Cannot confirm an empty order");
 
     // Create a real order via the order service (source QR, DINE_IN).
     const orderService = (await import("../orders/order.service.js")).default;
@@ -237,12 +270,15 @@ export class TableSessionService {
       source: "QR",
       type: "DINE_IN",
       tableId: session.tableId,
-      items: session.items.map((i) => ({ productId: i.productId, quantity: i.quantity })),
+      items: pendingOrder.items.map((i) => ({ productId: i.productId, quantity: i.quantity })),
     });
 
-    const updated = await tableSessionRepository.setSessionStatus(tenantContext.restaurantId, sessionId, "CONFIRMED", {
+    const total = pendingOrder.items.reduce((acc, i) => acc + Number(i.unitPrice) * i.quantity, 0);
+    await tableSessionRepository.confirmOrder(sessionId, pendingOrder.id, result.data.id, total);
+    await tableSessionRepository.setSessionStatus(tenantContext.restaurantId, sessionId, "ACTIVE", {
       confirmedOrderId: result.data.id,
     });
+
     emitEvent(DomainEvent.TABLE_SESSION_UPDATED, {
       restaurantId: tenantContext.restaurantId,
       branchId: session.branchId,
@@ -250,6 +286,7 @@ export class TableSessionService {
       tableId: session.tableId,
       action: "confirmed",
       orderId: result.data.id,
+      orderNumber: pendingOrder.orderNumber,
     });
     return this.publicSession(tenantContext.restaurantId, sessionId);
   }
@@ -257,6 +294,7 @@ export class TableSessionService {
   async closeSession(tenantContext, sessionId) {
     const session = await tableSessionRepository.findSessionById(tenantContext.restaurantId, sessionId);
     if (!session) throw new NotFoundError("Session not found");
+    await tableSessionRepository.cancelPendingOrders(sessionId);
     const updated = await tableSessionRepository.setSessionStatus(tenantContext.restaurantId, sessionId, "CLOSED");
     emitEvent(DomainEvent.TABLE_SESSION_UPDATED, {
       restaurantId: tenantContext.restaurantId,
@@ -286,29 +324,33 @@ export class TableSessionService {
   /** Staff: list live sessions for a branch (active / awaiting confirmation). */
   async listBranchSessions(tenantContext, branchId) {
     const sessions = await tableSessionRepository.findSessionsByBranch(tenantContext.restaurantId, branchId);
-    return sessions.map((s) => ({
-      id: s.id,
-      status: s.status,
-      tableId: s.tableId,
-      tableLabel: s.table?.label || null,
-      members: s.members || [],
-      itemCount: (s.items || []).length,
-      total: (s.items || []).reduce((acc, i) => acc + Number(i.unitPrice) * i.quantity, 0),
-      confirmedOrderId: s.confirmedOrderId,
-    }));
+    return sessions.map((s) => {
+      const currentItems = (s.items || []).filter((i) => !i.sessionOrderId);
+      return {
+        id: s.id,
+        status: s.status,
+        tableId: s.tableId,
+        tableLabel: s.table?.label || null,
+        members: s.members || [],
+        itemCount: currentItems.length,
+        total: currentItems.reduce((acc, i) => acc + Number(i.unitPrice) * i.quantity, 0),
+        confirmedOrderId: s.confirmedOrderId,
+        orders: (s.orders || []).map((o) => this.orderProjection(o)),
+      };
+    });
   }
 
-  /** Public (customer-safe) projection of a session. */
-  async publicSession(restaurantId, sessionId) {
-    const session = await tableSessionRepository.findSessionById(restaurantId, sessionId);
-    if (!session) throw new NotFoundError("Session not found");
+  /** Shape a single order round for the public/staff projections. */
+  orderProjection(order) {
     return {
-      id: session.id,
-      status: session.status,
-      tableId: session.tableId,
-      tableLabel: session.table?.label || null,
-      members: session.members || [],
-      items: (session.items || []).map((i) => ({
+      id: order.id,
+      orderNumber: order.orderNumber,
+      status: order.status,
+      total: Number(order.total || 0),
+      orderId: order.orderId,
+      confirmedAt: order.confirmedAt,
+      createdAt: order.createdAt,
+      items: (order.items || []).map((i) => ({
         id: i.id,
         productId: i.productId,
         productName: i.productName,
@@ -317,7 +359,52 @@ export class TableSessionService {
         addedByName: i.addedByName,
         total: Number(i.unitPrice) * i.quantity,
       })),
-      total: (session.items || []).reduce((s, i) => s + Number(i.unitPrice) * i.quantity, 0),
+      byMember: this.groupByMember(order.items || []),
+    };
+  }
+
+  /** Group order items by who added them (per-person bill breakdown). */
+  groupByMember(items) {
+    const map = new Map();
+    for (const item of items) {
+      const key = item.addedByName || "عميل";
+      if (!map.has(key)) map.set(key, { name: key, items: [], subtotal: 0 });
+      const entry = map.get(key);
+      const total = Number(item.unitPrice) * item.quantity;
+      entry.items.push({
+        id: item.id,
+        productName: item.productName,
+        quantity: item.quantity,
+        unitPrice: Number(item.unitPrice),
+        total,
+      });
+      entry.subtotal += total;
+    }
+    return Array.from(map.values());
+  }
+
+  /** Public (customer-safe) projection of a session. */
+  async publicSession(restaurantId, sessionId) {
+    const session = await tableSessionRepository.findSessionById(restaurantId, sessionId);
+    if (!session) throw new NotFoundError("Session not found");
+    const currentItems = (session.items || []).filter((i) => !i.sessionOrderId);
+    return {
+      id: session.id,
+      status: session.status,
+      tableId: session.tableId,
+      tableLabel: session.table?.label || null,
+      members: session.members || [],
+      items: currentItems.map((i) => ({
+        id: i.id,
+        productId: i.productId,
+        productName: i.productName,
+        unitPrice: Number(i.unitPrice),
+        quantity: i.quantity,
+        addedByName: i.addedByName,
+        total: Number(i.unitPrice) * i.quantity,
+      })),
+      total: currentItems.reduce((s, i) => s + Number(i.unitPrice) * i.quantity, 0),
+      orders: (session.orders || []).map((o) => this.orderProjection(o)),
       confirmedOrderId: session.confirmedOrderId,
     };
   }

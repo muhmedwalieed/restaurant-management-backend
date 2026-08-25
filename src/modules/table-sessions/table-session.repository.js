@@ -26,6 +26,10 @@ export class TableSessionRepository {
       include: {
         members: true,
         items: { orderBy: { createdAt: "asc" } },
+        orders: {
+          orderBy: { createdAt: "asc" },
+          include: { items: { orderBy: { createdAt: "asc" } } },
+        },
         table: { select: { id: true, label: true } },
       },
     });
@@ -47,6 +51,55 @@ export class TableSessionRepository {
       },
     });
     return this.findSessionById(restaurantId, sessionId);
+  }
+
+  async nextOrderNumber(sessionId) {
+    const last = await prisma.tableSessionOrder.findFirst({
+      where: { sessionId },
+      orderBy: { orderNumber: "desc" },
+      select: { orderNumber: true },
+    });
+    return (last?.orderNumber || 0) + 1;
+  }
+
+  async createOrder(sessionId, orderNumber, total) {
+    return prisma.tableSessionOrder.create({
+      data: { sessionId, orderNumber, total },
+    });
+  }
+
+  /** Link all currently-unsubmitted session items to a submitted order. */
+  async linkItemsToOrder(sessionId, orderId) {
+    await prisma.tableSessionItem.updateMany({
+      where: { sessionId, sessionOrderId: null },
+      data: { sessionOrderId: orderId },
+    });
+  }
+
+  async findPendingOrder(sessionId) {
+    return prisma.tableSessionOrder.findFirst({
+      where: { sessionId, status: "AWAITING_CONFIRMATION" },
+      include: { items: { orderBy: { createdAt: "asc" } } },
+    });
+  }
+
+  async confirmOrder(sessionId, orderId, realOrderId, total) {
+    await prisma.tableSessionOrder.updateMany({
+      where: { id: orderId, sessionId, status: "AWAITING_CONFIRMATION" },
+      data: {
+        status: "CONFIRMED",
+        orderId: realOrderId,
+        total,
+        confirmedAt: new Date(),
+      },
+    });
+  }
+
+  async cancelPendingOrders(sessionId) {
+    await prisma.tableSessionOrder.updateMany({
+      where: { sessionId, status: "AWAITING_CONFIRMATION" },
+      data: { status: "CANCELLED" },
+    });
   }
 
   async addMember(restaurantId, sessionId, name) {
@@ -88,6 +141,10 @@ export class TableSessionRepository {
       include: {
         members: true,
         items: { orderBy: { createdAt: "asc" } },
+        orders: {
+          orderBy: { createdAt: "asc" },
+          include: { items: { orderBy: { createdAt: "asc" } } },
+        },
         table: { select: { id: true, label: true } },
       },
       orderBy: { updatedAt: "desc" },

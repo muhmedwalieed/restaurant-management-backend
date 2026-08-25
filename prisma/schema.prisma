@@ -52,6 +52,12 @@ enum TableStatus {
   MAINTENANCE
 }
 
+enum TableSessionOrderStatus {
+  AWAITING_CONFIRMATION
+  CONFIRMED
+  CANCELLED
+}
+
 enum OrderStatus {
   PENDING
   CONFIRMED
@@ -320,6 +326,7 @@ model TableSession {
   table      RestaurantTable   @relation(fields: [tableId], references: [id], onDelete: Cascade)
   members    TableSessionMember[]
   items      TableSessionItem[]
+  orders     TableSessionOrder[]
 
   @@index([restaurantId, tableId, status])
   @@index([restaurantId, status])
@@ -339,20 +346,41 @@ model TableSessionMember {
 }
 
 model TableSessionItem {
-  id          String  @id @default(cuid())
-  sessionId   String  @map("session_id")
-  productId   String  @map("product_id")
-  productName String  @map("product_name")
-  unitPrice   Decimal @map("unit_price") @db.Decimal(10, 2)
-  quantity    Int     @default(1)
-  addedByName String? @map("added_by_name")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id             String              @id @default(cuid())
+  sessionId      String              @map("session_id")
+  sessionOrderId String?             @map("session_order_id")
+  productId      String              @map("product_id")
+  productName    String              @map("product_name")
+  unitPrice      Decimal             @map("unit_price") @db.Decimal(10, 2)
+  quantity       Int                 @default(1)
+  addedByName    String?             @map("added_by_name")
+  createdAt      DateTime            @default(now()) @map("created_at")
+  updatedAt      DateTime            @updatedAt @map("updated_at")
 
-  session TableSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  session      TableSession       @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionOrder TableSessionOrder? @relation(fields: [sessionOrderId], references: [id], onDelete: SetNull)
 
   @@index([sessionId])
   @@map("table_session_items")
+}
+
+model TableSessionOrder {
+  id          String                @id @default(cuid())
+  sessionId   String                @map("session_id")
+  orderNumber Int                   @map("order_number")
+  status      TableSessionOrderStatus @default(AWAITING_CONFIRMATION) @map("status")
+  total       Decimal               @default(0) @map("total") @db.Decimal(10, 2)
+  orderId     String?               @map("order_id")
+  confirmedAt DateTime?             @map("confirmed_at")
+  createdAt   DateTime              @default(now()) @map("created_at")
+  updatedAt   DateTime              @updatedAt @map("updated_at")
+
+  session TableSession        @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  items   TableSessionItem[]
+
+  @@unique([sessionId, orderNumber])
+  @@index([sessionId])
+  @@map("table_session_orders")
 }
 
 model Order {

@@ -4,7 +4,7 @@ import tableSessionService from "./table-session.service.js";
 export class TableSessionController {
   async startSession(req, res, next) {
     try {
-      const { tableId } = req.params;
+      const tableId = req.body?.tableId || req.params.tableId;
       const result = await tableSessionService.startSession(req.tenantContext, tableId);
       return sendSuccess(res, { statusCode: 201, message: "Table session started", data: result });
     } catch (error) {
