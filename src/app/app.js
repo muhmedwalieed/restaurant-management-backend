@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
+import compression from "compression";
 
 import env from "../config/env.js";
 import routes from "../routes/index.js";
@@ -14,7 +15,14 @@ import "../modules/audit-logs/audit-log.subscriptions.js";
 
 const app = express();
 
+app.set("etag", "strong");
+
 app.use(requestIdMiddleware);
+app.use(
+  compression({
+    threshold: 1024,
+  })
+);
 
 app.use(helmet());
 app.use(

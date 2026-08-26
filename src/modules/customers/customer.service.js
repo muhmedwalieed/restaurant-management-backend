@@ -1,10 +1,10 @@
 import customerRepository from "./customer.repository.js";
+import prisma from "../../lib/prisma.js";
 import { ConflictError, NotFoundError } from "../../shared/errors/index.js";
 import { emitEvent, DomainEvent } from "../../shared/events/event-bus.js";
 import { paginateResponse } from "../../shared/utils/pagination.js";
 
 export class CustomerService {
-
   normalizeName(payload) {
     const firstName = payload.firstName?.trim() || payload.name?.trim() || "";
     const lastName = payload.lastName?.trim() || null;
@@ -173,8 +173,6 @@ export class CustomerService {
 
   async findOrCreateCustomerByPhone(tenantContext, { phone, name }) {
     if (!phone) return null;
-
-    const prisma = (await import("../../lib/prisma.js")).default;
 
     return prisma.$transaction(async (tx) => {
       const existing = await tx.customer.findFirst({

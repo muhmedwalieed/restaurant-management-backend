@@ -1,9 +1,13 @@
 import { z } from "zod";
+import { paginationQuerySchema } from "../../shared/validation/common.schemas.js";
 
 const codeSchema = z
   .string()
   .regex(/^[A-Za-z0-9_-]{3,50}$/, "Code must be 3-50 alphanumeric characters (letters, numbers, - or _)")
   .transform((v) => v.toUpperCase());
+
+const isoDateOrDateTimeRegex = /^\d{4}-\d{2}-\d{2}(T[\d:.]+(Z|[+-]\d{2}:?\d{2})?)?$/;
+const dateStringSchema = z.string().regex(isoDateOrDateTimeRegex, "Must be a valid date or datetime format");
 
 export const createCouponSchema = z.object({
   body: z
@@ -15,8 +19,8 @@ export const createCouponSchema = z.object({
       maxDiscount: z.coerce.number().positive().optional(),
       applicableProductIds: z.array(z.string().min(1)).optional(),
       usageLimit: z.coerce.number().int().positive().optional(),
-      startsAt: z.string().datetime({ offset: true }).optional(),
-      expiresAt: z.string().datetime({ offset: true }).optional(),
+      startsAt: dateStringSchema.optional(),
+      expiresAt: dateStringSchema.optional(),
       isActive: z.boolean().optional().default(true),
       branchId: z.string().optional(),
     })
@@ -37,8 +41,8 @@ export const updateCouponSchema = z.object({
       maxDiscount: z.coerce.number().positive().nullable().optional(),
       applicableProductIds: z.array(z.string().min(1)).nullable().optional(),
       usageLimit: z.coerce.number().int().positive().nullable().optional(),
-      startsAt: z.string().datetime({ offset: true }).nullable().optional(),
-      expiresAt: z.string().datetime({ offset: true }).nullable().optional(),
+      startsAt: dateStringSchema.nullable().optional(),
+      expiresAt: dateStringSchema.nullable().optional(),
       isActive: z.boolean().optional(),
       branchId: z.string().nullable().optional(),
     })
@@ -51,8 +55,7 @@ export const updateCouponSchema = z.object({
 
 export const couponQuerySchema = z.object({
   query: z.object({
-    page: z.coerce.number().int().min(1).default(1),
-    limit: z.coerce.number().int().min(1).max(100).default(20),
+    ...paginationQuerySchema,
     isActive: z.enum(["true", "false"]).optional().transform((v) => (v === undefined ? undefined : v === "true")),
     type: z.enum(["PERCENTAGE", "FIXED"]).optional(),
     q: z.string().optional(),

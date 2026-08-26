@@ -7,5 +7,11 @@ export function requireTenantContext(req, res, next) {
   next();
 }
 
-export default requireTenantContext;
+export function assertTenantContext(tenantContext) {
+  if (!tenantContext || !tenantContext.restaurantId) {
+    throw new AuthenticationError("TenantContext with restaurantId is required");
+  }
+  return tenantContext;
+}
 
+export default requireTenantContext;

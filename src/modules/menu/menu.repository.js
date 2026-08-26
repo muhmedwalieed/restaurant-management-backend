@@ -1,14 +1,12 @@
 import prisma from "../../lib/prisma.js";
-import { AuthenticationError } from "../../shared/errors/index.js";
+import { assertTenantContext } from "../../shared/middleware/tenant-context.js";
+import { getPaginationOffset } from "../../shared/utils/pagination.js";
 
 export class MenuRepository {
-
   async findCategories(tenantContext, { page = 1, limit = 20, status } = {}) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
+    const { skip, take } = getPaginationOffset(page, limit);
 
-    const skip = (page - 1) * limit;
     const where = {
       restaurantId: tenantContext.restaurantId,
       deletedAt: null,
@@ -19,7 +17,7 @@ export class MenuRepository {
       prisma.category.findMany({
         where,
         skip,
-        take: limit,
+        take,
         select: {
           id: true,
           restaurantId: true,
@@ -46,9 +44,7 @@ export class MenuRepository {
   }
 
   async findCategoryById(tenantContext, categoryId) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
 
     return prisma.category.findFirst({
       where: {
@@ -59,7 +55,9 @@ export class MenuRepository {
       include: {
         _count: {
           select: {
-            products: { where: { deletedAt: null } },
+            products: {
+              where: { deletedAt: null },
+            },
           },
         },
       },
@@ -67,9 +65,7 @@ export class MenuRepository {
   }
 
   async findCategoryByName(tenantContext, name) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
 
     return prisma.category.findFirst({
       where: {
@@ -81,9 +77,7 @@ export class MenuRepository {
   }
 
   async createCategory(tenantContext, categoryData) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
 
     return prisma.category.create({
       data: {
@@ -134,9 +128,7 @@ export class MenuRepository {
   }
 
   async countNonDeletedProductsByCategoryId(tenantContext, categoryId) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
 
     return prisma.product.count({
       where: {
@@ -148,11 +140,9 @@ export class MenuRepository {
   }
 
   async findProducts(tenantContext, { page = 1, limit = 20, categoryId, isAvailable, status, search } = {}) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
+    const { skip, take } = getPaginationOffset(page, limit);
 
-    const skip = (page - 1) * limit;
     const where = {
       restaurantId: tenantContext.restaurantId,
       deletedAt: null,
@@ -173,7 +163,7 @@ export class MenuRepository {
       prisma.product.findMany({
         where,
         skip,
-        take: limit,
+        take,
         include: {
           category: {
             select: {
@@ -202,9 +192,7 @@ export class MenuRepository {
   }
 
   async findProductById(tenantContext, productId) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
 
     return prisma.product.findFirst({
       where: {
@@ -228,9 +216,7 @@ export class MenuRepository {
   }
 
   async findProductByName(tenantContext, name) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
 
     return prisma.product.findFirst({
       where: {
@@ -242,9 +228,7 @@ export class MenuRepository {
   }
 
   async createProduct(tenantContext, productData) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
 
     return prisma.product.create({
       data: {

@@ -1,61 +1,52 @@
 import { AuthorizationError } from "../../shared/errors/index.js";
 import prisma from "../../lib/prisma.js";
-import redis from "../../config/redis.js";
+import { withCache, invalidateCacheKeys } from "../../shared/utils/cache.js";
 import logger from "../../config/logger.js";
 
 export async function getEmployeePermissions(employeeId, restaurantId) {
   const cacheKey = `permissions:${employeeId}`;
 
-  try {
-    const cachedData = await redis.get(cacheKey);
-    if (cachedData) {
-      return JSON.parse(cachedData);
-    }
-  } catch (err) {
-    logger.warn({ err: err.message }, "Redis read failed in getEmployeePermissions, falling back to DB");
-  }
-
-  const employee = await prisma.employee.findFirst({
-    where: {
-      id: employeeId,
-      restaurantId,
-      deletedAt: null,
-      status: "ACTIVE",
-    },
-    include: {
-      role: {
-        include: {
-          permissions: {
-            include: {
-              permission: true,
+  return withCache(cacheKey, 60, async () => {
+    const employee = await prisma.employee.findFirst({
+      where: {
+        id: employeeId,
+        restaurantId,
+        deletedAt: null,
+        status: "ACTIVE",
+      },
+      select: {
+        role: {
+          select: {
+            name: true,
+            isSystem: true,
+            permissions: {
+              select: {
+                permission: {
+                  select: {
+                    key: true,
+                  },
+                },
+              },
             },
           },
         },
       },
-    },
+    });
+
+    if (!employee || !employee.role) {
+      throw new AuthorizationError("Employee or role not found");
+    }
+
+    const roleName = employee.role.name;
+    const isSystem = employee.role.isSystem;
+    const permissions = employee.role.permissions.map((rp) => rp.permission.key);
+
+    return {
+      roleName,
+      isSystem,
+      permissions,
+    };
   });
-
-  if (!employee || !employee.role) {
-    throw new AuthorizationError("Employee or role not found");
-  }
-
-  const roleName = employee.role.name;
-  const isSystem = employee.role.isSystem;
-  const permissions = employee.role.permissions.map((rp) => rp.permission.key);
-
-  const permissionData = {
-    roleName,
-    isSystem,
-    permissions,
-  };
-
-  try {
-    await redis.set(cacheKey, JSON.stringify(permissionData), "EX", 60);
-  } catch (err) {
-    logger.warn({ err: err.message }, "Redis set failed in getEmployeePermissions");
-  }
-
-  return permissionData;
 }
 
 export function authorizeAny(...permissionKeys) {
@@ -96,11 +87,7 @@ export function authorize(permissionKey) {
 
 export async function invalidateEmployeePermissions(employeeId) {
   if (!employeeId) return;
-  try {
-    await redis.del(`permissions:${employeeId}`);
-  } catch (err) {
-    logger.warn({ err: err.message, employeeId }, "Failed to invalidate employee permissions cache");
-  }
+  await invalidateCacheKeys(`permissions:${employeeId}`);
 }
 
 export default authorize;

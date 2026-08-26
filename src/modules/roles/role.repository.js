@@ -1,7 +1,9 @@
 import prisma from "../../lib/prisma.js";
+import { assertTenantContext } from "../../shared/middleware/tenant-context.js";
 
 export class RoleRepository {
   async findRoles(tenantContext) {
+    assertTenantContext(tenantContext);
     return prisma.role.findMany({
       where: {
         restaurantId: tenantContext.restaurantId,
@@ -21,6 +23,7 @@ export class RoleRepository {
   }
 
   async findRoleById(tenantContext, id) {
+    assertTenantContext(tenantContext);
     return prisma.role.findFirst({
       where: {
         id,
@@ -40,6 +43,7 @@ export class RoleRepository {
   }
 
   async findRoleByName(tenantContext, name) {
+    assertTenantContext(tenantContext);
     return prisma.role.findFirst({
       where: {
         restaurantId: tenantContext.restaurantId,
@@ -49,6 +53,7 @@ export class RoleRepository {
   }
 
   async createRole(tenantContext, { name, description, permissionKeys = [] }) {
+    assertTenantContext(tenantContext);
     const restaurantId = tenantContext.restaurantId;
 
     return prisma.$transaction(async (tx) => {
@@ -94,6 +99,7 @@ export class RoleRepository {
   }
 
   async updateRole(tenantContext, id, { name, description, permissionKeys }) {
+    assertTenantContext(tenantContext);
     const restaurantId = tenantContext.restaurantId;
 
     return prisma.$transaction(async (tx) => {
@@ -152,6 +158,7 @@ export class RoleRepository {
   }
 
   async deleteRole(tenantContext, id) {
+    assertTenantContext(tenantContext);
     return prisma.role.delete({
       where: {
         id,
@@ -161,6 +168,7 @@ export class RoleRepository {
   }
 
   async findAssignedEmployeeIds(tenantContext, roleId) {
+    assertTenantContext(tenantContext);
     const employees = await prisma.employee.findMany({
       where: {
         restaurantId: tenantContext.restaurantId,

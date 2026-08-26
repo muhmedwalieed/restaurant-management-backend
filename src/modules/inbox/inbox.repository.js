@@ -1,13 +1,12 @@
 import prisma from "../../lib/prisma.js";
-import { AuthenticationError } from "../../shared/errors/index.js";
+import { assertTenantContext } from "../../shared/middleware/tenant-context.js";
+import { getPaginationOffset } from "../../shared/utils/pagination.js";
 
 export class InboxRepository {
   async findConversations(tenantContext, { page = 1, limit = 20, status, assignedToMe } = {}) {
-    if (!tenantContext?.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
+    const { skip, take } = getPaginationOffset(page, limit);
 
-    const skip = (page - 1) * limit;
     const where = {
       restaurantId: tenantContext.restaurantId,
       ...(status ? { status } : {}),
@@ -18,7 +17,7 @@ export class InboxRepository {
       prisma.inboxConversation.findMany({
         where,
         skip,
-        take: limit,
+        take,
         orderBy: { lastMessageAt: "desc" },
         include: {
           customer: { select: { id: true, name: true, phone: true } },
@@ -33,9 +32,7 @@ export class InboxRepository {
   }
 
   async findConversationById(tenantContext, id) {
-    if (!tenantContext?.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
 
     return prisma.inboxConversation.findFirst({
       where: { id, restaurantId: tenantContext.restaurantId },
@@ -49,9 +46,7 @@ export class InboxRepository {
   }
 
   async findConversationByWhatsAppId(tenantContext, whatsappConversationId) {
-    if (!tenantContext?.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
 
     return prisma.inboxConversation.findFirst({
       where: { restaurantId: tenantContext.restaurantId, whatsappConversationId },
@@ -59,6 +54,8 @@ export class InboxRepository {
   }
 
   async createConversation(tenantContext, data) {
+    assertTenantContext(tenantContext);
+
     return prisma.inboxConversation.create({
       data: {
         restaurantId: tenantContext.restaurantId,
@@ -73,6 +70,8 @@ export class InboxRepository {
   }
 
   async assignConversation(tenantContext, id, agentId) {
+    assertTenantContext(tenantContext);
+
     return prisma.inboxConversation.updateMany({
       where: { id, restaurantId: tenantContext.restaurantId },
       data: { assignedAgentId: agentId, status: "ACTIVE", updatedAt: new Date() },
@@ -80,6 +79,8 @@ export class InboxRepository {
   }
 
   async updateStatus(tenantContext, id, status) {
+    assertTenantContext(tenantContext);
+
     return prisma.inboxConversation.updateMany({
       where: { id, restaurantId: tenantContext.restaurantId },
       data: { status, updatedAt: new Date() },
@@ -87,6 +88,8 @@ export class InboxRepository {
   }
 
   async lockConversation(tenantContext, id, lockedById) {
+    assertTenantContext(tenantContext);
+
     return prisma.inboxConversation.updateMany({
       where: { id, restaurantId: tenantContext.restaurantId },
       data: { lockedById, lockedAt: new Date(), updatedAt: new Date() },
@@ -94,6 +97,8 @@ export class InboxRepository {
   }
 
   async clearLock(tenantContext, id) {
+    assertTenantContext(tenantContext);
+
     return prisma.inboxConversation.updateMany({
       where: { id, restaurantId: tenantContext.restaurantId },
       data: { lockedById: null, lockedAt: null, updatedAt: new Date() },
@@ -101,6 +106,8 @@ export class InboxRepository {
   }
 
   async reassignConversation(tenantContext, id, agentId) {
+    assertTenantContext(tenantContext);
+
     return prisma.inboxConversation.updateMany({
       where: { id, restaurantId: tenantContext.restaurantId },
       data: { assignedAgentId: agentId, lockedById: null, lockedAt: null, status: "ACTIVE", updatedAt: new Date() },
@@ -108,6 +115,8 @@ export class InboxRepository {
   }
 
   async touchConversation(tenantContext, id) {
+    assertTenantContext(tenantContext);
+
     return prisma.inboxConversation.updateMany({
       where: { id, restaurantId: tenantContext.restaurantId },
       data: { lastMessageAt: new Date(), updatedAt: new Date() },
@@ -115,6 +124,8 @@ export class InboxRepository {
   }
 
   async createMessage(tenantContext, data) {
+    assertTenantContext(tenantContext);
+
     return prisma.inboxMessage.create({
       data: {
         restaurantId: tenantContext.restaurantId,

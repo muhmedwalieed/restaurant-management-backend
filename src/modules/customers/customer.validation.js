@@ -1,9 +1,9 @@
 import { z } from "zod";
+import { paginationQuerySchema, phoneSchema } from "../../shared/validation/common.schemas.js";
 
 export const customerQuerySchema = z.object({
   query: z.object({
-    page: z.coerce.number().int().min(1).default(1),
-    limit: z.coerce.number().int().min(1).max(100).default(20),
+    ...paginationQuerySchema,
     q: z.string().optional(),
   }),
 });
@@ -14,7 +14,7 @@ export const createCustomerSchema = z.object({
       firstName: z.string().min(1).max(60).optional(),
       lastName: z.string().max(60).optional(),
       name: z.string().min(1).max(100).optional(),
-      phone: z.string().min(3, "Valid phone number is required").max(30),
+      phone: phoneSchema,
       phones: z.array(z.string().min(3).max(30)).optional(),
       notes: z.string().max(500).optional(),
     })
