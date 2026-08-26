@@ -1,13 +1,12 @@
-﻿node_modules/
+node_modules/
 .env
 .env.*
 !.env.example
 
+logs/
+*.log
 npm-debug.log*
 .DS_Store
 Backend_Project_Guide.md
 BACKEND_ARCHITECTURE.md
-dev-server.log
-backend-dev.log
 /uploads/
-dev.log
