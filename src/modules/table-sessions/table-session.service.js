@@ -4,6 +4,7 @@ import tableSessionRepository from "./table-session.repository.js";
 import { emitEvent, DomainEvent } from "../../shared/events/event-bus.js";
 import { NotFoundError, ValidationError, BusinessRuleError } from "../../shared/errors/index.js";
 import { signAccessToken } from "../../utils/jwt.js";
+import env from "../../config/env.js";
 import prisma from "../../lib/prisma.js";
 
 const PIN_LENGTH = 4;
@@ -123,12 +124,15 @@ export class TableSessionService {
     await tableSessionRepository.lockout(session.id, restaurantId, 0, 0, null);
 
     const member = await tableSessionRepository.addMember(restaurantId, session.id, name);
-    const memberToken = signAccessToken({
-      type: "table-member",
-      restaurantId,
-      sessionId: session.id,
-      memberId: member.id,
-    });
+    const memberToken = signAccessToken(
+      {
+        type: "table-member",
+        restaurantId,
+        sessionId: session.id,
+        memberId: member.id,
+      },
+      { expiresIn: env.JWT_TABLE_MEMBER_EXPIRES_IN }
+    );
     emitEvent(DomainEvent.TABLE_SESSION_UPDATED, {
       restaurantId,
       branchId: session.branchId,

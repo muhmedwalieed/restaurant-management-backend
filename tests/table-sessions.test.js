@@ -131,6 +131,11 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
     assert.equal(b2.success, true);
     assert.ok(b2.data.memberToken);
     sessionState.tokenB = b2.data.memberToken;
+
+    // member token must outlive a dining session, not the 15-minute staff token
+    const { default: jwt } = await import("jsonwebtoken");
+    const decoded = jwt.decode(b2.data.memberToken);
+    assert.ok(decoded.exp * 1000 > Date.now() + 6 * 60 * 60 * 1000);
   });
 
   test("3. Members add items to the shared cart", async () => {
