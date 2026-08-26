@@ -101,6 +101,23 @@ export class OrderService {
   async createOrder(tenantContext, branchId, payload, idempotencyKey = null) {
     const restaurantId = tenantContext.restaurantId;
 
+    const SOURCE_PERMISSION = {
+      CASHIER: "orders.source_cashier",
+      PHONE: "orders.source_phone",
+      WHATSAPP: "orders.source_whatsapp",
+      WEBSITE: "orders.source_website",
+    };
+    const sourcePermission = SOURCE_PERMISSION[payload.source || "CASHIER"];
+    if (sourcePermission && tenantContext?.employeeId) {
+      const { isSystem, roleName, permissions } = await getEmployeePermissions(
+        tenantContext.employeeId,
+        tenantContext.restaurantId
+      );
+      if (!(isSystem && roleName === "owner") && !permissions.includes(sourcePermission)) {
+        throw new AuthorizationError(`You don't have permission to create ${payload.source} orders`);
+      }
+    }
+
     if (idempotencyKey) {
       const cached = await orderRepository.findIdempotencyKey(restaurantId, idempotencyKey);
       if (cached) {

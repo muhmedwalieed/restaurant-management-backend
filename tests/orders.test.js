@@ -322,6 +322,83 @@ describe("Order Management & KDS Module Integration Tests", () => {
     await prisma.productModifier.deleteMany({ where: { id: qtyModifier.id, restaurantId: tenantA.id } });
   });
 
+  test("1c. Order source requires a matching source permission (cashier only has CASHIER)", async () => {
+    const srcPerms = await prisma.permission.findMany({
+      where: { key: { in: ["orders.create", "orders.view", "orders.source_cashier"] } },
+    });
+    const cashierOnlyRole = await prisma.role.create({
+      data: {
+        restaurantId: tenantA.id,
+        name: "POS Cashier Only",
+        permissions: {
+          create: srcPerms.map((p) => ({ restaurantId: tenantA.id, permissionId: p.id })),
+        },
+      },
+    });
+    const passwordHash = await bcrypt.hash("Password123!", 10);
+    const cashierEmp = await prisma.employee.create({
+      data: {
+        restaurantId: tenantA.id,
+        branchId: branchA.id,
+        roleId: cashierOnlyRole.id,
+        name: "POS Cashier",
+        email: `poscashier-${Date.now()}@test.com`,
+        passwordHash,
+      },
+    });
+    const login = await authService.login({
+      email: cashierEmp.email,
+      password: "Password123!",
+      device: "POSCashier",
+      ipAddress: "127.0.0.1",
+    });
+    const cashierToken = login.accessToken;
+
+    const freshTable = await prisma.restaurantTable.create({
+      data: {
+        restaurantId: tenantA.id,
+        branchId: branchA.id,
+        label: `T-src-${Date.now()}`,
+        qrToken: `qr-src-${Date.now()}`,
+      },
+    });
+    const auth = { "Content-Type": "application/json", Authorization: `Bearer ${cashierToken}` };
+
+    const cashierOrder = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/orders`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        type: "DINE_IN",
+        source: "CASHIER",
+        tableId: freshTable.id,
+        items: [{ productId: productA2.id, quantity: 1 }],
+      }),
+    });
+    assert.equal(cashierOrder.status, 201);
+
+    const phoneOrder = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/orders`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        type: "DINE_IN",
+        source: "PHONE",
+        tableId: freshTable.id,
+        customerPhone: "01000000000",
+        customerName: "Test Phone Customer",
+        items: [{ productId: productA2.id, quantity: 1 }],
+      }),
+    });
+    assert.equal(phoneOrder.status, 403);
+    const err = await phoneOrder.json();
+    assert.equal(err.error.code, "AUTHORIZATION_ERROR");
+
+    await prisma.order.deleteMany({ where: { restaurantId: tenantA.id, tableId: freshTable.id } });
+    await prisma.restaurantTable.deleteMany({ where: { id: freshTable.id, restaurantId: tenantA.id } });
+    await prisma.employee.deleteMany({ where: { id: cashierEmp.id, restaurantId: tenantA.id } });
+    await prisma.rolePermission.deleteMany({ where: { roleId: cashierOnlyRole.id, restaurantId: tenantA.id } });
+    await prisma.role.deleteMany({ where: { id: cashierOnlyRole.id, restaurantId: tenantA.id } });
+  });
+
   test("2. Idempotency Key Engine: Duplicate request with same Idempotency-Key returns cached response without duplicate creation", async () => {
     const testKey = `idem-dup-test-${Date.now()}`;
 

@@ -108,7 +108,17 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
     const posPerms = await prisma.permission.findMany({
       where: {
         key: {
-          in: ["orders.create", "orders.view", "orders.update", "orders.payment", "orders.refund"],
+          in: [
+            "orders.create",
+            "orders.view",
+            "orders.update",
+            "orders.payment",
+            "orders.refund",
+            "orders.source_cashier",
+            "orders.source_phone",
+            "orders.source_whatsapp",
+            "orders.source_website",
+          ],
         },
       },
     });
