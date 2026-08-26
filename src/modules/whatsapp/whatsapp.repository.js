@@ -1,12 +1,10 @@
 import prisma from "../../lib/prisma.js";
-import { AuthenticationError } from "../../shared/errors/index.js";
+import { assertTenantContext } from "../../shared/middleware/tenant-context.js";
+import { getPaginationOffset } from "../../shared/utils/pagination.js";
 
 export class WhatsAppRepository {
-
   async findConnectionByTenant(tenantContext) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
 
     return prisma.whatsAppConnection.findFirst({
       where: {
@@ -17,9 +15,7 @@ export class WhatsAppRepository {
   }
 
   async findConnectionById(tenantContext, id) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
 
     return prisma.whatsAppConnection.findFirst({
       where: {
@@ -30,9 +26,7 @@ export class WhatsAppRepository {
   }
 
   async findConnectionByAccountId(tenantContext, providerAccountId) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
 
     return prisma.whatsAppConnection.findFirst({
       where: {
@@ -72,7 +66,6 @@ export class WhatsAppRepository {
     const restaurantId = tenantContext.restaurantId;
 
     return prisma.$transaction(async (tx) => {
-
       if (connectionData.status === "ACTIVE" || connectionData.status === undefined) {
         await tx.whatsAppConnection.updateMany({
           where: {
@@ -132,9 +125,7 @@ export class WhatsAppRepository {
   }
 
   async softDeactivateConnection(tenantContext, connectionId) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
 
     return prisma.whatsAppConnection.updateMany({
       where: {
@@ -149,9 +140,7 @@ export class WhatsAppRepository {
   }
 
   async createMessage(tenantContext, messageData) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
 
     return prisma.whatsAppMessage.create({
       data: {
@@ -170,11 +159,9 @@ export class WhatsAppRepository {
   }
 
   async findMessagesByTenant(tenantContext, { page = 1, limit = 20, direction, status, q } = {}) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
+    const { skip, take } = getPaginationOffset(page, limit);
 
-    const skip = (page - 1) * limit;
     const where = {
       restaurantId: tenantContext.restaurantId,
       ...(direction ? { direction } : {}),
@@ -194,7 +181,7 @@ export class WhatsAppRepository {
       prisma.whatsAppMessage.findMany({
         where,
         skip,
-        take: limit,
+        take,
         orderBy: { createdAt: "desc" },
       }),
       prisma.whatsAppMessage.count({ where }),
@@ -204,9 +191,7 @@ export class WhatsAppRepository {
   }
 
   async findMessageById(tenantContext, id) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
 
     return prisma.whatsAppMessage.findFirst({
       where: {
@@ -217,9 +202,7 @@ export class WhatsAppRepository {
   }
 
   async findMessageByProviderId(tenantContext, providerMessageId) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
 
     return prisma.whatsAppMessage.findFirst({
       where: {
@@ -230,9 +213,7 @@ export class WhatsAppRepository {
   }
 
   async updateMessageStatus(tenantContext, messageId, status) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
 
     return prisma.whatsAppMessage.updateMany({
       where: {
@@ -247,9 +228,7 @@ export class WhatsAppRepository {
   }
 
   async findEventByEventId(tenantContext, eventId) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
 
     return prisma.webhookEvent.findFirst({
       where: {
@@ -260,9 +239,7 @@ export class WhatsAppRepository {
   }
 
   async createEvent(tenantContext, eventData) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
 
     return prisma.webhookEvent.create({
       data: {
@@ -276,9 +253,7 @@ export class WhatsAppRepository {
   }
 
   async markEventProcessed(tenantContext, eventId) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
 
     return prisma.webhookEvent.updateMany({
       where: {
@@ -293,9 +268,7 @@ export class WhatsAppRepository {
   }
 
   async markEventFailed(tenantContext, eventId, lastError) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
 
     return prisma.webhookEvent.updateMany({
       where: {
@@ -311,9 +284,7 @@ export class WhatsAppRepository {
   }
 
   async findFailedEvents(tenantContext) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
 
     return prisma.webhookEvent.findMany({
       where: {

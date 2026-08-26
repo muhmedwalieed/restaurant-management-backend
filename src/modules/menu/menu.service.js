@@ -1,12 +1,11 @@
 import menuRepository from "./menu.repository.js";
 import { BusinessRuleError, ConflictError, NotFoundError } from "../../shared/errors/index.js";
 import { paginateResponse } from "../../shared/utils/pagination.js";
+import { withCache, invalidateCacheKeys } from "../../shared/utils/cache.js";
 import prisma from "../../lib/prisma.js";
-import redis from "../../config/redis.js";
 import logger from "../../config/logger.js";
 
 const PUBLIC_MENU_CACHE_TTL = 600; // 10 minutes in seconds
-const inFlightMenuRequests = new Map();
 
 async function invalidateMenuCache(restaurantId) {
   if (!restaurantId) return;
@@ -19,7 +18,7 @@ async function invalidateMenuCache(restaurantId) {
     if (restaurant?.slug) {
       keys.push(`public_menu:slug:${restaurant.slug}`);
     }
-    await redis.del(...keys);
+    await invalidateCacheKeys(...keys);
   } catch (err) {
     logger.warn({ err: err.message, restaurantId }, "Failed to invalidate menu cache");
   }
@@ -236,52 +235,13 @@ export class MenuService {
       ? `public_menu:id:${restaurantId}`
       : `public_menu:slug:${restaurantSlug}`;
 
-    try {
-      const cached = await redis.get(cacheKey);
-      if (cached) {
-        return JSON.parse(cached);
+    return withCache(cacheKey, PUBLIC_MENU_CACHE_TTL, async () => {
+      const menu = await menuRepository.getPublicMenuBySlugOrId({ restaurantSlug, restaurantId });
+      if (!menu) {
+        throw new NotFoundError("Restaurant menu not found or restaurant is inactive");
       }
-    } catch (err) {
-      logger.warn({ err: err.message, cacheKey }, "Redis read error for public menu cache");
-    }
-
-    // Cache Stampede Singleflight Guard:
-    let inFlight = inFlightMenuRequests.get(cacheKey);
-    if (!inFlight) {
-      inFlight = (async () => {
-        const menu = await menuRepository.getPublicMenuBySlugOrId({ restaurantSlug, restaurantId });
-        if (!menu) {
-          throw new NotFoundError("Restaurant menu not found or restaurant is inactive");
-        }
-
-        try {
-          const serialized = JSON.stringify(menu);
-          const pipeline = redis.pipeline();
-          pipeline.set(cacheKey, serialized, "EX", PUBLIC_MENU_CACHE_TTL);
-          if (menu.restaurant?.id && menu.restaurant?.slug) {
-            const alternateKey = restaurantId
-              ? `public_menu:slug:${menu.restaurant.slug}`
-              : `public_menu:id:${menu.restaurant.id}`;
-            pipeline.set(alternateKey, serialized, "EX", PUBLIC_MENU_CACHE_TTL);
-          }
-          await pipeline.exec();
-        } catch (err) {
-          logger.warn({ err: err.message, cacheKey }, "Redis set error for public menu cache");
-        }
-
-        return menu;
-      })();
-
-      inFlightMenuRequests.set(cacheKey, inFlight);
-    }
-
-    try {
-      return await inFlight;
-    } finally {
-      if (inFlightMenuRequests.get(cacheKey) === inFlight) {
-        inFlightMenuRequests.delete(cacheKey);
-      }
-    }
+      return menu;
+    });
   }
 }
 

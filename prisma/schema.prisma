@@ -234,6 +234,7 @@ model Category {
   @@unique([restaurantId, name])
   @@index([restaurantId])
   @@index([restaurantId, status])
+  @@index([restaurantId, deletedAt])
   @@map("categories")
 }
 
@@ -260,6 +261,7 @@ model Product {
   @@index([restaurantId])
   @@index([restaurantId, categoryId])
   @@index([restaurantId, status])
+  @@index([restaurantId, deletedAt])
   @@map("products")
 }
 
@@ -281,6 +283,8 @@ model ProductModifier {
 
   @@index([restaurantId])
   @@index([productId])
+  @@index([restaurantId, deletedAt])
+  @@index([productId, deletedAt])
   @@map("product_modifiers")
 }
 
@@ -305,6 +309,8 @@ model RestaurantTable {
   @@index([restaurantId])
   @@index([branchId])
   @@index([branchId, status])
+  @@index([restaurantId, deletedAt])
+  @@index([branchId, deletedAt])
   @@map("tables")
 }
 
@@ -456,6 +462,8 @@ model Order {
   @@index([branchId])
   @@index([restaurantId, branchId, status])
   @@index([branchId, createdAt])
+  @@index([restaurantId, createdAt])
+  @@index([customerId])
   @@map("orders")
 }
 
@@ -593,6 +601,7 @@ model Employee {
   @@index([restaurantId])
   @@index([restaurantId, branchId])
   @@index([restaurantId, status])
+  @@index([restaurantId, deletedAt])
   @@map("employees")
 }
 
@@ -658,6 +667,7 @@ model Customer {
   @@index([restaurantId])
   @@index([restaurantId, firstName])
   @@index([restaurantId, phone])
+  @@index([restaurantId, deletedAt])
   @@map("customers")
 }
 
@@ -699,6 +709,7 @@ model CustomerAddress {
 
   @@index([restaurantId])
   @@index([customerId])
+  @@index([customerId, deletedAt])
   @@map("customer_addresses")
 }
 
@@ -944,6 +955,7 @@ model Coupon {
   @@unique([restaurantId, code])
   @@index([restaurantId])
   @@index([restaurantId, branchId])
+  @@index([restaurantId, deletedAt])
   @@map("coupons")
 }
 

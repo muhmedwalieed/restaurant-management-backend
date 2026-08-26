@@ -21,7 +21,6 @@ export class BranchService {
   }
 
   async createBranch(tenantContext, data) {
-
     const existingCode = await branchRepository.findBranchByCode(tenantContext, data.code);
     if (existingCode) {
       throw new ConflictError(`Branch with code '${data.code.toUpperCase()}' already exists in this restaurant`);
@@ -98,11 +97,7 @@ export class BranchService {
   }
 
   async updateWorkingHours(tenantContext, branchId, hoursArray) {
-    const branch = await this.getBranchById(tenantContext, branchId);
-    if (!branch) {
-      throw new NotFoundError("Branch not found");
-    }
-
+    await this.getBranchById(tenantContext, branchId);
     return branchRepository.upsertWorkingHours(tenantContext, branchId, hoursArray);
   }
 
@@ -111,11 +106,7 @@ export class BranchService {
   }
 
   async updateBranchSettings(tenantContext, branchId, settingsData) {
-    const branch = await this.getBranchById(tenantContext, branchId);
-    if (!branch) {
-      throw new NotFoundError("Branch not found");
-    }
-
+    await this.getBranchById(tenantContext, branchId);
     return branchRepository.upsertBranchSettings(tenantContext, branchId, settingsData);
   }
 }

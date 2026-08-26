@@ -1,15 +1,13 @@
 import prisma from "../../lib/prisma.js";
-import { AuthenticationError, NotFoundError } from "../../shared/errors/index.js";
+import { NotFoundError } from "../../shared/errors/index.js";
 import { getPaginationOffset } from "../../shared/utils/pagination.js";
+import { assertTenantContext } from "../../shared/middleware/tenant-context.js";
 
 export class BranchRepository {
-
   async findBranches(tenantContext, { page = 1, limit = 20, status } = {}) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
-
+    assertTenantContext(tenantContext);
     const { skip, take } = getPaginationOffset(page, limit);
+
     const where = {
       restaurantId: tenantContext.restaurantId,
       ...(status ? { status } : {}),
@@ -52,9 +50,7 @@ export class BranchRepository {
   }
 
   async findBranchById(tenantContext, branchId) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
 
     return prisma.branch.findFirst({
       where: {
@@ -79,9 +75,7 @@ export class BranchRepository {
   }
 
   async findMainBranch(tenantContext) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
 
     return prisma.branch.findFirst({
       where: {
@@ -92,9 +86,7 @@ export class BranchRepository {
   }
 
   async findBranchByCode(tenantContext, code) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
 
     return prisma.branch.findFirst({
       where: {
@@ -105,9 +97,7 @@ export class BranchRepository {
   }
 
   async createBranch(tenantContext, branchData) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
 
     return prisma.branch.create({
       data: {

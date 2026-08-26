@@ -1,5 +1,7 @@
 import prisma from "../../lib/prisma.js";
-import { AuthenticationError, ConflictError, NotFoundError } from "../../shared/errors/index.js";
+import { ConflictError, NotFoundError } from "../../shared/errors/index.js";
+import { assertTenantContext } from "../../shared/middleware/tenant-context.js";
+import { getPaginationOffset } from "../../shared/utils/pagination.js";
 import couponService from "../coupons/coupon.service.js";
 
 function dateKeyInTimezone(date, timezone) {
@@ -47,11 +49,9 @@ export class OrderRepository {
   }
 
   async findOrdersByBranch(tenantContext, branchId, { page = 1, limit = 20, status, type, source, tableId } = {}) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
+    const { skip, take } = getPaginationOffset(page, limit);
 
-    const skip = (page - 1) * limit;
     const where = {
       restaurantId: tenantContext.restaurantId,
       branchId,
@@ -65,7 +65,7 @@ export class OrderRepository {
       prisma.order.findMany({
         where,
         skip,
-        take: limit,
+        take,
         include: {
           items: true,
           table: {
@@ -87,11 +87,9 @@ export class OrderRepository {
   }
 
   async findOrdersByTenant(tenantContext, { page = 1, limit = 20, status, type, source, branchId, tableId } = {}) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
+    const { skip, take } = getPaginationOffset(page, limit);
 
-    const skip = (page - 1) * limit;
     const where = {
       restaurantId: tenantContext.restaurantId,
       ...(branchId ? { branchId } : {}),
@@ -105,7 +103,7 @@ export class OrderRepository {
       prisma.order.findMany({
         where,
         skip,
-        take: limit,
+        take,
         include: {
           items: true,
           table: {
@@ -130,9 +128,7 @@ export class OrderRepository {
   }
 
   async findOrderById(tenantContext, branchId, orderId) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
 
     return prisma.order.findFirst({
       where: {

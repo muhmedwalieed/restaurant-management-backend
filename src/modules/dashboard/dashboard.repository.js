@@ -1,5 +1,5 @@
 import prisma from "../../lib/prisma.js";
-import { AuthenticationError } from "../../shared/errors/index.js";
+import { assertTenantContext } from "../../shared/middleware/tenant-context.js";
 
 function buildOrderWhere(tenantContext, { branchId, from, to, excludeCancelled = false, statuses, paymentStatus } = {}) {
   const where = {
@@ -22,14 +22,13 @@ function buildOrderWhere(tenantContext, { branchId, from, to, excludeCancelled =
 }
 
 export class DashboardRepository {
-
   async countOrders(tenantContext, filters) {
-    this.assertTenant(tenantContext);
+    assertTenantContext(tenantContext);
     return prisma.order.count({ where: buildOrderWhere(tenantContext, filters) });
   }
 
   async aggregateOrderTotals(tenantContext, filters) {
-    this.assertTenant(tenantContext);
+    assertTenantContext(tenantContext);
     const result = await prisma.order.aggregate({
       where: buildOrderWhere(tenantContext, filters),
       _sum: { total: true },
@@ -42,14 +41,14 @@ export class DashboardRepository {
   }
 
   async countCustomers(tenantContext) {
-    this.assertTenant(tenantContext);
+    assertTenantContext(tenantContext);
     return prisma.customer.count({
       where: { restaurantId: tenantContext.restaurantId, deletedAt: null },
     });
   }
 
   async countOccupiedTables(tenantContext, branchId) {
-    this.assertTenant(tenantContext);
+    assertTenantContext(tenantContext);
     return prisma.restaurantTable.count({
       where: {
         restaurantId: tenantContext.restaurantId,
@@ -61,7 +60,7 @@ export class DashboardRepository {
   }
 
   async groupOrdersBySource(tenantContext, filters) {
-    this.assertTenant(tenantContext);
+    assertTenantContext(tenantContext);
     const rows = await prisma.order.groupBy({
       by: ["source"],
       where: buildOrderWhere(tenantContext, { ...filters, excludeCancelled: true }),
@@ -77,7 +76,7 @@ export class DashboardRepository {
   }
 
   async groupOrdersByStatus(tenantContext, filters) {
-    this.assertTenant(tenantContext);
+    assertTenantContext(tenantContext);
     const rows = await prisma.order.groupBy({
       by: ["status"],
       where: buildOrderWhere(tenantContext, filters),
@@ -87,7 +86,7 @@ export class DashboardRepository {
   }
 
   async groupOrdersByPaymentStatus(tenantContext, filters) {
-    this.assertTenant(tenantContext);
+    assertTenantContext(tenantContext);
     const rows = await prisma.order.groupBy({
       by: ["paymentStatus"],
       where: buildOrderWhere(tenantContext, filters),
@@ -97,7 +96,7 @@ export class DashboardRepository {
   }
 
   async branchComparison(tenantContext, { from, to } = {}) {
-    this.assertTenant(tenantContext);
+    assertTenantContext(tenantContext);
     const where = {
       restaurantId: tenantContext.restaurantId,
       status: { not: "CANCELLED" },
@@ -133,7 +132,7 @@ export class DashboardRepository {
   }
 
   async findOrdersForTrend(tenantContext, filters) {
-    this.assertTenant(tenantContext);
+    assertTenantContext(tenantContext);
     return prisma.order.findMany({
       where: buildOrderWhere(tenantContext, { ...filters, excludeCancelled: true }),
       select: { id: true, createdAt: true, total: true },
@@ -142,7 +141,7 @@ export class DashboardRepository {
   }
 
   async topProducts(tenantContext, filters, take = 5) {
-    this.assertTenant(tenantContext);
+    assertTenantContext(tenantContext);
     const rows = await prisma.orderItem.groupBy({
       by: ["productName"],
       where: {
@@ -173,7 +172,7 @@ export class DashboardRepository {
   }
 
   async employeePerformance(tenantContext, filters) {
-    this.assertTenant(tenantContext);
+    assertTenantContext(tenantContext);
 
     const orderWhere = buildOrderWhere(tenantContext, filters);
     const paidOrders = await prisma.order.findMany({
@@ -233,12 +232,6 @@ export class DashboardRepository {
       actionsPerformed: actionsByEmployee.get(id) || 0,
       distinctOrdersHandled: distinctOrdersByEmployee.get(id)?.size || 0,
     }));
-  }
-
-  assertTenant(tenantContext) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
   }
 }
 

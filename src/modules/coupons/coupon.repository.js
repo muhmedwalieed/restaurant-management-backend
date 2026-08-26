@@ -1,11 +1,12 @@
 import prisma from "../../lib/prisma.js";
-import { AuthenticationError } from "../../shared/errors/index.js";
+import { assertTenantContext } from "../../shared/middleware/tenant-context.js";
+import { getPaginationOffset } from "../../shared/utils/pagination.js";
 
 export class CouponRepository {
-
   async findCoupons(tenantContext, { page = 1, limit = 20, isActive, type, q } = {}) {
-    this.assertTenant(tenantContext);
-    const skip = (page - 1) * limit;
+    assertTenantContext(tenantContext);
+    const { skip, take } = getPaginationOffset(page, limit);
+
     const where = {
       restaurantId: tenantContext.restaurantId,
       deletedAt: null,
@@ -18,7 +19,7 @@ export class CouponRepository {
       prisma.coupon.findMany({
         where,
         skip,
-        take: limit,
+        take,
         include: { branch: { select: { id: true, name: true, code: true } } },
         orderBy: { createdAt: "desc" },
       }),
@@ -29,7 +30,7 @@ export class CouponRepository {
   }
 
   async findCouponById(tenantContext, couponId) {
-    this.assertTenant(tenantContext);
+    assertTenantContext(tenantContext);
     return prisma.coupon.findFirst({
       where: { id: couponId, restaurantId: tenantContext.restaurantId, deletedAt: null },
       include: { branch: { select: { id: true, name: true, code: true } } },
@@ -37,14 +38,14 @@ export class CouponRepository {
   }
 
   async findCouponByCode(tenantContext, code) {
-    this.assertTenant(tenantContext);
+    assertTenantContext(tenantContext);
     return prisma.coupon.findFirst({
       where: { restaurantId: tenantContext.restaurantId, code, deletedAt: null },
     });
   }
 
   async createCoupon(tenantContext, data) {
-    this.assertTenant(tenantContext);
+    assertTenantContext(tenantContext);
     return prisma.coupon.create({
       data: {
         restaurantId: tenantContext.restaurantId,
@@ -65,7 +66,7 @@ export class CouponRepository {
   }
 
   async updateCoupon(tenantContext, couponId, data) {
-    this.assertTenant(tenantContext);
+    assertTenantContext(tenantContext);
     const result = await prisma.coupon.updateMany({
       where: { id: couponId, restaurantId: tenantContext.restaurantId, deletedAt: null },
       data: {
@@ -89,18 +90,12 @@ export class CouponRepository {
   }
 
   async softDeleteCoupon(tenantContext, couponId) {
-    this.assertTenant(tenantContext);
+    assertTenantContext(tenantContext);
     const result = await prisma.coupon.updateMany({
       where: { id: couponId, restaurantId: tenantContext.restaurantId, deletedAt: null },
       data: { deletedAt: new Date(), isActive: false, updatedAt: new Date() },
     });
     return result.count;
-  }
-
-  assertTenant(tenantContext) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
   }
 }
 

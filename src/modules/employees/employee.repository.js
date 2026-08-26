@@ -1,8 +1,10 @@
 import prisma from "../../lib/prisma.js";
 import { getPaginationOffset } from "../../shared/utils/pagination.js";
+import { assertTenantContext } from "../../shared/middleware/tenant-context.js";
 
 export class EmployeeRepository {
   async findEmployees(tenantContext, { page = 1, limit = 20, branchId, search, status, roleId, sort }) {
+    assertTenantContext(tenantContext);
     const { skip, take } = getPaginationOffset(page, limit);
 
     const where = {
@@ -60,6 +62,8 @@ export class EmployeeRepository {
   }
 
   async findEmployeeById(tenantContext, id) {
+    assertTenantContext(tenantContext);
+
     return prisma.employee.findFirst({
       where: {
         id,
@@ -88,6 +92,8 @@ export class EmployeeRepository {
   }
 
   async findEmployeeByEmail(tenantContext, email) {
+    assertTenantContext(tenantContext);
+
     return prisma.employee.findFirst({
       where: {
         restaurantId: tenantContext.restaurantId,
@@ -98,6 +104,8 @@ export class EmployeeRepository {
   }
 
   async createEmployee(tenantContext, data) {
+    assertTenantContext(tenantContext);
+
     return prisma.employee.create({
       data: {
         ...data,
@@ -119,7 +127,6 @@ export class EmployeeRepository {
   }
 
   async updateEmployee(tenantContext, id, data) {
-
     const existing = await this.findEmployeeById(tenantContext, id);
     if (!existing) {
       return null;

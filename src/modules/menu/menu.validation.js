@@ -1,9 +1,9 @@
 import { z } from "zod";
+import { paginationQuerySchema } from "../../shared/validation/common.schemas.js";
 
 export const categoryQuerySchema = z.object({
   query: z.object({
-    page: z.coerce.number().int().min(1).default(1),
-    limit: z.coerce.number().int().min(1).max(100).default(20),
+    ...paginationQuerySchema,
     status: z.enum(["ACTIVE", "INACTIVE"]).optional(),
   }),
 });
@@ -28,8 +28,7 @@ export const updateCategorySchema = z.object({
 
 export const productQuerySchema = z.object({
   query: z.object({
-    page: z.coerce.number().int().min(1).default(1),
-    limit: z.coerce.number().int().min(1).max(100).default(20),
+    ...paginationQuerySchema,
     categoryId: z.string().optional(),
     isAvailable: z
       .union([z.boolean(), z.enum(["true", "false"])])

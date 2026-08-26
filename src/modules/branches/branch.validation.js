@@ -1,11 +1,11 @@
 import { z } from "zod";
+import { paginationQuerySchema } from "../../shared/validation/common.schemas.js";
 
 const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 export const branchQuerySchema = z.object({
   query: z.object({
-    page: z.coerce.number().int().min(1).default(1),
-    limit: z.coerce.number().int().min(1).max(100).default(20),
+    ...paginationQuerySchema,
     status: z.enum(["ACTIVE", "INACTIVE"]).optional(),
   }),
 });

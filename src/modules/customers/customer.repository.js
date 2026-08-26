@@ -1,14 +1,12 @@
 import prisma from "../../lib/prisma.js";
-import { AuthenticationError } from "../../shared/errors/index.js";
+import { assertTenantContext } from "../../shared/middleware/tenant-context.js";
+import { getPaginationOffset } from "../../shared/utils/pagination.js";
 
 export class CustomerRepository {
-
   async findCustomers(tenantContext, { page = 1, limit = 20, q } = {}) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
+    const { skip, take } = getPaginationOffset(page, limit);
 
-    const skip = (page - 1) * limit;
     const where = {
       restaurantId: tenantContext.restaurantId,
       deletedAt: null,
@@ -28,7 +26,7 @@ export class CustomerRepository {
       prisma.customer.findMany({
         where,
         skip,
-        take: limit,
+        take,
         include: {
           phones: {
             where: { deletedAt: null },
@@ -51,9 +49,7 @@ export class CustomerRepository {
   }
 
   async findCustomerById(tenantContext, customerId) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
 
     return prisma.customer.findFirst({
       where: {
@@ -78,9 +74,7 @@ export class CustomerRepository {
   }
 
   async findCustomerByPhone(tenantContext, phone) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
 
     return prisma.customer.findFirst({
       where: {
@@ -92,9 +86,7 @@ export class CustomerRepository {
   }
 
   async createCustomer(tenantContext, payload) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
 
     const phones = (payload.phones || []).map((p) => p.trim()).filter(Boolean);
 
@@ -185,14 +177,12 @@ export class CustomerRepository {
   }
 
   async findCustomerOrders(tenantContext, customerId, { page = 1, limit = 20 } = {}) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
 
     const customer = await this.findCustomerById(tenantContext, customerId);
     if (!customer) return null;
 
-    const skip = (page - 1) * limit;
+    const { skip, take } = getPaginationOffset(page, limit);
     const where = {
       restaurantId: tenantContext.restaurantId,
       customerId,
@@ -202,7 +192,7 @@ export class CustomerRepository {
       prisma.order.findMany({
         where,
         skip,
-        take: limit,
+        take,
         include: {
           branch: {
             select: { id: true, name: true, code: true },
@@ -232,9 +222,7 @@ export class CustomerRepository {
   }
 
   async findAddressById(tenantContext, customerId, addressId) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
 
     return prisma.customerAddress.findFirst({
       where: {

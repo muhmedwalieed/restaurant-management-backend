@@ -1,14 +1,12 @@
 import prisma from "../../lib/prisma.js";
-import { AuthenticationError } from "../../shared/errors/index.js";
+import { assertTenantContext } from "../../shared/middleware/tenant-context.js";
+import { getPaginationOffset } from "../../shared/utils/pagination.js";
 
 export class TableRepository {
-
   async findTablesByBranch(tenantContext, branchId, { page = 1, limit = 20, status } = {}) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
+    const { skip, take } = getPaginationOffset(page, limit);
 
-    const skip = (page - 1) * limit;
     const where = {
       restaurantId: tenantContext.restaurantId,
       branchId,
@@ -20,7 +18,7 @@ export class TableRepository {
       prisma.restaurantTable.findMany({
         where,
         skip,
-        take: limit,
+        take,
         include: {
           branch: {
             select: {
@@ -39,9 +37,7 @@ export class TableRepository {
   }
 
   async findTableById(tenantContext, branchId, tableId) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
 
     return prisma.restaurantTable.findFirst({
       where: {
@@ -65,9 +61,7 @@ export class TableRepository {
   }
 
   async findTableByLabel(tenantContext, branchId, label) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
 
     return prisma.restaurantTable.findFirst({
       where: {
@@ -80,9 +74,7 @@ export class TableRepository {
   }
 
   async createTable(tenantContext, branchId, tableData) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    assertTenantContext(tenantContext);
 
     return prisma.restaurantTable.create({
       data: {

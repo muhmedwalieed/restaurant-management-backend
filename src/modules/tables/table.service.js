@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import tableRepository from "./table.repository.js";
 import branchRepository from "../branches/branch.repository.js";
-import menuRepository from "../menu/menu.repository.js";
+import menuService from "../menu/menu.service.js";
 import { ConflictError, NotFoundError } from "../../shared/errors/index.js";
 import { paginateResponse } from "../../shared/utils/pagination.js";
 import env from "../../config/env.js";
@@ -15,7 +15,6 @@ function buildQrUrl(qrToken) {
 }
 
 export class TableService {
-
   async verifyBranchOwnership(tenantContext, branchId) {
     return branchRepository.requireBranch(tenantContext, branchId);
   }
@@ -125,7 +124,7 @@ export class TableService {
       throw new NotFoundError("Invalid or expired QR code token");
     }
 
-    const menuData = await menuRepository.getPublicMenuBySlugOrId({ restaurantId: table.restaurantId });
+    const menuData = await menuService.getPublicMenu({ restaurantId: table.restaurantId });
     if (!menuData) {
       throw new NotFoundError("Restaurant menu not available");
     }
