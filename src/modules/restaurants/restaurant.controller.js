@@ -1,43 +1,28 @@
 import restaurantService from "./restaurant.service.js";
 import { sendSuccess } from "../../shared/utils/response.js";
+import { asyncHandler } from "../../shared/utils/async-handler.js";
 
 export class RestaurantController {
-  async getProfile(req, res, next) {
-    try {
-      const restaurant = await restaurantService.getRestaurantProfile(req.tenantContext);
-      return sendSuccess(res, {
-        data: restaurant,
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
+  getProfile = asyncHandler(async (req, res) => {
+    const restaurant = await restaurantService.getRestaurantProfile(req.tenantContext);
+    return sendSuccess(res, { data: restaurant });
+  });
 
-  async updateProfile(req, res, next) {
-    try {
-      const body = req.validated?.body ?? req.body ?? {};
-      const restaurant = await restaurantService.updateRestaurantProfile(req.tenantContext, body);
-      return sendSuccess(res, {
-        message: "Restaurant profile updated successfully",
-        data: restaurant,
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
+  updateProfile = asyncHandler(async (req, res) => {
+    const restaurant = await restaurantService.updateRestaurantProfile(req.tenantContext, req.body);
+    return sendSuccess(res, {
+      message: "Restaurant profile updated successfully",
+      data: restaurant,
+    });
+  });
 
-  async updateStatus(req, res, next) {
-    try {
-      const body = req.validated?.body ?? req.body ?? {};
-      const restaurant = await restaurantService.updateRestaurantStatus(req.tenantContext, body.status);
-      return sendSuccess(res, {
-        message: `Restaurant status updated to ${body.status}`,
-        data: restaurant,
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
+  updateStatus = asyncHandler(async (req, res) => {
+    const restaurant = await restaurantService.updateRestaurantStatus(req.tenantContext, req.body.status);
+    return sendSuccess(res, {
+      message: `Restaurant status updated to ${req.body.status}`,
+      data: restaurant,
+    });
+  });
 }
 
 export const restaurantController = new RestaurantController();

@@ -1,10 +1,6 @@
 import prisma from "../../lib/prisma.js";
 import { AuthenticationError } from "../../shared/errors/index.js";
 
-/**
- * Builds a tenant-scoped order filter shared by all dashboard aggregate queries.
- * Explicit restaurantId is ALWAYS present (Section 12.3 — explicit scoping).
- */
 function buildOrderWhere(tenantContext, { branchId, from, to, excludeCancelled = false, statuses, paymentStatus } = {}) {
   const where = {
     restaurantId: tenantContext.restaurantId,
@@ -26,17 +22,12 @@ function buildOrderWhere(tenantContext, { branchId, from, to, excludeCancelled =
 }
 
 export class DashboardRepository {
-  /**
-   * Counts orders matching the filter.
-   */
+
   async countOrders(tenantContext, filters) {
     this.assertTenant(tenantContext);
     return prisma.order.count({ where: buildOrderWhere(tenantContext, filters) });
   }
 
-  /**
-   * Aggregates order totals + count for the filter (revenue metrics).
-   */
   async aggregateOrderTotals(tenantContext, filters) {
     this.assertTenant(tenantContext);
     const result = await prisma.order.aggregate({
@@ -50,9 +41,6 @@ export class DashboardRepository {
     };
   }
 
-  /**
-   * Counts customers belonging to the restaurant (soft-deleted excluded).
-   */
   async countCustomers(tenantContext) {
     this.assertTenant(tenantContext);
     return prisma.customer.count({
@@ -60,9 +48,6 @@ export class DashboardRepository {
     });
   }
 
-  /**
-   * Counts occupied tables in a branch (or whole restaurant).
-   */
   async countOccupiedTables(tenantContext, branchId) {
     this.assertTenant(tenantContext);
     return prisma.restaurantTable.count({
@@ -75,9 +60,6 @@ export class DashboardRepository {
     });
   }
 
-  /**
-   * Orders count + revenue grouped by OrderSource channel.
-   */
   async groupOrdersBySource(tenantContext, filters) {
     this.assertTenant(tenantContext);
     const rows = await prisma.order.groupBy({
@@ -94,9 +76,6 @@ export class DashboardRepository {
     }));
   }
 
-  /**
-   * Orders count grouped by lifecycle status.
-   */
   async groupOrdersByStatus(tenantContext, filters) {
     this.assertTenant(tenantContext);
     const rows = await prisma.order.groupBy({
@@ -107,9 +86,6 @@ export class DashboardRepository {
     return rows.map((r) => ({ status: r.status, orders: r._count._all }));
   }
 
-  /**
-   * Orders count grouped by payment status.
-   */
   async groupOrdersByPaymentStatus(tenantContext, filters) {
     this.assertTenant(tenantContext);
     const rows = await prisma.order.groupBy({
@@ -120,9 +96,6 @@ export class DashboardRepository {
     return rows.map((r) => ({ paymentStatus: r.paymentStatus, orders: r._count._all }));
   }
 
-  /**
-   * Per-branch orders + revenue (Module 19 — Branch comparison), non-cancelled only.
-   */
   async branchComparison(tenantContext, { from, to } = {}) {
     this.assertTenant(tenantContext);
     const where = {
@@ -159,10 +132,6 @@ export class DashboardRepository {
     return { byBranch, paidByBranch, branches };
   }
 
-  /**
-   * Fetches lightweight order rows for a date range to compute the sales trend in JS.
-   * (Prisma groupBy cannot truncate timestamps to days — aggregated here deterministically.)
-   */
   async findOrdersForTrend(tenantContext, filters) {
     this.assertTenant(tenantContext);
     return prisma.order.findMany({
@@ -172,9 +141,6 @@ export class DashboardRepository {
     });
   }
 
-  /**
-   * Top selling products by total quantity across non-cancelled orders.
-   */
   async topProducts(tenantContext, filters, take = 5) {
     this.assertTenant(tenantContext);
     const rows = await prisma.orderItem.groupBy({
@@ -206,9 +172,6 @@ export class DashboardRepository {
     }));
   }
 
-  /**
-   * Employee performance from payment processing (paidByEmployeeId) + status-history actions.
-   */
   async employeePerformance(tenantContext, filters) {
     this.assertTenant(tenantContext);
 

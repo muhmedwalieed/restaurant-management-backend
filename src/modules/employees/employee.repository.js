@@ -1,8 +1,9 @@
 import prisma from "../../lib/prisma.js";
+import { getPaginationOffset } from "../../shared/utils/pagination.js";
 
 export class EmployeeRepository {
   async findEmployees(tenantContext, { page = 1, limit = 20, branchId, search, status, roleId, sort }) {
-    const skip = (page - 1) * limit;
+    const { skip, take } = getPaginationOffset(page, limit);
 
     const where = {
       restaurantId: tenantContext.restaurantId,
@@ -31,7 +32,7 @@ export class EmployeeRepository {
       prisma.employee.findMany({
         where,
         skip,
-        take: limit,
+        take,
         orderBy,
         select: {
           id: true,
@@ -118,7 +119,7 @@ export class EmployeeRepository {
   }
 
   async updateEmployee(tenantContext, id, data) {
-    // Explicit tenant scoping check first
+
     const existing = await this.findEmployeeById(tenantContext, id);
     if (!existing) {
       return null;

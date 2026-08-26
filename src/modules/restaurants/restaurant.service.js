@@ -16,7 +16,6 @@ export class RestaurantService {
       throw new NotFoundError("Restaurant profile not found");
     }
 
-    // Whitelist update payload
     const updatePayload = {
       ...(data.name ? { name: data.name } : {}),
       ...(data.description !== undefined ? { description: data.description } : {}),

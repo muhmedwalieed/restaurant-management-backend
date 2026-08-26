@@ -2,20 +2,13 @@ import kdsRepository from "./kds.repository.js";
 import branchRepository from "../branches/branch.repository.js";
 import orderService from "../orders/order.service.js";
 import { NotFoundError } from "../../shared/errors/index.js";
+import { paginateResponse } from "../../shared/utils/pagination.js";
 
 export class KdsService {
   async verifyBranchOwnership(tenantContext, branchId) {
-    const branch = await branchRepository.findBranchById(tenantContext, branchId);
-    if (!branch) {
-      throw new NotFoundError("Branch not found or access denied");
-    }
-    return branch;
+    return branchRepository.requireBranch(tenantContext, branchId);
   }
 
-  /**
-   * Retrieves active kitchen orders (CONFIRMED and PREPARING by default) ordered FIFO.
-   * Server-side calculates elapsedMinutes from createdAt.
-   */
   async getActiveKitchenOrders(tenantContext, branchId, { page = 1, limit = 20, status } = {}) {
     await this.verifyBranchOwnership(tenantContext, branchId);
 
@@ -55,23 +48,9 @@ export class KdsService {
       };
     });
 
-    const totalPages = Math.ceil(total / limit) || 1;
-
-    return {
-      items: formattedItems,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages,
-      },
-    };
+    return paginateResponse(formattedItems, total, page, limit);
   }
 
-  /**
-   * Delegates kitchen preparation status update directly to existing Order Engine.
-   * Preserves single source of truth for State Machine validation (422) & Optimistic Locking (409).
-   */
   async updateKitchenOrderStatus(tenantContext, branchId, orderId, { newStatus, expectedVersion, reason }) {
     return orderService.updateOrderStatus(tenantContext, branchId, orderId, {
       newStatus,

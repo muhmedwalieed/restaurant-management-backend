@@ -1,11 +1,10 @@
 import multiBranchRepository from "./multi-branch.repository.js";
 import { AuditAction, auditLogService } from "../audit-logs/audit-log.service.js";
-import { BusinessRuleError, ConflictError, NotFoundError } from "../../shared/errors/index.js";
+import { BusinessRuleError, ConflictError, NotFoundError, AuthorizationError } from "../../shared/errors/index.js";
+import { getEmployeePermissions } from "../auth/authorize.middleware.js";
 
 export class MultiBranchService {
-  /**
-   * Lists employees who can operate in a branch (home + granted access).
-   */
+
   async listBranchUsers(tenantContext, branchId) {
     await this.verifyBranch(tenantContext, branchId);
     const users = await multiBranchRepository.findBranchUsers(tenantContext, branchId);
@@ -18,9 +17,6 @@ export class MultiBranchService {
     }));
   }
 
-  /**
-   * Grants an employee access to an additional branch.
-   */
   async grantAccess(tenantContext, branchId, employeeId) {
     const branch = await this.verifyBranch(tenantContext, branchId);
     const employee = await multiBranchRepository.findEmployee(tenantContext, employeeId);
@@ -57,9 +53,6 @@ export class MultiBranchService {
     }
   }
 
-  /**
-   * Revokes an employee's access to a branch (home branch cannot be revoked).
-   */
   async revokeAccess(tenantContext, branchId, employeeId) {
     const branch = await this.verifyBranch(tenantContext, branchId);
     const employee = await multiBranchRepository.findEmployee(tenantContext, employeeId);
@@ -87,14 +80,24 @@ export class MultiBranchService {
     return { message: "Branch access revoked successfully" };
   }
 
-  /**
-   * The employee's accessible branches (branch switcher for the frontend).
-   */
   async listMyBranches(tenantContext) {
-    const employeeId = tenantContext.employeeId;
+    const { restaurantId, employeeId } = tenantContext;
     if (!employeeId) {
       throw new NotFoundError("Employee identity required");
     }
+
+    let canManageAll = false;
+    try {
+      const { roleName, isSystem, permissions } = await getEmployeePermissions(employeeId, restaurantId);
+      canManageAll = (isSystem && roleName === "owner") || permissions.includes("branches.manage");
+    } catch (error) {
+      if (!(error instanceof AuthorizationError)) throw error;
+    }
+
+    if (canManageAll) {
+      return multiBranchRepository.findAllBranches(tenantContext);
+    }
+
     const branches = await multiBranchRepository.findEmployeeBranches(tenantContext, employeeId);
     if (!branches) {
       throw new NotFoundError("Employee not found or access denied");

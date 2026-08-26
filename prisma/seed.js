@@ -2,9 +2,6 @@ import prisma from "../src/lib/prisma.js";
 import { GLOBAL_PERMISSIONS } from "../src/modules/permissions/permission.catalog.js";
 import logger from "../src/config/logger.js";
 
-/**
- * Idempotent Seed Script for Global Permissions.
- */
 export async function seedPermissions() {
   logger.info("Starting global permissions seeding...");
 
@@ -33,7 +30,6 @@ async function main() {
   }
 }
 
-// Execute if run directly from CLI
 if (process.argv[1] && process.argv[1].endsWith("seed.js")) {
   main();
 }

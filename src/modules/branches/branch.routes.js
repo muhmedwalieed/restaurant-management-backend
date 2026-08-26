@@ -14,7 +14,6 @@ import { validate } from "../../shared/middleware/validate.js";
 
 const router = Router();
 
-// Middleware pipeline: authenticate -> requireTenantContext
 router.use(authenticate, requireTenantContext);
 
 router.get("/", authorize("branches.manage"), validate(branchQuerySchema), (req, res, next) => {

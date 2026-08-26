@@ -5,10 +5,6 @@ import { sendSuccess } from "../shared/utils/response.js";
 
 const router = Router();
 
-/**
- * GET /health - Liveness Probe
- * Indicates whether the application process is running.
- */
 router.get("/health", (req, res) => {
   sendSuccess(res, {
     message: "Restaurant Management API is alive",
@@ -19,10 +15,6 @@ router.get("/health", (req, res) => {
   });
 });
 
-/**
- * GET /ready - Readiness Probe
- * Checks whether all required backing services (PostgreSQL & Redis) are ready to serve traffic.
- */
 router.get("/ready", async (req, res) => {
   const [dbHealthy, redisHealthy] = await Promise.all([
     checkDatabaseHealth(),

@@ -3,12 +3,6 @@ import prisma from "../../lib/prisma.js";
 import redis from "../../config/redis.js";
 import logger from "../../config/logger.js";
 
-/**
- * Fetches dynamic role & permission set for an employee using Redis cache (TTL=60s) with DB fallback.
- * @param {string} employeeId
- * @param {string} restaurantId
- * @returns {Promise<{ roleName: string, isSystem: boolean, permissions: string[] }>}
- */
 export async function getEmployeePermissions(employeeId, restaurantId) {
   const cacheKey = `permissions:${employeeId}`;
 
@@ -21,7 +15,6 @@ export async function getEmployeePermissions(employeeId, restaurantId) {
     logger.warn({ err: err.message }, "Redis read failed in getEmployeePermissions, falling back to DB");
   }
 
-  // DB Fallback with explicit restaurantId scoping
   const employee = await prisma.employee.findFirst({
     where: {
       id: employeeId,
@@ -65,10 +58,6 @@ export async function getEmployeePermissions(employeeId, restaurantId) {
   return permissionData;
 }
 
-/**
- * Authorization Middleware Factory — allows access if the user holds ANY of the keys.
- * @param {...string} permissionKeys - e.g. authorizeAny("menu.view", "menu.manage")
- */
 export function authorizeAny(...permissionKeys) {
   return async (req, res, next) => {
     try {
@@ -79,12 +68,10 @@ export function authorizeAny(...permissionKeys) {
       const { employeeId, restaurantId } = req.tenantContext;
       const { roleName, isSystem, permissions } = await getEmployeePermissions(employeeId, restaurantId);
 
-      // System Owner Role Bypass (Fix #3): ONLY if isSystem === true AND roleName === "owner"
       if (isSystem && roleName === "owner") {
         return next();
       }
 
-      // Grant access if the user holds ANY of the requested keys
       const allowed = permissionKeys.some((key) => permissions.includes(key));
       if (!allowed) {
         logger.warn(
@@ -103,12 +90,17 @@ export function authorizeAny(...permissionKeys) {
   };
 }
 
-/**
- * Authorization Middleware Factory.
- * @param {string} permissionKey - e.g. "employees.manage"
- */
 export function authorize(permissionKey) {
   return authorizeAny(permissionKey);
+}
+
+export async function invalidateEmployeePermissions(employeeId) {
+  if (!employeeId) return;
+  try {
+    await redis.del(`permissions:${employeeId}`);
+  } catch (err) {
+    logger.warn({ err: err.message, employeeId }, "Failed to invalidate employee permissions cache");
+  }
 }
 
 export default authorize;

@@ -39,7 +39,6 @@ describe("Module 19 — Multi-Branch Management Integration Tests", () => {
 
     const uniq = Date.now();
 
-    // ===== Tenant A =====
     const regA = await authService.register({
       name: "Owner MB A",
       email: `mba-${uniq}@test.com`,
@@ -65,8 +64,8 @@ describe("Module 19 — Multi-Branch Management Integration Tests", () => {
         data: { restaurantId: tenantA.id, branchId, roleId, name, email, passwordHash },
       });
 
-    empX = await mkEmp("Emp X", `mbx-${uniq}@test.com`, branchA.id, basicRole.id); // home = branchA
-    empY = await mkEmp("Emp Y", `mby-${uniq}@test.com`, branchB.id, basicRole.id); // home = branchB
+    empX = await mkEmp("Emp X", `mbx-${uniq}@test.com`, branchA.id, basicRole.id);
+    empY = await mkEmp("Emp Y", `mby-${uniq}@test.com`, branchB.id, basicRole.id);
     const loginX = await authService.login({ email: empX.email, password: "Password123!", device: "X", ipAddress: "127.0.0.1" });
     empXToken = loginX.accessToken;
 
@@ -74,7 +73,6 @@ describe("Module 19 — Multi-Branch Management Integration Tests", () => {
     const noPermLogin = await authService.login({ email: noPermEmp.email, password: "Password123!", device: "NoPerm", ipAddress: "127.0.0.1" });
     noPermToken = noPermLogin.accessToken;
 
-    // ===== Tenant B (cross-tenant) =====
     const regB = await authService.register({
       name: "Owner MB B",
       email: `mbb-${uniq}@test.com`,
@@ -124,16 +122,14 @@ describe("Module 19 — Multi-Branch Management Integration Tests", () => {
   const revoke = (branchId, employeeId) =>
     fetch(`${baseUrl}/api/v1/branches/${branchId}/users/${employeeId}`, { method: "DELETE", headers: auth(ownerToken) });
 
-  // ==================== Branch users ====================
-
   test("1. list branch users returns home-branch employees", async () => {
     const res = await listUsers(branchA.id);
     assert.equal(res.status, 200);
     const body = await res.json();
     const ids = body.data.map((u) => u.id);
-    assert.ok(ids.includes(empX.id)); // home = branchA
+    assert.ok(ids.includes(empX.id));
     assert.ok(body.data.find((u) => u.id === empX.id).isHomeBranch === true);
-    assert.ok(!ids.includes(empY.id)); // home = branchB, not granted
+    assert.ok(!ids.includes(empY.id));
   });
 
   test("2. grant access to an additional branch -> 201", async () => {
@@ -179,7 +175,7 @@ describe("Module 19 — Multi-Branch Management Integration Tests", () => {
   });
 
   test("9. GET /v1/employees/me/branches returns home + granted branches (branch switcher)", async () => {
-    // Re-grant empX access to branchB for this assertion
+
     await grant(branchB.id, empX.id);
 
     const res = await fetch(`${baseUrl}/api/v1/employees/me/branches`, {
@@ -214,17 +210,15 @@ describe("Module 19 — Multi-Branch Management Integration Tests", () => {
       headers: auth(ownerToken),
       body: JSON.stringify({ employeeId: empY.id, restaurantId: tenantB.id, branchId: branchBA.id }),
     });
-    // empY home is branchB -> granting branchB should be 422 (home), NOT 201.
-    // The extra fields must NOT be honored; only employeeId matters.
+
     assert.equal(res.status, 422);
   });
-
-  // ==================== Branch comparison ====================
 
   test("13. dashboard branch comparison reports per-branch orders/revenue", async () => {
     const mkOrder = (branchId, orderNumber, total, status = "DELIVERED") =>
       prisma.order.create({
         data: {
+        orderDate: "2026-08-25",
           orderNumber,
           restaurantId: tenantA.id,
           branchId,
@@ -239,7 +233,7 @@ describe("Module 19 — Multi-Branch Management Integration Tests", () => {
     await mkOrder(branchA.id, 2001, 100);
     await mkOrder(branchA.id, 2002, 50);
     await mkOrder(branchB.id, 3001, 250);
-    await mkOrder(branchB.id, 3002, 150, "CANCELLED"); // excluded from revenue
+    await mkOrder(branchB.id, 3002, 150, "CANCELLED");
 
     const res = await fetch(`${baseUrl}/api/v1/dashboard/branches-comparison`, {
       headers: auth(ownerToken),
@@ -251,11 +245,11 @@ describe("Module 19 — Multi-Branch Management Integration Tests", () => {
 
     assert.equal(branchAStats.orders, 2);
     assert.equal(branchAStats.revenue, 150);
-    assert.equal(branchBStats.orders, 1); // cancelled excluded
+    assert.equal(branchBStats.orders, 1);
     assert.equal(branchBStats.revenue, 250);
     assert.equal(branchBStats.paidRevenue, 250);
     assert.equal(branchAStats.averageOrderValue, 75);
-    // Sorted by revenue desc: branchB (250) before branchA (150)
+
     assert.ok(body.data[0].revenue >= body.data[1].revenue);
   });
 
@@ -265,7 +259,7 @@ describe("Module 19 — Multi-Branch Management Integration Tests", () => {
     });
     assert.equal(res.status, 200);
     const body = await res.json();
-    assert.equal(body.data.length, 1); // only tenant B's own branch
+    assert.equal(body.data.length, 1);
     assert.ok(!body.data.some((b) => b.branchId === branchA.id));
   });
 

@@ -2,12 +2,10 @@ import phoneOrderRepository from "./phone-order.repository.js";
 import orderService from "../orders/order.service.js";
 import customerService from "../customers/customer.service.js";
 import branchRepository from "../branches/branch.repository.js";
-import { NotFoundError } from "../../shared/errors/index.js";
+import { NotFoundError, BusinessRuleError } from "../../shared/errors/index.js";
 
 export class PhoneOrderService {
-  /**
-   * Caller search — finds (or auto-creates) the customer by phone and returns their recent orders.
-   */
+
   async lookup(tenantContext, { phone }) {
     const customer = await customerService.findOrCreateCustomerByPhone(tenantContext, {
       phone,
@@ -21,8 +19,9 @@ export class PhoneOrderService {
       customer: {
         id: customer.id,
         name: customer.name,
+        firstName: customer.firstName,
+        lastName: customer.lastName,
         phone: customer.phone,
-        email: customer.email,
         notes: customer.notes,
       },
       defaultAddress: defaultAddress
@@ -38,30 +37,30 @@ export class PhoneOrderService {
     };
   }
 
-  /**
-   * Creates a phone order (source forced to PHONE, customer linked, default address used for delivery).
-   */
-  async createPhoneOrder(tenantContext, branchId, { type, customerPhone, customerName, items, notes }) {
+  async createPhoneOrder(tenantContext, branchId, { type, customerPhone, customerName, address, items, notes }) {
     const customer = await customerService.findOrCreateCustomerByPhone(tenantContext, {
       phone: customerPhone,
       name: customerName || `عميل هاتف ${customerPhone}`,
     });
 
-    let orderNotes = notes;
-    if (type === "DELIVERY") {
+    let orderAddress = address?.trim();
+    if (type === "DELIVERY" && !orderAddress) {
       const defaultAddress = await phoneOrderRepository.findDefaultAddress(tenantContext, customer.id);
       if (defaultAddress) {
-        const addrLine = [defaultAddress.street, defaultAddress.city, defaultAddress.state].filter(Boolean).join("، ");
-        orderNotes = [orderNotes, addrLine ? `العنوان: ${addrLine}` : null].filter(Boolean).join(" | ") || null;
+        orderAddress = [defaultAddress.street, defaultAddress.city, defaultAddress.state].filter(Boolean).join("، ");
       }
+    }
+    if (type === "DELIVERY" && !orderAddress) {
+      throw new BusinessRuleError("Delivery address is required for DELIVERY orders");
     }
 
     const result = await orderService.createOrder(tenantContext, branchId, {
       source: "PHONE",
       type,
       customerId: customer.id,
+      address: orderAddress || null,
       items: items.map((i) => ({ productId: i.productId, quantity: i.quantity, modifierIds: i.modifierIds, notes: i.notes })),
-      notes: orderNotes,
+      notes: notes,
     });
 
     return result.data;

@@ -42,6 +42,10 @@ const envSchema = z.object({
     .string()
     .default("7d"),
 
+  JWT_TABLE_MEMBER_EXPIRES_IN: z
+    .string()
+    .default("12h"),
+
   REDIS_URL: z
     .string()
     .default("redis://localhost:6379"),

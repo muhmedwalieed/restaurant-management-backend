@@ -1,5 +1,6 @@
 import branchRepository from "./branch.repository.js";
 import { BusinessRuleError, ConflictError, NotFoundError } from "../../shared/errors/index.js";
+import { paginateResponse } from "../../shared/utils/pagination.js";
 
 export class BranchService {
   async listBranches(tenantContext, { page = 1, limit = 20, status }) {
@@ -8,18 +9,7 @@ export class BranchService {
       limit,
       status,
     });
-
-    const totalPages = Math.ceil(total / limit) || 1;
-
-    return {
-      items,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages,
-      },
-    };
+    return paginateResponse(items, total, page, limit);
   }
 
   async getBranchById(tenantContext, branchId) {
@@ -31,13 +21,12 @@ export class BranchService {
   }
 
   async createBranch(tenantContext, data) {
-    // 1. Check duplicate code
+
     const existingCode = await branchRepository.findBranchByCode(tenantContext, data.code);
     if (existingCode) {
       throw new ConflictError(`Branch with code '${data.code.toUpperCase()}' already exists in this restaurant`);
     }
 
-    // 2. Check main branch uniqueness constraint
     if (data.isMain) {
       const existingMain = await branchRepository.findMainBranch(tenantContext);
       if (existingMain) {
@@ -64,12 +53,10 @@ export class BranchService {
   async updateBranch(tenantContext, branchId, data) {
     const existing = await this.getBranchById(tenantContext, branchId);
 
-    // Main branch deactivation protection
     if (existing.isMain && data.status && data.status !== "ACTIVE") {
       throw new BusinessRuleError("Main branch cannot be deactivated");
     }
 
-    // Code uniqueness check if code is changing
     if (data.code && data.code.toUpperCase() !== existing.code) {
       const existingCode = await branchRepository.findBranchByCode(tenantContext, data.code);
       if (existingCode) {

@@ -1,24 +1,27 @@
 import customerRepository from "./customer.repository.js";
 import { ConflictError, NotFoundError } from "../../shared/errors/index.js";
+import { emitEvent, DomainEvent } from "../../shared/events/event-bus.js";
+import { paginateResponse } from "../../shared/utils/pagination.js";
 
 export class CustomerService {
+
+  normalizeName(payload) {
+    const firstName = payload.firstName?.trim() || payload.name?.trim() || "";
+    const lastName = payload.lastName?.trim() || null;
+    return {
+      firstName,
+      lastName,
+      name: [firstName, lastName].filter(Boolean).join(" "),
+    };
+  }
+
   async listCustomers(tenantContext, { page = 1, limit = 20, q } = {}) {
     const { items, total } = await customerRepository.findCustomers(tenantContext, {
       page,
       limit,
       q,
     });
-
-    const totalPages = Math.ceil(total / limit) || 1;
-    return {
-      items,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages,
-      },
-    };
+    return paginateResponse(items, total, page, limit);
   }
 
   async getCustomerById(tenantContext, customerId) {
@@ -30,16 +33,33 @@ export class CustomerService {
   }
 
   async createCustomer(tenantContext, payload) {
-    const existing = await customerRepository.findCustomerByPhone(tenantContext, payload.phone);
+    const phone = payload.phone.trim();
+    const existing = await customerRepository.findCustomerByPhone(tenantContext, phone);
     if (existing) {
-      throw new ConflictError(`Customer with phone '${payload.phone}' already exists in this restaurant`);
+      throw new ConflictError(`Customer with phone '${phone}' already exists in this restaurant`);
     }
 
+    const names = this.normalizeName(payload);
+    const phones = [phone, ...(payload.phones || [])].map((p) => p.trim()).filter(Boolean);
+    const deduped = [...new Set(phones)];
+
     try {
-      return await customerRepository.createCustomer(tenantContext, payload);
+      const customer = await customerRepository.createCustomer(tenantContext, {
+        ...names,
+        phone,
+        phones: deduped,
+        notes: payload.notes,
+      });
+      emitEvent(DomainEvent.CUSTOMER_UPDATED, {
+        restaurantId: tenantContext.restaurantId,
+        customerId: customer.id,
+        action: "created",
+        actorEmployeeId: tenantContext.employeeId || null,
+      });
+      return customer;
     } catch (error) {
       if (error?.code === "P2002") {
-        throw new ConflictError(`Customer with phone '${payload.phone}' already exists in this restaurant`);
+        throw new ConflictError(`Customer with phone '${phone}' already exists in this restaurant`);
       }
       throw error;
     }
@@ -48,22 +68,41 @@ export class CustomerService {
   async updateCustomer(tenantContext, customerId, payload) {
     const customer = await this.getCustomerById(tenantContext, customerId);
 
-    if (payload.phone && payload.phone !== customer.phone) {
-      const phoneConflict = await customerRepository.findCustomerByPhone(tenantContext, payload.phone);
+    const newPhone = payload.phone ? payload.phone.trim() : customer.phone;
+    if (newPhone !== customer.phone) {
+      const phoneConflict = await customerRepository.findCustomerByPhone(tenantContext, newPhone);
       if (phoneConflict && phoneConflict.id !== customerId) {
-        throw new ConflictError(`Customer with phone '${payload.phone}' already exists in this restaurant`);
+        throw new ConflictError(`Customer with phone '${newPhone}' already exists in this restaurant`);
       }
     }
 
+    const names = this.normalizeName({ ...customer, ...payload });
+    const phones = payload.phones
+      ? [...new Set(payload.phones.map((p) => p.trim()).filter(Boolean))]
+      : undefined;
+
     try {
-      const updated = await customerRepository.updateCustomer(tenantContext, customerId, payload);
+      const updated = await customerRepository.updateCustomer(tenantContext, customerId, {
+        firstName: names.firstName,
+        lastName: names.lastName,
+        name: names.name,
+        phone: payload.phone ? newPhone : undefined,
+        phones,
+        notes: payload.notes,
+      });
       if (!updated) {
         throw new NotFoundError("Customer not found or access denied");
       }
+      emitEvent(DomainEvent.CUSTOMER_UPDATED, {
+        restaurantId: tenantContext.restaurantId,
+        customerId,
+        action: "updated",
+        actorEmployeeId: tenantContext.employeeId || null,
+      });
       return updated;
     } catch (error) {
       if (error?.code === "P2002") {
-        throw new ConflictError(`Customer with phone '${payload.phone}' already exists in this restaurant`);
+        throw new ConflictError(`Customer with phone '${newPhone}' already exists in this restaurant`);
       }
       throw error;
     }
@@ -75,6 +114,12 @@ export class CustomerService {
     if (!deleted) {
       throw new NotFoundError("Customer not found or access denied");
     }
+    emitEvent(DomainEvent.CUSTOMER_UPDATED, {
+      restaurantId: tenantContext.restaurantId,
+      customerId,
+      action: "deleted",
+      actorEmployeeId: tenantContext.employeeId || null,
+    });
     return deleted;
   }
 
@@ -85,16 +130,7 @@ export class CustomerService {
       throw new NotFoundError("Customer not found or access denied");
     }
 
-    const totalPages = Math.ceil(result.total / limit) || 1;
-    return {
-      items: result.items,
-      pagination: {
-        page,
-        limit,
-        total: result.total,
-        totalPages,
-      },
-    };
+    return paginateResponse(result.items, result.total, page, limit);
   }
 
   async listAddresses(tenantContext, customerId) {
@@ -135,9 +171,6 @@ export class CustomerService {
     return customerRepository.softDeleteAddress(tenantContext, customerId, addressId);
   }
 
-  /**
-   * Helper to find or create customer by phone for order auto-link (Atomic transaction).
-   */
   async findOrCreateCustomerByPhone(tenantContext, { phone, name }) {
     if (!phone) return null;
 
@@ -154,11 +187,21 @@ export class CustomerService {
       if (existing) return existing;
 
       try {
+        const fullName = (name || `Customer ${phone}`).trim();
+        const parts = fullName.split(/\s+/);
+        const firstName = parts[0];
+        const lastName = parts.length > 1 ? parts.slice(1).join(" ") : null;
+
         return await tx.customer.create({
           data: {
             restaurantId: tenantContext.restaurantId,
-            name: name || `Customer ${phone}`,
+            firstName,
+            lastName,
+            name: fullName,
             phone,
+            phones: {
+              create: [{ restaurantId: tenantContext.restaurantId, phone, isDefault: true }],
+            },
           },
         });
       } catch (error) {

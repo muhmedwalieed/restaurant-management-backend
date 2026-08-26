@@ -91,7 +91,7 @@ describe("Restaurant Module Integration Tests", () => {
         description: "Best Italian Gourmet Restaurant",
         currency: "EGP",
         timezone: "Africa/Cairo",
-        slug: "attempting-illegal-slug-change", // Should be ignored/immutable
+        slug: "attempting-illegal-slug-change",
       }),
     });
 
@@ -102,7 +102,7 @@ describe("Restaurant Module Integration Tests", () => {
     assert.equal(body.data.description, "Best Italian Gourmet Restaurant");
     assert.equal(body.data.currency, "EGP");
     assert.equal(body.data.timezone, "Africa/Cairo");
-    assert.equal(body.data.slug, restaurant.slug); // Slug remains unchanged!
+    assert.equal(body.data.slug, restaurant.slug);
   });
 
   test("3. PATCH /api/v1/restaurant/status updates status to SUSPENDED", async () => {
@@ -132,7 +132,6 @@ describe("Restaurant Module Integration Tests", () => {
   test("5. RBAC: Employee without restaurants.manage permission gets 403 on restaurant endpoints", async () => {
     const limitedEmail = `restlimited-${Date.now()}@test.com`;
 
-    // Create a custom role WITHOUT restaurants.manage
     const roleRes = await fetch(`${baseUrl}/api/v1/roles`, {
       method: "POST",
       headers: {
@@ -153,7 +152,6 @@ describe("Restaurant Module Integration Tests", () => {
       where: { restaurantId: restaurant.id, isMain: true },
     });
 
-    // Create an employee holding that limited role
     const empRes = await fetch(`${baseUrl}/api/v1/employees`, {
       method: "POST",
       headers: {

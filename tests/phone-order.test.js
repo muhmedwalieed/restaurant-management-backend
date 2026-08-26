@@ -46,7 +46,7 @@ describe("Module 14 — Phone Ordering Integration Tests", () => {
     });
 
     customerPhone = "+201099990001";
-    // Pre-create a customer with an order + default address for the lookup flow
+
     const customer = await prisma.customer.create({
       data: { restaurantId: tenantA.id, name: "Existing Phone Customer", phone: customerPhone },
     });
@@ -55,6 +55,7 @@ describe("Module 14 — Phone Ordering Integration Tests", () => {
     });
     await prisma.order.create({
       data: {
+        orderDate: "2026-08-25",
         orderNumber: 1001,
         restaurantId: tenantA.id,
         branchId: branchA.id,
@@ -132,6 +133,7 @@ describe("Module 14 — Phone Ordering Integration Tests", () => {
       body: JSON.stringify({
         type: "DELIVERY",
         customerPhone,
+        customerName: "Existing Phone Customer",
         items: [{ productId: productA.id, quantity: 2 }],
       }),
     });
@@ -139,7 +141,8 @@ describe("Module 14 — Phone Ordering Integration Tests", () => {
     const body = await res.json();
     assert.equal(body.data.source, "PHONE");
     assert.equal(Number(body.data.total), 40);
-    assert.ok(body.data.notes.includes("شارع 1")); // default address injected
+
+    assert.equal(body.data.address, "شارع 1، القاهرة");
     const linked = await prisma.customer.findFirst({
       where: { restaurantId: tenantA.id, phone: customerPhone },
       include: { orders: true },

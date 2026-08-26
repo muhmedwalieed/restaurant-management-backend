@@ -30,7 +30,6 @@ describe("Employees Module Integration & Security Tests", () => {
       });
     });
 
-    // 1. Setup Tenant A
     const regA = await authService.register({
       name: "Owner A",
       email: `ownera-${Date.now()}@test.com`,
@@ -49,7 +48,6 @@ describe("Employees Module Integration & Security Tests", () => {
     });
     ownerAToken = loginA.accessToken;
 
-    // 2. Setup Tenant B
     const regB = await authService.register({
       name: "Owner B",
       email: `ownerb-${Date.now()}@test.com`,
@@ -117,7 +115,7 @@ describe("Employees Module Integration & Security Tests", () => {
     const body = await res.json();
 
     assert.equal(body.success, true);
-    assert.equal(body.data.passwordHash, undefined); // Password hash omitted
+    assert.equal(body.data.passwordHash, undefined);
     createdEmployeeA = body.data;
   });
 
@@ -167,7 +165,7 @@ describe("Employees Module Integration & Security Tests", () => {
         name: "Bad Branch Staff",
         email: `badbranch-${Date.now()}@testa.com`,
         password: "Password123!",
-        branchId: branchB.id, // Tenant B's branch!
+        branchId: branchB.id,
         roleId: (
           await prisma.role.findFirst({
             where: { restaurantId: restaurantA.id, name: "manager" },
@@ -184,7 +182,7 @@ describe("Employees Module Integration & Security Tests", () => {
   test("4. Cross-Tenant Protection: Tenant B cannot access Tenant A's employee (404 Not Found)", async () => {
     const res = await fetch(`${baseUrl}/api/v1/employees/${createdEmployeeA.id}`, {
       headers: {
-        Authorization: `Bearer ${ownerBToken}`, // Token from Tenant B
+        Authorization: `Bearer ${ownerBToken}`,
       },
     });
 
@@ -222,7 +220,7 @@ describe("Employees Module Integration & Security Tests", () => {
         Authorization: `Bearer ${ownerAToken}`,
       },
       body: JSON.stringify({
-        newPassword: "NewPassword123!", // Missing currentPassword
+        newPassword: "NewPassword123!",
       }),
     });
 
@@ -285,7 +283,6 @@ describe("Employees Module Integration & Security Tests", () => {
     });
     assert.equal(createAlpha.status, 201);
 
-    // search by name
     const searchRes = await fetch(`${baseUrl}/api/v1/employees?search=Zeta`, {
       headers: { Authorization: `Bearer ${ownerAToken}` },
     });
@@ -293,7 +290,6 @@ describe("Employees Module Integration & Security Tests", () => {
     assert.equal(searchRes.status, 200);
     assert.ok(searchBody.data.some((e) => e.name === "Zeta Filter Target"));
 
-    // status filter
     const statusRes = await fetch(`${baseUrl}/api/v1/employees?status=ACTIVE`, {
       headers: { Authorization: `Bearer ${ownerAToken}` },
     });
@@ -301,7 +297,6 @@ describe("Employees Module Integration & Security Tests", () => {
     assert.equal(statusRes.status, 200);
     assert.ok(statusBody.data.every((e) => e.status === "ACTIVE"));
 
-    // roleId filter
     const roleRes = await fetch(`${baseUrl}/api/v1/employees?roleId=${managerRole.id}`, {
       headers: { Authorization: `Bearer ${ownerAToken}` },
     });
@@ -309,7 +304,6 @@ describe("Employees Module Integration & Security Tests", () => {
     assert.equal(roleRes.status, 200);
     assert.ok(roleBody.data.every((e) => e.roleId === managerRole.id));
 
-    // sort by name asc
     const sortRes = await fetch(`${baseUrl}/api/v1/employees?sort=name:asc`, {
       headers: { Authorization: `Bearer ${ownerAToken}` },
     });
@@ -319,7 +313,6 @@ describe("Employees Module Integration & Security Tests", () => {
     const names = sortBody.data.map((e) => e.name);
     assert.equal(names[0] < names[1], true);
 
-    // row shape: branch + role included
     const target = sortBody.data.find((e) => e.email === zetaEmail);
     assert.ok(target);
     assert.ok(target.branch && target.branch.id);

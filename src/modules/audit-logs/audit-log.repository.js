@@ -1,13 +1,12 @@
 import prisma from "../../lib/prisma.js";
 import { AuthenticationError } from "../../shared/errors/index.js";
+import { getPaginationOffset } from "../../shared/utils/pagination.js";
 
 export class AuditLogRepository {
-  /**
-   * Lists audit entries for a restaurant with pagination + filters (search/filter — Module 18).
-   */
+
   async findAuditLogs(tenantContext, { page = 1, limit = 20, action, entityType, entityId, actorEmployeeId, branchId, from, to } = {}) {
     this.assertTenant(tenantContext);
-    const skip = (page - 1) * limit;
+    const { skip, take } = getPaginationOffset(page, limit);
     const where = {
       restaurantId: tenantContext.restaurantId,
       ...(action ? { action } : {}),
@@ -29,7 +28,7 @@ export class AuditLogRepository {
       prisma.auditLog.findMany({
         where,
         skip,
-        take: limit,
+        take,
         include: {
           actor: { select: { id: true, name: true, email: true } },
         },
@@ -41,9 +40,6 @@ export class AuditLogRepository {
     return { items, total };
   }
 
-  /**
-   * Finds a single audit entry within the tenant.
-   */
   async findAuditLogById(tenantContext, id) {
     this.assertTenant(tenantContext);
     return prisma.auditLog.findFirst({
@@ -52,9 +48,6 @@ export class AuditLogRepository {
     });
   }
 
-  /**
-   * Creates an audit entry (append-only).
-   */
   async createAuditLog(tenantContext, { branchId, actorEmployeeId, action, entityType, entityId, metadata, ipAddress }) {
     this.assertTenant(tenantContext);
     return prisma.auditLog.create({

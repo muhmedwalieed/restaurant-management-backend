@@ -1,5 +1,4 @@
 import { Router } from "express";
-import rateLimit from "express-rate-limit";
 import tableController from "./table.controller.js";
 import {
   tableQuerySchema,
@@ -7,38 +6,18 @@ import {
   updateTableSchema,
   publicTableMenuParamsSchema,
 } from "./table.validation.js";
+import { publicTableRateLimiter } from "../../shared/middleware/rate-limiters.js";
 import { authenticate } from "../auth/authenticate.middleware.js";
 import { authorize, authorizeAny } from "../auth/authorize.middleware.js";
 import { requireTenantContext } from "../../shared/middleware/tenant-context.js";
 import { validate } from "../../shared/middleware/validate.js";
-import env from "../../config/env.js";
 
 const router = Router();
 
-// Public rate limiter for unauthenticated table QR scan endpoint
-const publicTableRateLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: env.NODE_ENV === "test" ? 1000 : 60, // 60 requests per 15 minutes in production
-  message: {
-    success: false,
-    error: {
-      code: "RATE_LIMIT_EXCEEDED",
-      message: "Too many requests, please try again after 15 minutes",
-    },
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-// ==================== PUBLIC TABLE MENU ENDPOINT (No auth required) ====================
 router.get("/menu/table/:qrToken", publicTableRateLimiter, validate(publicTableMenuParamsSchema), (req, res, next) => {
   tableController.resolveTableMenu(req, res, next);
 });
 
-// ==================== AUTHENTICATED BRANCH TABLES PIPELINE ====================
-// Scoped strictly to /branches/:branchId/tables so it doesn't intercept other /v1 routes.
-// Read endpoints accept tables.view OR tables.manage (cashier POS needs to pick a table);
-// write endpoints require tables.manage.
 const branchTableRouter = Router({ mergeParams: true });
 branchTableRouter.use(authenticate, requireTenantContext);
 

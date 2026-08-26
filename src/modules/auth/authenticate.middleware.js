@@ -2,10 +2,6 @@ import { AuthenticationError } from "../../shared/errors/index.js";
 import { verifyAccessToken } from "../../utils/jwt.js";
 import prisma from "../../lib/prisma.js";
 
-/**
- * Primary Authentication Middleware.
- * Verifies JWT Access Token and asserts associated DB Session is ACTIVE.
- */
 export async function authenticate(req, res, next) {
   try {
     const authHeader = req.headers.authorization;
@@ -32,7 +28,6 @@ export async function authenticate(req, res, next) {
       throw new AuthenticationError("Invalid token payload structure");
     }
 
-    // Verify Session is ACTIVE in DB
     const session = await prisma.session.findFirst({
       where: {
         id: payload.sessionId,

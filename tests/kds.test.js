@@ -15,7 +15,7 @@ describe("Kitchen Display System (KDS) Integration Tests", () => {
   let branchA;
   let tableA;
   let ownerAToken;
-  let staffAToken; // Employee without orders permissions
+  let staffAToken;
 
   let tenantB;
   let branchB;
@@ -40,7 +40,6 @@ describe("Kitchen Display System (KDS) Integration Tests", () => {
       });
     });
 
-    // Setup Tenant A
     const regA = await authService.register({
       name: "Owner KDS A",
       email: `ownerkdsa-${Date.now()}@test.com`,
@@ -88,7 +87,6 @@ describe("Kitchen Display System (KDS) Integration Tests", () => {
       },
     });
 
-    // Create staff role without orders permissions for Tenant A
     const noOrdersRole = await prisma.role.create({
       data: {
         restaurantId: tenantA.id,
@@ -117,7 +115,6 @@ describe("Kitchen Display System (KDS) Integration Tests", () => {
     });
     staffAToken = staffLogin.accessToken;
 
-    // Setup Tenant B
     const regB = await authService.register({
       name: "Owner KDS B",
       email: `ownerkdsb-${Date.now()}@test.com`,
@@ -139,10 +136,9 @@ describe("Kitchen Display System (KDS) Integration Tests", () => {
     });
     ownerBToken = loginB.accessToken;
 
-    // Create Orders in various statuses for Tenant A
-    // 1. CONFIRMED order
     confirmedOrder = await prisma.order.create({
       data: {
+        orderDate: "2026-08-25",
         orderNumber: 101,
         restaurantId: tenantA.id,
         branchId: branchA.id,
@@ -151,7 +147,7 @@ describe("Kitchen Display System (KDS) Integration Tests", () => {
         subtotal: 20.0,
         total: 20.0,
         version: 1,
-        createdAt: new Date(Date.now() - 10 * 60 * 1000), // 10 minutes ago
+        createdAt: new Date(Date.now() - 10 * 60 * 1000),
         items: {
           create: [
             {
@@ -167,9 +163,9 @@ describe("Kitchen Display System (KDS) Integration Tests", () => {
       },
     });
 
-    // 2. PREPARING order
     preparingOrder = await prisma.order.create({
       data: {
+        orderDate: "2026-08-25",
         orderNumber: 102,
         restaurantId: tenantA.id,
         branchId: branchA.id,
@@ -178,7 +174,7 @@ describe("Kitchen Display System (KDS) Integration Tests", () => {
         subtotal: 40.0,
         total: 40.0,
         version: 2,
-        createdAt: new Date(Date.now() - 5 * 60 * 1000), // 5 minutes ago
+        createdAt: new Date(Date.now() - 5 * 60 * 1000),
         items: {
           create: [
             {
@@ -194,9 +190,9 @@ describe("Kitchen Display System (KDS) Integration Tests", () => {
       },
     });
 
-    // 3. READY order (Should be excluded from active queue)
     readyOrder = await prisma.order.create({
       data: {
+        orderDate: "2026-08-25",
         orderNumber: 103,
         restaurantId: tenantA.id,
         branchId: branchA.id,
@@ -207,9 +203,9 @@ describe("Kitchen Display System (KDS) Integration Tests", () => {
       },
     });
 
-    // 4. DELIVERED order (Should be excluded)
     deliveredOrder = await prisma.order.create({
       data: {
+        orderDate: "2026-08-25",
         orderNumber: 104,
         restaurantId: tenantA.id,
         branchId: branchA.id,
@@ -220,9 +216,9 @@ describe("Kitchen Display System (KDS) Integration Tests", () => {
       },
     });
 
-    // 5. CANCELLED order (Should be excluded)
     cancelledOrder = await prisma.order.create({
       data: {
+        orderDate: "2026-08-25",
         orderNumber: 105,
         restaurantId: tenantA.id,
         branchId: branchA.id,
@@ -275,7 +271,7 @@ describe("Kitchen Display System (KDS) Integration Tests", () => {
 
     assert.equal(body.success, true);
     assert.ok(Array.isArray(body.data));
-    assert.equal(body.data.length, 2); // Only CONFIRMED and PREPARING
+    assert.equal(body.data.length, 2);
 
     const statuses = body.data.map((o) => o.status);
     assert.ok(statuses.includes("CONFIRMED"));
@@ -284,11 +280,9 @@ describe("Kitchen Display System (KDS) Integration Tests", () => {
     assert.equal(statuses.includes("DELIVERED"), false);
     assert.equal(statuses.includes("CANCELLED"), false);
 
-    // FIFO check (CONFIRMED created 10 mins ago should be first)
     assert.equal(body.data[0].id, confirmedOrder.id);
     assert.equal(body.data[1].id, preparingOrder.id);
 
-    // Server-calculated elapsedMinutes check (~10 minutes)
     assert.ok(body.data[0].elapsedMinutes >= 9);
     assert.equal(body.data[0].tableLabel, "KDS-Table-1");
   });
@@ -332,7 +326,6 @@ describe("Kitchen Display System (KDS) Integration Tests", () => {
     const body = await res.json();
     assert.equal(body.data.status, "READY");
 
-    // Re-query KDS active queue — confirmedOrder should no longer appear
     const listRes = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/kds/orders`, {
       headers: {
         Authorization: `Bearer ${ownerAToken}`,
@@ -345,7 +338,7 @@ describe("Kitchen Display System (KDS) Integration Tests", () => {
   });
 
   test("4. Invalid Transition: Attempting CONFIRMED -> READY or PREPARING -> PENDING returns 422 BusinessRuleError", async () => {
-    // Attempt PREPARING -> PENDING (backward transition)
+
     const res = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/kds/orders/${preparingOrder.id}/status`, {
       method: "PATCH",
       headers: {
@@ -372,7 +365,7 @@ describe("Kitchen Display System (KDS) Integration Tests", () => {
       },
       body: JSON.stringify({
         newStatus: "READY",
-        expectedVersion: 99, // Stale version!
+        expectedVersion: 99,
       }),
     });
 
@@ -384,7 +377,7 @@ describe("Kitchen Display System (KDS) Integration Tests", () => {
   test("6. Multi-Tenant Protection: Tenant B cannot view Tenant A's KDS orders (404 Not Found)", async () => {
     const res = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/kds/orders`, {
       headers: {
-        Authorization: `Bearer ${ownerBToken}`, // Token B
+        Authorization: `Bearer ${ownerBToken}`,
       },
     });
 
@@ -396,7 +389,7 @@ describe("Kitchen Display System (KDS) Integration Tests", () => {
   test("7. RBAC: Employee without orders.view or orders.update gets 403 AuthorizationError", async () => {
     const res = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/kds/orders`, {
       headers: {
-        Authorization: `Bearer ${staffAToken}`, // Staff without order permissions
+        Authorization: `Bearer ${staffAToken}`,
       },
     });
 

@@ -6,11 +6,10 @@ import {
   BusinessRuleError,
   ExternalServiceError,
 } from "../../shared/errors/index.js";
+import { paginateResponse } from "../../shared/utils/pagination.js";
 
 export class WhatsAppService {
-  /**
-   * Connects a WhatsApp Account for a restaurant tenant.
-   */
+
   async connectAccount(tenantContext, payload) {
     const existing = await whatsAppRepository.findConnectionByAccountId(
       tenantContext,
@@ -31,9 +30,6 @@ export class WhatsAppService {
     return whatsAppRepository.createConnectionTransaction(tenantContext, payload);
   }
 
-  /**
-   * Retrieves active WhatsApp connection for a restaurant tenant.
-   */
   async getConnection(tenantContext) {
     const connection = await whatsAppRepository.findConnectionByTenant(tenantContext);
     if (!connection) {
@@ -42,9 +38,6 @@ export class WhatsAppService {
     return connection;
   }
 
-  /**
-   * Updates WhatsApp connection settings.
-   */
   async updateConnection(tenantContext, payload) {
     const connection = await this.getConnection(tenantContext);
 
@@ -52,9 +45,6 @@ export class WhatsAppService {
     return whatsAppRepository.findConnectionById(tenantContext, connection.id);
   }
 
-  /**
-   * Soft deactivates WhatsApp connection (status: DISCONNECTED) per ADR-017 / FK protection.
-   */
   async disconnectAccount(tenantContext) {
     const connection = await this.getConnection(tenantContext);
 
@@ -62,9 +52,6 @@ export class WhatsAppService {
     return { message: "WhatsApp connection disconnected successfully" };
   }
 
-  /**
-   * Sends Outgoing WhatsApp Message via active Connection & Provider.
-   */
   async sendMessage(tenantContext, payload) {
     const connection = await whatsAppRepository.findConnectionByTenant(tenantContext);
     if (!connection || connection.status !== "ACTIVE") {
@@ -110,9 +97,6 @@ export class WhatsAppService {
     }
   }
 
-  /**
-   * Lists message timeline history for a restaurant tenant.
-   */
   async listMessages(tenantContext, query = {}) {
     const page = query.page ? parseInt(query.page, 10) : 1;
     const limit = query.limit ? Math.min(parseInt(query.limit, 10), 100) : 20;
@@ -125,22 +109,9 @@ export class WhatsAppService {
       q: query.q,
     });
 
-    const totalPages = Math.ceil(result.total / limit) || 1;
-
-    return {
-      items: result.items,
-      pagination: {
-        page,
-        limit,
-        total: result.total,
-        totalPages,
-      },
-    };
+    return paginateResponse(result.items, result.total, page, limit);
   }
 
-  /**
-   * Retrieves single WhatsApp message by ID.
-   */
   async getMessageById(tenantContext, id) {
     const message = await whatsAppRepository.findMessageById(tenantContext, id);
     if (!message) {
@@ -149,21 +120,16 @@ export class WhatsAppService {
     return message;
   }
 
-  /**
-   * Executes Webhook Pipeline (Section 27 / ADR-019).
-   */
   async handleInboundWebhook(tenantContext, connection, payload) {
     const entry = payload?.entry?.[0];
     const change = entry?.changes?.[0]?.value;
     const eventId = payload?.eventId || change?.messages?.[0]?.id || change?.statuses?.[0]?.id || `evt_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
-    // 1. Idempotency Replay Protection Check
     const existingEvent = await whatsAppRepository.findEventByEventId(tenantContext, eventId);
     if (existingEvent && existingEvent.status === "PROCESSED") {
       return { isDuplicate: true, message: "Event already processed (Replay protection)" };
     }
 
-    // 2. Persist Raw Event (status: RECEIVED) if not already existing
     if (!existingEvent) {
       await whatsAppRepository.createEvent(tenantContext, {
         eventId,
@@ -173,9 +139,8 @@ export class WhatsAppService {
       });
     }
 
-    // 3. Process Event Payload
     try {
-      // Inbound Message Handling
+
       if (change?.messages?.[0]) {
         const msg = change.messages[0];
         const fromPhone = msg.from;
@@ -199,7 +164,6 @@ export class WhatsAppService {
             status: "DELIVERED",
           });
 
-          // Dispatch to Module 10 WhatsApp Automation Engine (ADR-020)
           try {
             const { whatsAppAutomationService } = await import("../whatsapp-automation/automation.service.js");
             await whatsAppAutomationService.handleInboundMessage(tenantContext, connection, {
@@ -208,12 +172,11 @@ export class WhatsAppService {
               providerMessageId,
             });
           } catch (autoErr) {
-            // Non-fatal automation flow exception handled
+
           }
         }
       }
 
-      // Delivery Status Handling
       if (change?.statuses?.[0]) {
         const st = change.statuses[0];
         const providerMessageId = st.id;
@@ -231,7 +194,6 @@ export class WhatsAppService {
         }
       }
 
-      // Mark Event Processed
       await whatsAppRepository.markEventProcessed(tenantContext, eventId);
       return { success: true };
     } catch (error) {
@@ -240,9 +202,6 @@ export class WhatsAppService {
     }
   }
 
-  /**
-   * Handles Meta Verification Handshake (GET /webhooks/whatsapp).
-   */
   handleVerification(queryParams) {
     const expectedToken = process.env.WHATSAPP_VERIFY_TOKEN;
 
@@ -254,9 +213,6 @@ export class WhatsAppService {
     return provider.handleVerification(queryParams, expectedToken);
   }
 
-  /**
-   * Retries failed webhook events for a tenant.
-   */
   async retryFailedWebhookEvents(tenantContext) {
     const connection = await whatsAppRepository.findConnectionByTenant(tenantContext);
     if (!connection) {

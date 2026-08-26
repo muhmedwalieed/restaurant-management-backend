@@ -3,17 +3,11 @@ import { ZodError } from "zod";
 import logger from "../config/logger.js";
 import env from "../config/env.js";
 
-/**
- * 404 Handler for undefined routes.
- */
 const notFoundHandler = (req, res, next) => {
   const error = new NotFoundError(`Route not found: ${req.method} ${req.originalUrl}`);
   next(error);
 };
 
-/**
- * Global Centralized Error Handler Middleware.
- */
 const errorHandler = (err, req, res, next) => {
   const requestId = req?.requestId || req?.id || "N/A";
   const log = req?.log || logger;
@@ -41,22 +35,41 @@ const errorHandler = (err, req, res, next) => {
     statusCode = 400;
     code = "INVALID_JSON";
     message = "Malformed JSON payload in request body";
+  } else if (err.name === "MulterError") {
+    statusCode = 400;
+    code = "VALIDATION_ERROR";
+    message = err.code === "LIMIT_FILE_SIZE" ? "File is too large (max 2 MB)" : "Invalid file upload";
+  } else if (err?.code === "P2002") {
+    statusCode = 409;
+    code = "CONFLICT_ERROR";
+    const target = Array.isArray(err.meta?.target) ? err.meta.target.join(", ") : err.meta?.target || "";
+    message = target ? `Unique constraint violation on field: ${target}` : "Unique constraint violation";
+  } else if (err?.code === "P2025") {
+    statusCode = 404;
+    code = "NOT_FOUND";
+    message = "Requested record not found";
   } else if (err?.code === "P2003") {
     statusCode = 409;
     code = "CONFLICT_ERROR";
     message = "Referenced resource does not exist or was already removed";
+  } else if (err?.code === "P2014") {
+    statusCode = 409;
+    code = "CONFLICT_ERROR";
+    message = "The change you are trying to make would violate required relation";
+  } else if (err?.code === "P2024") {
+    statusCode = 503;
+    code = "SERVICE_UNAVAILABLE";
+    message = "Database connection timed out, please retry shortly";
   }
 
-  // Log error using Pino
   if (statusCode >= 500) {
     log.error({ err, requestId }, `[500 Server Error]: ${err.message}`);
   } else {
     log.warn({ errMessage: err.message, statusCode, code, requestId }, `[${statusCode} Client Error]: ${err.message}`);
   }
 
-  // Hide 500 error details in production to prevent leaking internal stack traces or DB details
   if (statusCode === 500 && env.NODE_ENV === "production") {
-    message = "Internal server error";
+    message = "حدث خطأ غير متوقع في الخادم، يرجى المحاولة لاحقاً";
     details = null;
   }
 

@@ -1,7 +1,5 @@
 import { z } from "zod";
 
-// ==================== CATEGORY SCHEMAS ====================
-
 export const categoryQuerySchema = z.object({
   query: z.object({
     page: z.coerce.number().int().min(1).default(1),
@@ -28,8 +26,6 @@ export const updateCategorySchema = z.object({
   }),
 });
 
-// ==================== PRODUCT SCHEMAS ====================
-
 export const productQuerySchema = z.object({
   query: z.object({
     page: z.coerce.number().int().min(1).default(1),
@@ -51,7 +47,11 @@ export const createProductSchema = z.object({
     description: z.string().optional(),
     price: z.coerce.number().positive("Price must be a positive number"),
     imageUrl: z
-      .union([z.string().url("Invalid image URL format"), z.literal("")])
+      .union([
+        z.string().url("Invalid image URL format"),
+        z.string().regex(/^\/uploads\//, "Invalid image path"),
+        z.literal(""),
+      ])
       .transform((val) => (val === "" ? null : val))
       .optional(),
     isAvailable: z.boolean().optional().default(true),
@@ -66,7 +66,11 @@ export const updateProductSchema = z.object({
     description: z.string().optional(),
     price: z.coerce.number().positive().optional(),
     imageUrl: z
-      .union([z.string().url(), z.literal("")])
+      .union([
+        z.string().url(),
+        z.string().regex(/^\/uploads\//),
+        z.literal(""),
+      ])
       .transform((val) => (val === "" ? null : val))
       .optional(),
     isAvailable: z.boolean().optional(),
@@ -74,13 +78,13 @@ export const updateProductSchema = z.object({
   }),
 });
 
-// ==================== MODIFIER SCHEMAS ====================
-
 export const createModifierSchema = z.object({
   body: z.object({
     name: z.string().min(2, "Modifier name must be at least 2 characters"),
     priceDelta: z.coerce.number().min(0, "priceDelta cannot be negative").optional().default(0),
     isRequired: z.boolean().optional().default(false),
+    quantityMode: z.enum(["SINGLE", "QUANTITY"]).optional().default("SINGLE"),
+    maxQuantity: z.coerce.number().int().min(1).max(99).optional(),
   }),
 });
 
@@ -89,10 +93,10 @@ export const updateModifierSchema = z.object({
     name: z.string().min(2).optional(),
     priceDelta: z.coerce.number().min(0).optional(),
     isRequired: z.boolean().optional(),
+    quantityMode: z.enum(["SINGLE", "QUANTITY"]).optional(),
+    maxQuantity: z.coerce.number().int().min(1).max(99).optional(),
   }),
 });
-
-// ==================== PUBLIC MENU SCHEMA ====================
 
 export const publicMenuQuerySchema = z.object({
   query: z.object({

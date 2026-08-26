@@ -2,9 +2,7 @@ import prisma from "../../lib/prisma.js";
 import { AuthenticationError } from "../../shared/errors/index.js";
 
 export class CustomerRepository {
-  /**
-   * Finds customer list for a restaurant with pagination and search.
-   */
+
   async findCustomers(tenantContext, { page = 1, limit = 20, q } = {}) {
     if (!tenantContext || !tenantContext.restaurantId) {
       throw new AuthenticationError("TenantContext with restaurantId is required");
@@ -18,6 +16,8 @@ export class CustomerRepository {
         ? {
             OR: [
               { name: { contains: q, mode: "insensitive" } },
+              { firstName: { contains: q, mode: "insensitive" } },
+              { lastName: { contains: q, mode: "insensitive" } },
               { phone: { contains: q, mode: "insensitive" } },
             ],
           }
@@ -30,6 +30,10 @@ export class CustomerRepository {
         skip,
         take: limit,
         include: {
+          phones: {
+            where: { deletedAt: null },
+            orderBy: { isDefault: "desc" },
+          },
           addresses: {
             where: { deletedAt: null },
             orderBy: { isDefault: "desc" },
@@ -46,9 +50,6 @@ export class CustomerRepository {
     return { items, total };
   }
 
-  /**
-   * Finds single active customer by ID within a tenant.
-   */
   async findCustomerById(tenantContext, customerId) {
     if (!tenantContext || !tenantContext.restaurantId) {
       throw new AuthenticationError("TenantContext with restaurantId is required");
@@ -61,6 +62,10 @@ export class CustomerRepository {
         deletedAt: null,
       },
       include: {
+        phones: {
+          where: { deletedAt: null },
+          orderBy: { isDefault: "desc" },
+        },
         addresses: {
           where: { deletedAt: null },
           orderBy: { isDefault: "desc" },
@@ -72,9 +77,6 @@ export class CustomerRepository {
     });
   }
 
-  /**
-   * Finds active customer by phone within a tenant.
-   */
   async findCustomerByPhone(tenantContext, phone) {
     if (!tenantContext || !tenantContext.restaurantId) {
       throw new AuthenticationError("TenantContext with restaurantId is required");
@@ -89,53 +91,81 @@ export class CustomerRepository {
     });
   }
 
-  /**
-   * Creates new customer record.
-   */
   async createCustomer(tenantContext, payload) {
     if (!tenantContext || !tenantContext.restaurantId) {
       throw new AuthenticationError("TenantContext with restaurantId is required");
     }
 
+    const phones = (payload.phones || []).map((p) => p.trim()).filter(Boolean);
+
     return prisma.customer.create({
       data: {
         restaurantId: tenantContext.restaurantId,
+        firstName: payload.firstName,
+        lastName: payload.lastName || null,
         name: payload.name,
         phone: payload.phone,
-        email: payload.email || null,
         notes: payload.notes || null,
+        phones:
+          phones.length > 0
+            ? {
+                create: phones.map((phone, i) => ({
+                  restaurantId: tenantContext.restaurantId,
+                  phone,
+                  isDefault: i === 0,
+                })),
+              }
+            : undefined,
+      },
+      include: {
+        phones: {
+          where: { deletedAt: null },
+          orderBy: { isDefault: "desc" },
+        },
       },
     });
   }
 
-  /**
-   * Updates customer using mandatory findFirst ownership check -> updateMany pattern (Section 12.3).
-   */
   async updateCustomer(tenantContext, customerId, payload) {
     const existing = await this.findCustomerById(tenantContext, customerId);
     if (!existing) return null;
 
-    await prisma.customer.updateMany({
-      where: {
-        id: customerId,
-        restaurantId: tenantContext.restaurantId,
-        deletedAt: null,
-      },
-      data: {
-        ...(payload.name !== undefined ? { name: payload.name } : {}),
-        ...(payload.phone !== undefined ? { phone: payload.phone } : {}),
-        ...(payload.email !== undefined ? { email: payload.email } : {}),
-        ...(payload.notes !== undefined ? { notes: payload.notes } : {}),
-        updatedAt: new Date(),
-      },
+    const restaurantId = tenantContext.restaurantId;
+
+    await prisma.$transaction(async (tx) => {
+      await tx.customer.updateMany({
+        where: {
+          id: customerId,
+          restaurantId,
+          deletedAt: null,
+        },
+        data: {
+          ...(payload.firstName !== undefined ? { firstName: payload.firstName } : {}),
+          ...(payload.lastName !== undefined ? { lastName: payload.lastName } : {}),
+          ...(payload.name !== undefined ? { name: payload.name } : {}),
+          ...(payload.phone !== undefined ? { phone: payload.phone } : {}),
+          ...(payload.notes !== undefined ? { notes: payload.notes } : {}),
+          updatedAt: new Date(),
+        },
+      });
+
+      if (payload.phones) {
+        const phones = payload.phones.map((p) => p.trim()).filter(Boolean);
+        await tx.customerPhone.deleteMany({ where: { customerId, restaurantId } });
+        await tx.customerPhone.createMany({
+          data: phones.map((phone, i) => ({
+            restaurantId,
+            customerId,
+            phone,
+            isDefault: i === 0,
+          })),
+        });
+      }
     });
 
     return this.findCustomerById(tenantContext, customerId);
   }
 
-  /**
-   * Soft deletes customer using findFirst ownership check -> updateMany pattern (Section 14.3).
-   */
   async softDeleteCustomer(tenantContext, customerId) {
     const existing = await this.findCustomerById(tenantContext, customerId);
     if (!existing) return null;
@@ -154,9 +184,6 @@ export class CustomerRepository {
     return existing;
   }
 
-  /**
-   * Finds customer orders across all branches of the tenant.
-   */
   async findCustomerOrders(tenantContext, customerId, { page = 1, limit = 20 } = {}) {
     if (!tenantContext || !tenantContext.restaurantId) {
       throw new AuthenticationError("TenantContext with restaurantId is required");
@@ -190,9 +217,6 @@ export class CustomerRepository {
     return { items, total };
   }
 
-  /**
-   * Address Methods
-   */
   async findAddresses(tenantContext, customerId) {
     const customer = await this.findCustomerById(tenantContext, customerId);
     if (!customer) return null;
@@ -320,7 +344,6 @@ export class CustomerRepository {
         data: { deletedAt: new Date(), isDefault: false },
       });
 
-      // If the deleted address was default, promote the next latest active address
       if (existing.isDefault) {
         const nextDefault = await tx.customerAddress.findFirst({
           where: { customerId, restaurantId, deletedAt: null },

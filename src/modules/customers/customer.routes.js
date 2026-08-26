@@ -52,7 +52,7 @@ router.patch("/:id/addresses/:addressId", authorize("customers.update"), validat
   customerController.updateAddress(req, res, next);
 });
 
-router.delete("/:id/addresses/:addressId", authorize("customers.update"), (req, res, next) => {
+router.delete("/:id/addresses/:addressId", authorize("customers.delete"), (req, res, next) => {
   customerController.deleteAddress(req, res, next);
 });
 

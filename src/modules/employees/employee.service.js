@@ -7,13 +7,11 @@ import {
   ConflictError,
   NotFoundError,
 } from "../../shared/errors/index.js";
+import { paginateResponse } from "../../shared/utils/pagination.js";
 import prisma from "../../lib/prisma.js";
 import redis from "../../config/redis.js";
 import logger from "../../config/logger.js";
 
-/**
- * Invalidates employee permission cache in Redis.
- */
 async function invalidatePermissionCache(employeeId) {
   try {
     await redis.del(`permissions:${employeeId}`);
@@ -33,18 +31,7 @@ export class EmployeeService {
       roleId,
       sort,
     });
-
-    const totalPages = Math.ceil(total / limit) || 1;
-
-    return {
-      items,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages,
-      },
-    };
+    return paginateResponse(items, total, page, limit);
   }
 
   async getEmployeeById(tenantContext, id) {
@@ -56,13 +43,12 @@ export class EmployeeService {
   }
 
   async createEmployee(tenantContext, data) {
-    // Check email uniqueness within tenant
+
     const existing = await employeeRepository.findEmployeeByEmail(tenantContext, data.email);
     if (existing) {
       throw new ConflictError(`Employee with email '${data.email}' already exists in this restaurant`);
     }
 
-    // Verify role exists and is NOT owner system role (ownership check)
     const role = await prisma.role.findFirst({
       where: {
         id: data.roleId,
@@ -78,7 +64,6 @@ export class EmployeeService {
       throw new BusinessRuleError("Cannot create additional owner employees");
     }
 
-    // Verify branch belongs to the tenant (ownership check)
     const branch = await prisma.branch.findFirst({
       where: {
         id: data.branchId,
@@ -120,12 +105,16 @@ export class EmployeeService {
       ...(data.name ? { name: data.name } : {}),
       ...(data.phone !== undefined ? { phone: data.phone } : {}),
       ...(data.branchId ? { branchId: data.branchId } : {}),
+      ...(data.status ? { status: data.status } : {}),
     });
 
     if (!updated) {
       throw new NotFoundError("Employee not found");
     }
 
+    if (data.status && data.status !== "ACTIVE") {
+      await authRepository.forceLogoutEmployee(tenantContext.restaurantId, id);
+    }
     await invalidatePermissionCache(id);
     return updated;
   }
@@ -158,7 +147,6 @@ export class EmployeeService {
       throw new NotFoundError("Employee not found");
     }
 
-    // Force logout all other active sessions for this employee
     await authRepository.forceLogoutEmployee(tenantContext.restaurantId, targetId);
     await invalidatePermissionCache(targetId);
 
@@ -166,7 +154,6 @@ export class EmployeeService {
   }
 
   async updateRole(tenantContext, targetId, roleId) {
-    // Self privilege escalation prevention check (Fix #3 & Part H)
     if (tenantContext.employeeId === targetId) {
       throw new BusinessRuleError("You cannot modify your own role");
     }
@@ -201,6 +188,7 @@ export class EmployeeService {
       throw new NotFoundError("Employee not found");
     }
 
+    await authRepository.forceLogoutEmployee(tenantContext.restaurantId, id);
     await invalidatePermissionCache(id);
     return { message: "Employee soft-deleted successfully" };
   }

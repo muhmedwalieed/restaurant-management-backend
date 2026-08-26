@@ -7,6 +7,7 @@ export const orderQuerySchema = z.object({
     status: z.enum(["PENDING", "CONFIRMED", "PREPARING", "READY", "OUT_FOR_DELIVERY", "DELIVERED", "CANCELLED"]).optional(),
     type: z.enum(["DINE_IN", "DELIVERY", "PICKUP"]).optional(),
     source: z.enum(["WHATSAPP", "QR", "WEBSITE", "CASHIER", "PHONE"]).optional(),
+    branchId: z.string().optional(),
     tableId: z.string().optional(),
   }),
 });
@@ -15,22 +16,45 @@ const orderItemInputSchema = z.object({
   productId: z.string().min(1, "Product ID is required"),
   quantity: z.coerce.number().int().min(1, "Quantity must be at least 1"),
   modifierIds: z.array(z.string()).optional(),
+  modifiers: z
+    .array(
+      z.object({
+        modifierId: z.string().min(1),
+        quantity: z.coerce.number().int().min(1).max(99),
+      })
+    )
+    .optional(),
   notes: z.string().optional(),
 });
 
 export const createOrderSchema = z.object({
-  body: z.object({
-    source: z.enum(["WHATSAPP", "QR", "WEBSITE", "CASHIER", "PHONE"]).optional().default("CASHIER"),
-    type: z.enum(["DINE_IN", "DELIVERY", "PICKUP"]).optional().default("DINE_IN"),
-    tableId: z.string().optional(),
-    customerId: z.string().optional(),
-    customerPhone: z.string().min(3).max(30).optional(),
-    customerName: z.string().max(100).optional(),
-    couponId: z.string().optional(),
-    discountAmount: z.coerce.number().min(0).optional().default(0),
-    notes: z.string().optional(),
-    items: z.array(orderItemInputSchema).min(1, "Order must contain at least one item"),
-  }),
+  body: z
+    .object({
+      source: z.enum(["WHATSAPP", "QR", "WEBSITE", "CASHIER", "PHONE"]).optional().default("CASHIER"),
+      type: z.enum(["DINE_IN", "DELIVERY", "PICKUP"]).optional().default("DINE_IN"),
+      tableId: z.string().optional(),
+      customerId: z.string().optional(),
+      customerPhone: z.string().min(3).max(30).optional(),
+      customerName: z.string().max(100).optional(),
+      couponId: z.string().optional(),
+      discountAmount: z.coerce.number().min(0).optional().default(0),
+      notes: z.string().optional(),
+      address: z.string().max(500).optional(),
+      items: z.array(orderItemInputSchema).min(1, "Order must contain at least one item"),
+    })
+    .superRefine((data, ctx) => {
+      if (data.type === "DELIVERY") {
+        if (!data.customerName?.trim()) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["customerName"], message: "Customer name is required for delivery orders" });
+        }
+        if (!data.customerPhone?.trim()) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["customerPhone"], message: "Customer phone is required for delivery orders" });
+        }
+        if (!data.address?.trim()) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["address"], message: "Delivery address is required for delivery orders" });
+        }
+      }
+    }),
 });
 
 export const updateOrderStatusSchema = z.object({
@@ -62,15 +86,22 @@ export const publicOrderSchema = z.object({
       items: z.array(orderItemInputSchema).min(1, "Order must contain at least one item"),
       notes: z.string().optional(),
     })
-    .refine(
-      (data) => {
-        if ((data.type === "DELIVERY" || data.type === "PICKUP") && !data.customerName?.trim()) {
-          return false;
+    .superRefine((data, ctx) => {
+      if (data.type === "DELIVERY") {
+        if (!data.customerName?.trim()) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["customerName"], message: "Customer name is required for delivery orders" });
         }
-        return true;
-      },
-      { message: "Customer name is required for delivery and pickup orders", path: ["customerName"] }
-    ),
+        if (!data.customerPhone?.trim()) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["customerPhone"], message: "Customer phone is required for delivery orders" });
+        }
+        if (!data.address?.trim()) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["address"], message: "Delivery address is required for delivery orders" });
+        }
+      }
+      if (data.type === "PICKUP" && !data.customerName?.trim()) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["customerName"], message: "Customer name is required for pickup orders" });
+      }
+    }),
 });
 
 export const trackOrderQuerySchema = z.object({
@@ -82,17 +113,33 @@ export const trackOrderQuerySchema = z.object({
 });
 
 export const posOrderSchema = z.object({
-  body: z.object({
-    type: z.enum(["DINE_IN", "DELIVERY", "PICKUP"]).optional().default("DINE_IN"),
-    tableId: z.string().optional(),
-    customerId: z.string().optional(),
-    customerPhone: z.string().min(3).max(30).optional(),
-    customerName: z.string().max(100).optional(),
-    couponId: z.string().optional(),
-    discountAmount: z.coerce.number().min(0).optional().default(0),
-    notes: z.string().optional(),
-    items: z.array(orderItemInputSchema).min(1, "Order must contain at least one item"),
-  }),
+  body: z
+    .object({
+      source: z.enum(["WHATSAPP", "QR", "WEBSITE", "CASHIER", "PHONE"]).optional().default("CASHIER"),
+      type: z.enum(["DINE_IN", "DELIVERY", "PICKUP"]).optional().default("DINE_IN"),
+      tableId: z.string().optional(),
+      customerId: z.string().optional(),
+      customerPhone: z.string().min(3).max(30).optional(),
+      customerName: z.string().max(100).optional(),
+      couponId: z.string().optional(),
+      discountAmount: z.coerce.number().min(0).optional().default(0),
+      notes: z.string().optional(),
+      address: z.string().max(500).optional(),
+      items: z.array(orderItemInputSchema).min(1, "Order must contain at least one item"),
+    })
+    .superRefine((data, ctx) => {
+      if (data.type === "DELIVERY") {
+        if (!data.customerName?.trim()) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["customerName"], message: "Customer name is required for delivery orders" });
+        }
+        if (!data.customerPhone?.trim()) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["customerPhone"], message: "Customer phone is required for delivery orders" });
+        }
+        if (!data.address?.trim()) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["address"], message: "Delivery address is required for delivery orders" });
+        }
+      }
+    }),
 });
 
 export const paymentSchema = z.object({

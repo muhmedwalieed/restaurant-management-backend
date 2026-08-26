@@ -52,6 +52,12 @@ enum TableStatus {
   MAINTENANCE
 }
 
+enum TableSessionOrderStatus {
+  AWAITING_CONFIRMATION
+  CONFIRMED
+  CANCELLED
+}
+
 enum OrderStatus {
   PENDING
   CONFIRMED
@@ -121,6 +127,8 @@ model Restaurant {
   idempotencyKeys        IdempotencyKey[]
   customers              Customer[]
   customerAddresses      CustomerAddress[]
+  customerPhones         CustomerPhone[]
+  tableSessions          TableSession[]
   whatsappConnections    WhatsAppConnection[]
   whatsappMessages       WhatsAppMessage[]
   webhookEvents          WebhookEvent[]
@@ -161,6 +169,7 @@ model Branch {
   settings       BranchSettings?
   tables         RestaurantTable[]
   orders         Order[]
+  tableSessions  TableSession[]
   coupons        Coupon[]
   notifications  Notification[]
   auditLogs      AuditLog[]
@@ -192,13 +201,14 @@ model WorkingHours {
 }
 
 model BranchSettings {
-  id           String   @id @default(cuid())
-  restaurantId String   @map("restaurant_id")
-  branchId     String   @unique @map("branch_id")
-  currency     String?
-  timezone     String?
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  id                   String   @id @default(cuid())
+  restaurantId         String   @map("restaurant_id")
+  branchId             String   @unique @map("branch_id")
+  currency             String?
+  timezone             String?
+  dailyOrderStartNumber Int      @default(200) @map("daily_order_start_number")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
 
   restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
   branch     Branch     @relation(fields: [branchId], references: [id], onDelete: Cascade)
@@ -260,6 +270,8 @@ model ProductModifier {
   name         String
   priceDelta   Decimal   @default(0.00) @map("price_delta") @db.Decimal(10, 2)
   isRequired   Boolean   @default(false) @map("is_required")
+  quantityMode String    @default("SINGLE") @map("quantity_mode") // SINGLE | QUANTITY
+  maxQuantity  Int       @default(10) @map("max_quantity")
   deletedAt    DateTime? @map("deleted_at")
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
@@ -287,6 +299,7 @@ model RestaurantTable {
   restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
   branch     Branch     @relation(fields: [branchId], references: [id], onDelete: Cascade)
   orders     Order[]
+  sessions   TableSession[]
 
   @@unique([branchId, label])
   @@index([restaurantId])
@@ -295,9 +308,116 @@ model RestaurantTable {
   @@map("tables")
 }
 
+model TableSession {
+  id                   String    @id @default(cuid())
+  restaurantId         String    @map("restaurant_id")
+  branchId             String    @map("branch_id")
+  tableId              String    @map("table_id")
+  pinHash              String    @map("pin_hash")
+  pin                  String?   @map("pin") // plaintext PIN (staff-only retrieval; pinHash is used for auth)
+  status               String    @default("ACTIVE") @map("status") // ACTIVE | AWAITING_CONFIRMATION | CONFIRMED | CLOSED
+  failedAttempts       Int       @default(0) @map("failed_attempts")
+  lockoutLevel         Int       @default(0) @map("lockout_level")
+  lockoutUntil         DateTime? @map("lockout_until")
+  createdByEmployeeId  String?   @map("created_by_employee_id")
+  confirmedOrderId     String?   @map("confirmed_order_id")
+  closedAt             DateTime? @map("closed_at")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  restaurant Restaurant        @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  branch     Branch            @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  table      RestaurantTable   @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  members    TableSessionMember[]
+  items      TableSessionItem[]
+  orders     TableSessionOrder[]
+  waiterCalls TableSessionWaiterCall[]
+
+  @@index([restaurantId, tableId, status])
+  @@index([restaurantId, status])
+  @@map("table_sessions")
+}
+
+model TableSessionMember {
+  id        String   @id @default(cuid())
+  sessionId String   @map("session_id")
+  name      String
+  joinedAt  DateTime @default(now()) @map("joined_at")
+
+  session    TableSession             @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  waiterCalls TableSessionWaiterCall[]
+
+  @@index([sessionId])
+  @@map("table_session_members")
+}
+
+model TableSessionItem {
+  id             String              @id @default(cuid())
+  sessionId      String              @map("session_id")
+  sessionOrderId String?             @map("session_order_id")
+  productId      String              @map("product_id")
+  productName    String              @map("product_name")
+  unitPrice      Decimal             @map("unit_price") @db.Decimal(10, 2)
+  quantity       Int                 @default(1)
+  addedByName    String?             @map("added_by_name")
+  createdAt      DateTime            @default(now()) @map("created_at")
+  updatedAt      DateTime            @updatedAt @map("updated_at")
+
+  session      TableSession       @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionOrder TableSessionOrder? @relation(fields: [sessionOrderId], references: [id], onDelete: SetNull)
+
+  @@index([sessionId])
+  @@map("table_session_items")
+}
+
+model TableSessionWaiterCall {
+  id                   String    @id @default(cuid())
+  restaurantId         String    @map("restaurant_id")
+  branchId             String    @map("branch_id")
+  sessionId            String    @map("session_id")
+  tableId              String    @map("table_id")
+  memberId             String    @map("member_id")
+  requesterName        String    @map("requester_name")
+  note                 String?   @map("note")
+  type                 String    @default("HELP") @map("type") // HELP | BILL | OTHER
+  status               String    @default("PENDING") @map("status") // PENDING | ACCEPTED | DISMISSED
+  acceptedByEmployeeId String?   @map("accepted_by_employee_id")
+  acceptedAt           DateTime? @map("accepted_at")
+  dismissedAt          DateTime? @map("dismissed_at")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  session TableSession       @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  member  TableSessionMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, status])
+  @@index([restaurantId, branchId, status])
+  @@map("table_session_waiter_calls")
+}
+
+model TableSessionOrder {
+  id          String                @id @default(cuid())
+  sessionId   String                @map("session_id")
+  orderNumber Int                   @map("order_number")
+  status      TableSessionOrderStatus @default(AWAITING_CONFIRMATION) @map("status")
+  total       Decimal               @default(0) @map("total") @db.Decimal(10, 2)
+  orderId     String?               @map("order_id")
+  confirmedAt DateTime?             @map("confirmed_at")
+  createdAt   DateTime              @default(now()) @map("created_at")
+  updatedAt   DateTime              @updatedAt @map("updated_at")
+
+  session TableSession        @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  items   TableSessionItem[]
+
+  @@unique([sessionId, orderNumber])
+  @@index([sessionId])
+  @@map("table_session_orders")
+}
+
 model Order {
   id             String        @id @default(cuid())
   orderNumber    Int           @map("order_number")
+  orderDate      String        @map("order_date") // YYYY-MM-DD (branch timezone); number resets daily
   restaurantId   String        @map("restaurant_id")
   branchId       String        @map("branch_id")
   source         OrderSource   @default(CASHIER)
@@ -312,6 +432,7 @@ model Order {
   discountAmount Decimal       @default(0.00) @map("discount_amount") @db.Decimal(10, 2)
   total          Decimal       @db.Decimal(10, 2)
   notes          String?
+  address        String?       @map("address")
   cancelReason   String?       @map("cancel_reason")
   paidAt         DateTime?     @map("paid_at")
   paidByEmployeeId String?     @map("paid_by_employee_id")
@@ -330,7 +451,7 @@ model Order {
   items         OrderItem[]
   statusHistory OrderStatusHistory[]
 
-  @@unique([branchId, orderNumber])
+  @@unique([branchId, orderDate, orderNumber])
   @@index([restaurantId])
   @@index([branchId])
   @@index([restaurantId, branchId, status])
@@ -349,6 +470,7 @@ model OrderItem {
   subtotal          Decimal  @db.Decimal(10, 2)
   notes             String?
   selectedModifiers Json?    @map("selected_modifiers")
+  round             Int      @default(1) @map("round") // table-session order round (1 = first)
   createdAt         DateTime @default(now()) @map("created_at")
 
   restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
@@ -516,15 +638,17 @@ model EmployeeBranchAccess {
 model Customer {
   id           String    @id @default(cuid())
   restaurantId String    @map("restaurant_id")
+  firstName    String?   @map("first_name")
+  lastName     String?   @map("last_name")
   name         String
   phone        String
-  email        String?
   notes        String?
   deletedAt    DateTime? @map("deleted_at")
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
   restaurant Restaurant        @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  phones     CustomerPhone[]
   addresses  CustomerAddress[]
   orders     Order[]
   conversations WhatsAppConversation[]
@@ -532,9 +656,28 @@ model Customer {
 
   @@unique([restaurantId, phone])
   @@index([restaurantId])
-  @@index([restaurantId, name])
+  @@index([restaurantId, firstName])
   @@index([restaurantId, phone])
   @@map("customers")
+}
+
+model CustomerPhone {
+  id           String   @id @default(cuid())
+  restaurantId String   @map("restaurant_id")
+  customerId   String   @map("customer_id")
+  phone        String
+  isDefault    Boolean  @default(false) @map("is_default")
+  deletedAt    DateTime? @map("deleted_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  customer   Customer   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([restaurantId, phone])
+  @@index([restaurantId])
+  @@index([customerId])
+  @@map("customer_phones")
 }
 
 model CustomerAddress {

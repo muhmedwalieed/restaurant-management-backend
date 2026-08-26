@@ -14,7 +14,6 @@ import { validate } from "../../shared/middleware/validate.js";
 
 const router = Router();
 
-// Base Pipeline for all employee endpoints: authenticate -> requireTenantContext
 router.use(authenticate, requireTenantContext);
 
 router.get("/", authorize("employees.view"), validate(employeeQuerySchema), (req, res, next) => {
@@ -33,13 +32,12 @@ router.patch("/:id", authorize("employees.manage"), validate(updateEmployeeSchem
   employeeController.updateEmployee(req, res, next);
 });
 
-// Self-or-Manager Password Change Middleware (Fix #2)
 const passwordChangeAuthGuard = (req, res, next) => {
   const isSelf = req.tenantContext?.employeeId === req.params.id;
   if (isSelf) {
-    return next(); // Self password change allowed (currentPassword checked in service)
+    return next();
   }
-  // Otherwise requires employees.manage permission
+
   return authorize("employees.manage")(req, res, next);
 };
 

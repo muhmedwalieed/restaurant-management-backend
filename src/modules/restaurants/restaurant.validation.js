@@ -6,7 +6,9 @@ export const updateRestaurantSchema = z.object({
     description: z.string().optional(),
     email: z.string().email("Invalid email address").optional(),
     phone: z.string().optional(),
-    logoUrl: z.string().url("Invalid logo URL format").optional(),
+    logoUrl: z
+      .union([z.string().url("Invalid logo URL format"), z.string().regex(/^\/uploads\//, "Invalid logo path")])
+      .optional(),
     currency: z.string().min(3).max(3).optional(),
     timezone: z.string().optional(),
   }),

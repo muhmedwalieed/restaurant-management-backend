@@ -43,7 +43,6 @@ describe("Module 15 — Dashboard & Analytics Integration Tests", () => {
 
     const uniq = Date.now();
 
-    // ===== Tenant A =====
     const regA = await authService.register({
       name: "Owner Dash A",
       email: `dasha-${uniq}@test.com`,
@@ -57,25 +56,17 @@ describe("Module 15 — Dashboard & Analytics Integration Tests", () => {
     const loginA = await authService.login({ email: regA.employee.email, password: "Password123!", device: "A", ipAddress: "127.0.0.1" });
     ownerAToken = loginA.accessToken;
 
-    // Products for top-products aggregation
     productA = await prisma.product.create({ data: { restaurantId: tenantA.id, categoryId: (await prisma.category.create({ data: { restaurantId: tenantA.id, name: "Cat A" } })).id, name: "Burger", price: 20 } });
     productB = await prisma.product.create({ data: { restaurantId: tenantA.id, categoryId: (await prisma.category.create({ data: { restaurantId: tenantA.id, name: "Cat B" } })).id, name: "Pizza", price: 50 } });
 
-    // Customers + tables
     await prisma.customer.create({ data: { restaurantId: tenantA.id, name: "Dash Customer", phone: "+201000000001" } });
     await prisma.restaurantTable.create({ data: { restaurantId: tenantA.id, branchId: branchA.id, label: "T1", qrToken: `qrt1_${uniq}`, status: "OCCUPIED" } });
     await prisma.restaurantTable.create({ data: { restaurantId: tenantA.id, branchId: branchA.id, label: "T2", qrToken: `qrt2_${uniq}`, status: "AVAILABLE" } });
 
-    // Deterministic order dataset:
-    // o1 WHATSAPP DELIVERED PAID 100 (paid by owner)     [today]
-    // o2 CASHIER  PENDING   PENDING 50                    [today]
-    // o3 PHONE    DELIVERED PAID 30  (paid by owner)     [today]
-    // o4 QR       CANCELLED PENDING 200                   [today] (excluded from revenue)
-    // o5 WEBSITE  DELIVERED PAID 80  (paid by owner)     [3 days ago]
-    // o6 WHATSAPP CONFIRMED PAID 40                       [3 days ago]
     const mkOrder = (orderNumber, data) =>
       prisma.order.create({
         data: {
+        orderDate: "2026-08-25",
           orderNumber,
           restaurantId: tenantA.id,
           branchId: branchA.id,
@@ -96,17 +87,14 @@ describe("Module 15 — Dashboard & Analytics Integration Tests", () => {
     await mkOrder(1005, { source: "WEBSITE", type: "PICKUP", status: "DELIVERED", paymentStatus: "PAID", paidByEmployeeId: employeeAId, subtotal: 80, total: 80, createdAt: daysAgo(3) });
     await mkOrder(1006, { source: "WHATSAPP", type: "DELIVERY", status: "CONFIRMED", paymentStatus: "PAID", subtotal: 40, total: 40, createdAt: daysAgo(3) });
 
-    // Order items for top-products (non-cancelled only)
     await prisma.orderItem.create({ data: { restaurantId: tenantA.id, orderId: o1.id, productId: productA.id, productName: "Burger", quantity: 2, unitPrice: 20, subtotal: 40 } });
     await prisma.orderItem.create({ data: { restaurantId: tenantA.id, orderId: o1.id, productId: productB.id, productName: "Pizza", quantity: 1, unitPrice: 50, subtotal: 50 } });
     await prisma.orderItem.create({ data: { restaurantId: tenantA.id, orderId: o3.id, productId: productA.id, productName: "Burger", quantity: 1, unitPrice: 20, subtotal: 20 } });
 
-    // Status history for employee performance
     await prisma.orderStatusHistory.create({ data: { restaurantId: tenantA.id, orderId: o1.id, toStatus: "DELIVERED", changedById: employeeAId, reason: "test" } });
     await prisma.orderStatusHistory.create({ data: { restaurantId: tenantA.id, orderId: o1.id, toStatus: "CONFIRMED", changedById: employeeAId, reason: "test" } });
     await prisma.orderStatusHistory.create({ data: { restaurantId: tenantA.id, orderId: o3.id, toStatus: "PREPARING", changedById: employeeAId, reason: "test" } });
 
-    // ===== RBAC roles/employees for Tenant A =====
     const passwordHash = await bcrypt.hash("Password123!", 10);
     const dashPerm = await prisma.permission.findFirst({ where: { key: "dashboard.view" } });
 
@@ -133,7 +121,6 @@ describe("Module 15 — Dashboard & Analytics Integration Tests", () => {
     const noDashLogin = await authService.login({ email: noDashEmp.email, password: "Password123!", device: "NoDash", ipAddress: "127.0.0.1" });
     noDashToken = noDashLogin.accessToken;
 
-    // ===== Tenant B (cross-tenant isolation) =====
     const regB = await authService.register({
       name: "Owner Dash B",
       email: `dashb-${uniq}@test.com`,
@@ -146,8 +133,8 @@ describe("Module 15 — Dashboard & Analytics Integration Tests", () => {
     const loginB = await authService.login({ email: regB.employee.email, password: "Password123!", device: "B", ipAddress: "127.0.0.1" });
     ownerBToken = loginB.accessToken;
 
-    await prisma.order.create({
-      data: { orderNumber: 5001, restaurantId: tenantB.id, branchId: branchB.id, source: "CASHIER", type: "DINE_IN", status: "DELIVERED", paymentStatus: "PAID", subtotal: 999, total: 999 },
+await prisma.order.create({
+      data: { orderNumber: 5001, restaurantId: tenantB.id, branchId: branchB.id, source: "CASHIER", type: "DINE_IN", status: "DELIVERED", paymentStatus: "PAID", subtotal: 999, total: 999, orderDate: "2026-08-25" },
     });
   });
 
@@ -190,12 +177,12 @@ describe("Module 15 — Dashboard & Analytics Integration Tests", () => {
     const data = body.data;
 
     assert.equal(data.totalOrders, 6);
-    assert.equal(data.activeOrders, 2); // PENDING(1) + CONFIRMED(1)
-    assert.equal(data.revenue, 300); // 100+50+30+80+40 (cancelled excluded)
-    assert.equal(data.paidRevenue, 250); // 100+30+80+40
-    assert.equal(data.averageOrderValue, 60); // 300 / 5 non-cancelled
+    assert.equal(data.activeOrders, 2);
+    assert.equal(data.revenue, 300);
+    assert.equal(data.paidRevenue, 250);
+    assert.equal(data.averageOrderValue, 60);
     assert.equal(data.ordersToday, 4);
-    assert.equal(data.revenueToday, 180); // 100+50+30
+    assert.equal(data.revenueToday, 180);
     assert.equal(data.totalCustomers, 1);
     assert.equal(data.occupiedTables, 1);
     assert.equal(data.topProducts[0].productName, "Burger");
@@ -208,7 +195,7 @@ describe("Module 15 — Dashboard & Analytics Integration Tests", () => {
     });
     assert.equal(res.status, 200);
     const body = await res.json();
-    assert.equal(body.data.totalOrders, 6); // all orders are in branchA
+    assert.equal(body.data.totalOrders, 6);
     assert.equal(body.data.revenue, 300);
   });
 
@@ -227,7 +214,7 @@ describe("Module 15 — Dashboard & Analytics Integration Tests", () => {
     assert.equal(map.PHONE.revenue, 30);
     assert.equal(map.WEBSITE.orders, 1);
     assert.equal(map.WEBSITE.revenue, 80);
-    assert.equal(map.QR, undefined); // cancelled QR order excluded
+    assert.equal(map.QR, undefined);
   });
 
   test("4. GET /v1/dashboard/order-status-stats matches status + payment distribution", async () => {
@@ -254,9 +241,9 @@ describe("Module 15 — Dashboard & Analytics Integration Tests", () => {
     const body = await res.json();
     assert.equal(body.data.length, 2);
     const [older, today] = body.data;
-    assert.equal(older.revenue, 120); // o5 + o6
+    assert.equal(older.revenue, 120);
     assert.equal(older.orders, 2);
-    assert.equal(today.revenue, 180); // o1 + o2 + o3
+    assert.equal(today.revenue, 180);
     assert.equal(today.orders, 3);
   });
 
@@ -269,10 +256,10 @@ describe("Module 15 — Dashboard & Analytics Integration Tests", () => {
     assert.equal(body.data.length, 1);
     const emp = body.data[0];
     assert.equal(emp.employeeId, employeeAId);
-    assert.equal(emp.ordersCollected, 3); // o1, o3, o5
-    assert.equal(emp.revenueCollected, 210); // 100+30+80
+    assert.equal(emp.ordersCollected, 3);
+    assert.equal(emp.revenueCollected, 210);
     assert.equal(emp.actionsPerformed, 3);
-    assert.equal(emp.distinctOrdersHandled, 2); // o1, o3
+    assert.equal(emp.distinctOrdersHandled, 2);
   });
 
   test("7. dashboard.view permission grants access to a non-owner", async () => {

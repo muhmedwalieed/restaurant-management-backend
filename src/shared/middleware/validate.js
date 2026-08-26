@@ -1,12 +1,5 @@
 import { ValidationError } from "../errors/index.js";
 
-/**
- * Zod validation middleware.
- * Parses req.body / req.query / req.params against the provided schema and
- * converts Zod errors into a unified 400 VALIDATION_ERROR response.
- *
- * @param {import("zod").ZodSchema} schema
- */
 export function validate(schema) {
   return (req, res, next) => {
     const data = {
@@ -28,6 +21,16 @@ export function validate(schema) {
     }
 
     req.validated = result.data;
+    if (result.data.body !== undefined) {
+      req.body = result.data.body;
+    }
+    if (result.data.query !== undefined && req.query && typeof req.query === "object") {
+      Object.assign(req.query, result.data.query);
+    }
+    if (result.data.params !== undefined && req.params && typeof req.params === "object") {
+      Object.assign(req.params, result.data.params);
+    }
+
     return next();
   };
 }

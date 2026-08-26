@@ -8,10 +8,6 @@ import { authService } from "../src/modules/auth/auth.service.js";
 import { seedPermissions } from "../prisma/seed.js";
 import { disconnectRedis } from "../src/config/redis.js";
 
-/**
- * Event listeners are fire-and-forget async consumers (Section 29), so tests poll
- * until the side-effect lands (well under the timeout in practice).
- */
 async function waitFor(probe, { timeout = 4000, interval = 50 } = {}) {
   const deadline = Date.now() + timeout;
   for (;;) {
@@ -52,7 +48,6 @@ describe("Module 17 — Notifications Integration Tests", () => {
 
     const uniq = Date.now();
 
-    // ===== Tenant A =====
     const regA = await authService.register({
       name: "Owner Notif A",
       email: `notifa-${uniq}@test.com`,
@@ -71,7 +66,6 @@ describe("Module 17 — Notifications Integration Tests", () => {
 
     const passwordHash = await bcrypt.hash("Password123!", 10);
 
-    // Employee X — an agent in the same branch with notifications.view
     const notifPerm = await prisma.permission.findFirst({ where: { key: "notifications.view" } });
     const agentRole = await prisma.role.create({
       data: {
@@ -87,7 +81,6 @@ describe("Module 17 — Notifications Integration Tests", () => {
     const loginX = await authService.login({ email: employeeX.email, password: "Password123!", device: "X", ipAddress: "127.0.0.1" });
     employeeXToken = loginX.accessToken;
 
-    // Employee without notifications permission (RBAC 403)
     const noPermRole = await prisma.role.create({ data: { restaurantId: tenantA.id, name: "No Notif Role", description: "no notif permission" } });
     const noPermEmp = await prisma.employee.create({
       data: { restaurantId: tenantA.id, branchId: branchA.id, roleId: noPermRole.id, name: "No Notif", email: `nonotif-${uniq}@test.com`, passwordHash },
@@ -95,7 +88,6 @@ describe("Module 17 — Notifications Integration Tests", () => {
     const noPermLogin = await authService.login({ email: noPermEmp.email, password: "Password123!", device: "NoNotif", ipAddress: "127.0.0.1" });
     noPermToken = noPermLogin.accessToken;
 
-    // ===== Tenant B (cross-tenant) =====
     const regB = await authService.register({
       name: "Owner Notif B",
       email: `notifb-${uniq}@test.com`,
@@ -145,8 +137,6 @@ describe("Module 17 — Notifications Integration Tests", () => {
   const myNotifications = (token, query = "") =>
     fetch(`${baseUrl}/api/v1/notifications${query}`, { headers: auth(token) }).then((r) => r.json());
 
-  // ==================== Order event notifications ====================
-
   test("1. placing an order creates an ORDER_CREATED notification for branch employees", async () => {
     const res = await placeOrder({ type: "PICKUP", items: [{ productId: productA.id, quantity: 1 }] });
     assert.equal(res.status, 201);
@@ -191,8 +181,6 @@ describe("Module 17 — Notifications Integration Tests", () => {
     await waitFor(async () => (await myNotifications(ownerToken, `?type=ORDER_PAID`)).data.some((n) => n.referenceId === order.id));
   });
 
-  // ==================== Read / unread ====================
-
   test("4. unread-count endpoint reflects pending notifications", async () => {
     await waitFor(async () => (await myNotifications(ownerToken, `/unread-count`)).data.count >= 3);
   });
@@ -224,8 +212,6 @@ describe("Module 17 — Notifications Integration Tests", () => {
     assert.equal(body.data.count, 0);
   });
 
-  // ==================== Security ====================
-
   test("7. employee cannot mark ANOTHER employee's notification as read (IDOR -> 404)", async () => {
     const ownerList = (await myNotifications(ownerToken)).data;
     assert.ok(ownerList.length > 0);
@@ -253,8 +239,6 @@ describe("Module 17 — Notifications Integration Tests", () => {
     assert.equal(body.data.length, 0);
   });
 
-  // ==================== Preferences ====================
-
   test("11. preferences GET/PUT round-trip", async () => {
     const put = await fetch(`${baseUrl}/api/v1/notifications/preferences`, {
       method: "PUT",
@@ -273,15 +257,11 @@ describe("Module 17 — Notifications Integration Tests", () => {
     const res = await placeOrder({ type: "PICKUP", items: [{ productId: productA.id, quantity: 1 }] });
     const order = (await res.json()).data;
 
-    // Wait until the agent (who did NOT disable it) receives it — at that point the
-    // listener loop has finished for this order, so the owner's skip is final.
     await waitFor(async () => (await myNotifications(employeeXToken, `?type=ORDER_CREATED`)).data.some((n) => n.referenceId === order.id));
 
-    // Owner disabled ORDER_CREATED -> must NOT receive it for this order.
     const ownerBody = await myNotifications(ownerToken, `?type=ORDER_CREATED`);
     assert.ok(!ownerBody.data.some((n) => n.referenceId === order.id), "owner should not receive ORDER_CREATED");
 
-    // Employee X did not disable it -> still receives it.
     const agentBody = await myNotifications(employeeXToken, `?type=ORDER_CREATED`);
     assert.ok(agentBody.data.some((n) => n.referenceId === order.id));
   });
@@ -294,8 +274,6 @@ describe("Module 17 — Notifications Integration Tests", () => {
     });
     assert.equal(res.status, 400);
   });
-
-  // ==================== Chat assigned (Support alerts) ====================
 
   test("14. assigning a conversation notifies the assigned agent (CHAT_ASSIGNED)", async () => {
     const conv = await prisma.inboxConversation.create({

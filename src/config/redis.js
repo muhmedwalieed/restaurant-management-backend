@@ -2,10 +2,6 @@ import Redis from "ioredis";
 import env from "./env.js";
 import logger from "./logger.js";
 
-/**
- * Singleton Redis client setup using ioredis.
- * Configured with standard retry strategy and error handlers.
- */
 let redisClient = null;
 
 export function getRedisClient() {
@@ -16,7 +12,7 @@ export function getRedisClient() {
       retryStrategy(times) {
         if (times > 5) {
           logger.warn({ attempt: times }, "Redis max reconnect attempts reached. Stopping retries.");
-          return null; // Stop retrying after 5 attempts
+          return null;
         }
         const delay = Math.min(times * 100, 2000);
         logger.warn({ attempt: times, nextDelayMs: delay }, "Redis connection retry scheduled");
@@ -36,10 +32,6 @@ const redis = getRedisClient();
 
 export default redis;
 
-/**
- * Checks Redis connectivity for readiness health probes.
- * @returns {Promise<boolean>}
- */
 export async function checkRedisHealth() {
   try {
     const client = getRedisClient();
@@ -57,9 +49,6 @@ export async function checkRedisHealth() {
   }
 }
 
-/**
- * Disconnects Redis connection cleanly.
- */
 export async function disconnectRedis() {
   if (redisClient && (redisClient.status === "ready" || redisClient.status === "connecting")) {
     try {

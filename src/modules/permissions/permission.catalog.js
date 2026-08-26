@@ -1,7 +1,4 @@
-/**
- * Canonical Global Permissions Catalog (Global-scoped entities).
- * Format: resource.action
- */
+
 export const GLOBAL_PERMISSIONS = [
   { key: "employees.view", description: "View employee profiles and list" },
   { key: "employees.manage", description: "Create, update, and soft-delete employees" },
@@ -13,8 +10,13 @@ export const GLOBAL_PERMISSIONS = [
   { key: "tables.manage", description: "Manage branch tables, status, and QR codes" },
   { key: "tables.view", description: "View branch tables (for POS table selection) — without management rights" },
   { key: "orders.view", description: "View branch orders and order timeline history" },
-  { key: "orders.create", description: "Create new branch orders" },
+{ key: "orders.create", description: "Create new branch orders" },
   { key: "orders.update", description: "Update order details and advance order state machine" },
+  { key: "orders.discount", description: "Apply manual discounts to orders" },
+  { key: "orders.source_cashier", description: "Create cashier-source orders (POS)" },
+  { key: "orders.source_phone", description: "Create phone-source orders" },
+  { key: "orders.source_whatsapp", description: "Create whatsapp-source orders" },
+  { key: "orders.source_website", description: "Create website-source orders" },
   { key: "orders.cancel", description: "Cancel active orders and record cancellation reason" },
   { key: "orders.payment", description: "Process order payment transactions" },
   { key: "orders.refund", description: "Process order refund transactions" },

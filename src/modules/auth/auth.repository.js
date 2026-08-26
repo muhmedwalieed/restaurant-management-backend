@@ -2,10 +2,7 @@ import prisma from "../../lib/prisma.js";
 import { ConflictError } from "../../shared/errors/index.js";
 
 export class AuthRepository {
-  /**
-   * Single $transaction for Restaurant Registration (Part F).
-   * Creates Restaurant -> Branch -> System Roles (owner, manager) -> RolePermissions -> Owner Employee.
-   */
+
   async registerRestaurantTransaction({
     name,
     slug,
@@ -17,7 +14,7 @@ export class AuthRepository {
     ownerPasswordHash,
   }) {
     return prisma.$transaction(async (tx) => {
-      // 1. Check duplicate slug
+
       const existingSlug = await tx.restaurant.findUnique({
         where: { slug },
       });
@@ -25,7 +22,6 @@ export class AuthRepository {
         throw new ConflictError(`Restaurant slug '${slug}' is already taken`);
       }
 
-      // 2. Create Restaurant Root
       const restaurant = await tx.restaurant.create({
         data: {
           name,
@@ -36,7 +32,6 @@ export class AuthRepository {
         },
       });
 
-      // 3. Create Main Branch
       const branch = await tx.branch.create({
         data: {
           restaurantId: restaurant.id,
@@ -47,7 +42,6 @@ export class AuthRepository {
         },
       });
 
-      // 4. Create System Roles (owner & manager)
       const ownerRole = await tx.role.create({
         data: {
           restaurantId: restaurant.id,
@@ -66,7 +60,6 @@ export class AuthRepository {
         },
       });
 
-      // 5. Fetch all global permissions and create RolePermissions for owner
       const allPermissions = await tx.permission.findMany();
       if (allPermissions.length > 0) {
         await tx.rolePermission.createMany({
@@ -78,7 +71,6 @@ export class AuthRepository {
         });
       }
 
-      // 6. Create Owner Employee
       const ownerEmployee = await tx.employee.create({
         data: {
           restaurantId: restaurant.id,
@@ -102,9 +94,6 @@ export class AuthRepository {
     });
   }
 
-  /**
-   * Finds employee by email for login, with explicit restaurantId scoping.
-   */
   async findEmployeeByEmailForLogin(email, restaurantSlug = null) {
     let restaurantId = null;
 
@@ -118,7 +107,7 @@ export class AuthRepository {
     }
 
     if (!restaurantId) {
-      // Find candidate restaurant via Restaurant model (which is NOT tenant-scoped)
+
       const candidateRestaurant = await prisma.restaurant.findFirst({
         where: {
           employees: {
@@ -151,9 +140,6 @@ export class AuthRepository {
     });
   }
 
-  /**
-   * Finds active session for employee matching device fingerprint.
-   */
   async findActiveSessionByDevice(restaurantId, employeeId, device) {
     return prisma.session.findFirst({
       where: {
@@ -165,9 +151,6 @@ export class AuthRepository {
     });
   }
 
-  /**
-   * Finds any active session for employee on a DIFFERENT device fingerprint.
-   */
   async findActiveSessionOnDifferentDevice(restaurantId, employeeId, device) {
     return prisma.session.findFirst({
       where: {
@@ -181,9 +164,6 @@ export class AuthRepository {
     });
   }
 
-  /**
-   * Creates a new active session.
-   */
   async createSession({ restaurantId, employeeId, device, ipAddress, refreshTokenHash }) {
     return prisma.session.create({
       data: {
@@ -197,9 +177,6 @@ export class AuthRepository {
     });
   }
 
-  /**
-   * Updates an existing session's refresh token hash.
-   */
   async updateSessionRefreshHash(restaurantId, sessionId, newRefreshTokenHash) {
     return prisma.session.updateMany({
       where: {
@@ -213,9 +190,6 @@ export class AuthRepository {
     });
   }
 
-  /**
-   * Finds active session by refresh token hash with explicit restaurantId scoping.
-   */
   async findActiveSessionByRefreshHash(refreshTokenHash, restaurantId) {
     let targetRestaurantId = restaurantId;
 
@@ -255,9 +229,6 @@ export class AuthRepository {
     });
   }
 
-  /**
-   * Marks a session as ENDED.
-   */
   async endSession(restaurantId, sessionId) {
     return prisma.session.updateMany({
       where: {
@@ -272,9 +243,6 @@ export class AuthRepository {
     });
   }
 
-  /**
-   * Force logouts all active sessions for a target employee.
-   */
   async forceLogoutEmployee(restaurantId, employeeId) {
     return prisma.session.updateMany({
       where: {

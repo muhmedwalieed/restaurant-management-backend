@@ -15,7 +15,7 @@ describe("Auth Module Integration & E2E Tests", () => {
   let refreshToken;
 
   before(async () => {
-    // Seed permissions
+
     await seedPermissions();
 
     await new Promise((resolve) => {
@@ -29,7 +29,7 @@ describe("Auth Module Integration & E2E Tests", () => {
   });
 
   after(async () => {
-    // Cleanup DB
+
     if (createdRestaurant?.id) {
       await prisma.session.deleteMany({ where: { restaurantId: createdRestaurant.id } });
       await prisma.employeeBranchAccess.deleteMany({ where: { restaurantId: createdRestaurant.id } });
@@ -94,7 +94,7 @@ describe("Auth Module Integration & E2E Tests", () => {
     assert.notEqual(body.requestId, undefined);
     assert.equal(body.data.restaurant.slug, slug);
     assert.equal(body.data.employee.email, email);
-    assert.equal(body.data.employee.passwordHash, undefined); // Sensitive data omitted
+    assert.equal(body.data.employee.passwordHash, undefined);
 
     createdRestaurant = body.data.restaurant;
     registeredOwner = {
@@ -193,9 +193,8 @@ describe("Auth Module Integration & E2E Tests", () => {
     assert.equal(body.success, true);
     assert.ok(body.data.accessToken);
     assert.ok(body.data.refreshToken);
-    assert.notEqual(body.data.refreshToken, refreshToken); // Token rotated
+    assert.notEqual(body.data.refreshToken, refreshToken);
 
-    // Update active tokens
     accessToken = body.data.accessToken;
     refreshToken = body.data.refreshToken;
   });
@@ -224,7 +223,7 @@ describe("Auth Module Integration & E2E Tests", () => {
         Authorization: `Bearer ${accessToken}`,
       },
       body: JSON.stringify({
-        employeeId: registeredOwner.id, // Self force logout
+        employeeId: registeredOwner.id,
       }),
     });
 
@@ -248,7 +247,6 @@ describe("Auth Module Integration & E2E Tests", () => {
 
     assert.equal(body.success, true);
 
-    // Subsequent access with old token fails session active check (401)
     const protectedRes = await fetch(`${baseUrl}/api/v1/auth/logout`, {
       method: "POST",
       headers: {
@@ -273,7 +271,6 @@ describe("Auth Module Integration & E2E Tests", () => {
     assert.equal(loginDev1.status, 200);
     const dev1Token = (await loginDev1.json()).data.accessToken;
 
-    // Without forceLogout -> 422 forceLogoutRequired
     const rejected = await fetch(`${baseUrl}/api/v1/auth/login`, {
       method: "POST",
       headers: {
@@ -287,7 +284,6 @@ describe("Auth Module Integration & E2E Tests", () => {
     });
     assert.equal(rejected.status, 422);
 
-    // With forceLogout: true -> 200 + old session revoked
     const forced = await fetch(`${baseUrl}/api/v1/auth/login`, {
       method: "POST",
       headers: {

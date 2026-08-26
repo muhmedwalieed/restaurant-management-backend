@@ -43,7 +43,6 @@ describe("Module 16 — Discounts & Coupons Integration Tests", () => {
 
     const uniq = Date.now();
 
-    // ===== Tenant A =====
     const regA = await authService.register({
       name: "Owner Coupon A",
       email: `coupona-${uniq}@test.com`,
@@ -63,7 +62,6 @@ describe("Module 16 — Discounts & Coupons Integration Tests", () => {
       data: { restaurantId: tenantA.id, categoryId: cat.id, name: "Hidden", price: 10, isAvailable: false },
     });
 
-    // RBAC: role without coupons permission
     const passwordHash = await bcrypt.hash("Password123!", 10);
     const noPermRole = await prisma.role.create({
       data: { restaurantId: tenantA.id, name: "No Coupons Role", description: "no coupon permission" },
@@ -74,7 +72,6 @@ describe("Module 16 — Discounts & Coupons Integration Tests", () => {
     const noPermLogin = await authService.login({ email: noPermEmp.email, password: "Password123!", device: "NoCoupon", ipAddress: "127.0.0.1" });
     noCouponToken = noPermLogin.accessToken;
 
-    // ===== Tenant B (cross-tenant) =====
     const regB = await authService.register({
       name: "Owner Coupon B",
       email: `couponb-${uniq}@test.com`,
@@ -86,7 +83,6 @@ describe("Module 16 — Discounts & Coupons Integration Tests", () => {
     const loginB = await authService.login({ email: regB.employee.email, password: "Password123!", device: "B", ipAddress: "127.0.0.1" });
     ownerBToken = loginB.accessToken;
 
-    // ===== Edge-case coupons created deterministically via prisma =====
     const past = new Date(Date.now() - 3600_000);
     const future = new Date(Date.now() + 3600_000);
     expired = await prisma.coupon.create({ data: { restaurantId: tenantA.id, code: "EXPIRED", type: "PERCENTAGE", value: 10, expiresAt: past } });
@@ -132,8 +128,6 @@ describe("Module 16 — Discounts & Coupons Integration Tests", () => {
 
   const placeOrder = (body) =>
     fetch(`${baseUrl}/api/v1/branches/${branchA.id}/orders`, { method: "POST", headers: auth(ownerToken), body: JSON.stringify(body) });
-
-  // ==================== CRUD ====================
 
   test("1. POST /v1/coupons creates a PERCENTAGE coupon (code uppercased)", async () => {
     const res = await createCoupon({ code: "save10", type: "PERCENTAGE", value: 10 });
@@ -190,9 +184,9 @@ describe("Module 16 — Discounts & Coupons Integration Tests", () => {
     assert.equal(res.status, 200);
     const body = await res.json();
     assert.equal(Number(body.data.value), 15);
-    assert.equal(body.data.type, "PERCENTAGE"); // NOT reset to default
-    assert.equal(Number(body.data.minSubtotal), 0); // unchanged
-    assert.equal(body.data.isActive, true); // unchanged
+    assert.equal(body.data.type, "PERCENTAGE");
+    assert.equal(Number(body.data.minSubtotal), 0);
+    assert.equal(body.data.isActive, true);
   });
 
   test("8. PATCH can clear a nullable field (maxDiscount -> null)", async () => {
@@ -232,8 +226,6 @@ describe("Module 16 — Discounts & Coupons Integration Tests", () => {
     assert.equal(get.status, 404);
   });
 
-  // ==================== Security ====================
-
   test("10. cross-tenant IDOR: tenant B cannot read tenant A coupon -> 404", async () => {
     const res = await fetch(`${baseUrl}/api/v1/coupons/${save10.id}`, { headers: auth(ownerBToken) });
     assert.equal(res.status, 404);
@@ -269,26 +261,24 @@ describe("Module 16 — Discounts & Coupons Integration Tests", () => {
     });
     assert.equal(res.status, 201);
     const body = await res.json();
-    assert.equal(body.data.restaurantId, tenantA.id); // NOT tenant B
-    assert.equal(body.data.timesUsed, 0); // NOT 999
-    assert.equal(body.data.isActive, false); // sent field respected
+    assert.equal(body.data.restaurantId, tenantA.id);
+    assert.equal(body.data.timesUsed, 0);
+    assert.equal(body.data.isActive, false);
   });
-
-  // ==================== Order Engine Integration ====================
 
   test("15. order with coupon: server-side discount + timesUsed incremented", async () => {
     const res = await placeOrder({
       type: "PICKUP",
       couponId: save10.id,
       items: [
-        { productId: productA.id, quantity: 2 }, // 200
-        { productId: productB.id, quantity: 1 }, // 50
+        { productId: productA.id, quantity: 2 },
+        { productId: productB.id, quantity: 1 },
       ],
     });
     assert.equal(res.status, 201);
     const body = await res.json();
     assert.equal(Number(body.data.subtotal), 250);
-    assert.equal(Number(body.data.discountAmount), 37.5); // 15% of 250 (value was updated to 15 in test 7)
+    assert.equal(Number(body.data.discountAmount), 37.5);
     assert.equal(Number(body.data.total), 212.5);
     assert.equal(body.data.couponId, save10.id);
 
@@ -300,12 +290,12 @@ describe("Module 16 — Discounts & Coupons Integration Tests", () => {
     const res = await placeOrder({
       type: "PICKUP",
       couponId: save10.id,
-      discountAmount: 999, // attacker attempt
-      items: [{ productId: productA.id, quantity: 1 }], // 100
+      discountAmount: 999,
+      items: [{ productId: productA.id, quantity: 1 }],
     });
     assert.equal(res.status, 201);
     const body = await res.json();
-    assert.equal(Number(body.data.discountAmount), 15); // 15% of 100, NOT 999
+    assert.equal(Number(body.data.discountAmount), 15);
     assert.equal(Number(body.data.total), 85);
   });
 
@@ -342,7 +332,7 @@ describe("Module 16 — Discounts & Coupons Integration Tests", () => {
     const res = await placeOrder({
       type: "PICKUP",
       couponId: min500.id,
-      items: [{ productId: productA.id, quantity: 1 }], // 100 < 500
+      items: [{ productId: productA.id, quantity: 1 }],
     });
     assert.equal(res.status, 422);
   });
@@ -352,14 +342,14 @@ describe("Module 16 — Discounts & Coupons Integration Tests", () => {
       type: "PICKUP",
       couponId: burger10.id,
       items: [
-        { productId: productA.id, quantity: 1 }, // 100 eligible
-        { productId: productB.id, quantity: 1 }, // 50 NOT eligible
+        { productId: productA.id, quantity: 1 },
+        { productId: productB.id, quantity: 1 },
       ],
     });
     assert.equal(res.status, 201);
     const body = await res.json();
     assert.equal(Number(body.data.subtotal), 150);
-    assert.equal(Number(body.data.discountAmount), 10); // 10% of 100 only
+    assert.equal(Number(body.data.discountAmount), 10);
     assert.equal(Number(body.data.total), 140);
   });
 
@@ -367,7 +357,7 @@ describe("Module 16 — Discounts & Coupons Integration Tests", () => {
     const res = await placeOrder({
       type: "PICKUP",
       couponId: burger10.id,
-      items: [{ productId: productB.id, quantity: 1 }], // only Pizza, not eligible
+      items: [{ productId: productB.id, quantity: 1 }],
     });
     assert.equal(res.status, 422);
   });
@@ -382,7 +372,7 @@ describe("Module 16 — Discounts & Coupons Integration Tests", () => {
         customerName: "Public Customer",
         customerPhone: "+201111111111",
         couponCode: "fix20",
-        items: [{ productId: productA.id, quantity: 1 }], // 100 -> fixed 20
+        items: [{ productId: productA.id, quantity: 1 }],
       }),
     });
     assert.equal(res.status, 201);
@@ -413,9 +403,9 @@ describe("Module 16 — Discounts & Coupons Integration Tests", () => {
       couponId: once1.id,
       items: [{ productId: unavailableProduct.id, quantity: 1 }],
     });
-    assert.equal(res.status, 404); // product unavailable
+    assert.equal(res.status, 404);
     const db = await prisma.coupon.findFirst({ where: { id: once1.id, restaurantId: tenantA.id } });
-    assert.equal(db.timesUsed, 1); // still 1 from test 18, NOT incremented by the failed order
+    assert.equal(db.timesUsed, 1);
   });
 
   test("25. POST /v1/coupons/validate returns the discount WITHOUT incrementing usage", async () => {
@@ -432,10 +422,10 @@ describe("Module 16 — Discounts & Coupons Integration Tests", () => {
     assert.equal(res.status, 200);
     const body = await res.json();
     assert.equal(body.data.code, "SAVE10");
-    assert.equal(body.data.discountAmount, 37.5); // 15% of 250 (value updated in test 7)
+    assert.equal(body.data.discountAmount, 37.5);
 
     const after = await prisma.coupon.findFirst({ where: { id: save10.id, restaurantId: tenantA.id } });
-    assert.equal(after.timesUsed, before.timesUsed); // validate must not consume usage
+    assert.equal(after.timesUsed, before.timesUsed);
   });
 
   test("26. validate rejects an expired code (422)", async () => {

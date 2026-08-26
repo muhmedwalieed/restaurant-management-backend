@@ -1,9 +1,5 @@
 import env from "../config/env.js";
 
-/**
- * List of Prisma models that are tenant-scoped and require explicit `restaurantId`.
- * Note: Restaurant is the tenant root itself.
- */
 const TENANT_SCOPED_MODELS = new Set([
   "Branch",
   "Employee",
@@ -35,24 +31,10 @@ const TENANT_SCOPED_MODELS = new Set([
   "AuditLog",
 ]);
 
-/**
- * Helper to check if restaurantId is defined and non-null in a target object.
- * @param {object} obj
- * @returns {boolean}
- */
 function hasRestaurantId(obj) {
   return obj !== null && typeof obj === "object" && obj.restaurantId !== undefined && obj.restaurantId !== null;
 }
 
-/**
- * Prisma Client Extension implementing the Tenant Isolation Safety-Net (Section 12.3).
- *
- * This extension acts as a developer detection / CI safety net in non-production environments
- * (development, test, ci). It inspects queries targeting tenant-scoped models and verifies that
- * `restaurantId` is explicitly provided.
- *
- * @param {import("@prisma/client").PrismaClient} client
- */
 export function applyTenantSafetyNetExtension(client) {
   if (env.NODE_ENV === "production") {
     return client;
@@ -64,7 +46,7 @@ export function applyTenantSafetyNetExtension(client) {
       $allModels: {
         async $allOperations({ model, operation, args, query }) {
           if (model && TENANT_SCOPED_MODELS.has(model)) {
-            // Case (a): Queries with `where` clauses (read / bulk operations)
+
             const isWhereQuery = [
               "findFirst",
               "findMany",
@@ -84,7 +66,6 @@ export function applyTenantSafetyNetExtension(client) {
               }
             }
 
-            // Case (b): Creation operations (create, createMany)
             if (operation === "create") {
               if (!args?.data || !hasRestaurantId(args.data)) {
                 throw new Error(
@@ -103,7 +84,6 @@ export function applyTenantSafetyNetExtension(client) {
               }
             }
 
-            // Case (c): Single-record queries / mutations (findUnique, findUniqueOrThrow, update, delete)
             const isUniqueQuery = [
               "findUnique",
               "findUniqueOrThrow",

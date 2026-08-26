@@ -1,8 +1,4 @@
-/**
- * Express unified success response helper (Section 19.4).
- * Ensures every success response returns:
- * { success: true, message?, data?, pagination?, requestId }
- */
+
 export function sendSuccess(res, { data = null, message = null, statusCode = 200, pagination = null } = {}) {
   const requestId = res.req?.requestId || res.req?.id || "N/A";
 

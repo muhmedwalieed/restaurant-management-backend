@@ -2,7 +2,6 @@ import prisma from "../../lib/prisma.js";
 import { AuthenticationError } from "../../shared/errors/index.js";
 
 export class MenuRepository {
-  // ==================== CATEGORIES ====================
 
   async findCategories(tenantContext, { page = 1, limit = 20, status } = {}) {
     if (!tenantContext || !tenantContext.restaurantId) {
@@ -148,8 +147,6 @@ export class MenuRepository {
     });
   }
 
-  // ==================== PRODUCTS ====================
-
   async findProducts(tenantContext, { page = 1, limit = 20, categoryId, isAvailable, status, search } = {}) {
     if (!tenantContext || !tenantContext.restaurantId) {
       throw new AuthenticationError("TenantContext with restaurantId is required");
@@ -191,6 +188,8 @@ export class MenuRepository {
               name: true,
               priceDelta: true,
               isRequired: true,
+              quantityMode: true,
+              maxQuantity: true,
             },
           },
         },
@@ -304,8 +303,6 @@ export class MenuRepository {
     });
   }
 
-  // ==================== PRODUCT MODIFIERS (ADD-ONS) ====================
-
   async findModifiersByProductId(tenantContext, productId) {
     const product = await this.findProductById(tenantContext, productId);
     if (!product) {
@@ -351,6 +348,8 @@ export class MenuRepository {
         name: data.name,
         priceDelta: data.priceDelta !== undefined ? data.priceDelta : 0.0,
         isRequired: Boolean(data.isRequired),
+        quantityMode: data.quantityMode || "SINGLE",
+        maxQuantity: data.maxQuantity ?? 10,
       },
     });
   }
@@ -392,8 +391,6 @@ export class MenuRepository {
       },
     });
   }
-
-  // ==================== PUBLIC MENU ====================
 
   async getPublicMenuBySlugOrId({ restaurantSlug, restaurantId }) {
     const restaurantWhere = restaurantId

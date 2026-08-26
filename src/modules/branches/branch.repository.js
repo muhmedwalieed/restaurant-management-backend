@@ -1,16 +1,15 @@
 import prisma from "../../lib/prisma.js";
 import { AuthenticationError, NotFoundError } from "../../shared/errors/index.js";
+import { getPaginationOffset } from "../../shared/utils/pagination.js";
 
 export class BranchRepository {
-  /**
-   * Lists branches for tenant with pagination and optional status filter.
-   */
+
   async findBranches(tenantContext, { page = 1, limit = 20, status } = {}) {
     if (!tenantContext || !tenantContext.restaurantId) {
       throw new AuthenticationError("TenantContext with restaurantId is required");
     }
 
-    const skip = (page - 1) * limit;
+    const { skip, take } = getPaginationOffset(page, limit);
     const where = {
       restaurantId: tenantContext.restaurantId,
       ...(status ? { status } : {}),
@@ -20,7 +19,7 @@ export class BranchRepository {
       prisma.branch.findMany({
         where,
         skip,
-        take: limit,
+        take,
         select: {
           id: true,
           restaurantId: true,
@@ -52,9 +51,6 @@ export class BranchRepository {
     return { items, total };
   }
 
-  /**
-   * Finds single branch by ID with working hours and settings.
-   */
   async findBranchById(tenantContext, branchId) {
     if (!tenantContext || !tenantContext.restaurantId) {
       throw new AuthenticationError("TenantContext with restaurantId is required");
@@ -74,9 +70,14 @@ export class BranchRepository {
     });
   }
 
-  /**
-   * Finds main branch for tenant.
-   */
+  async requireBranch(tenantContext, branchId) {
+    const branch = await this.findBranchById(tenantContext, branchId);
+    if (!branch) {
+      throw new NotFoundError("Branch not found or access denied");
+    }
+    return branch;
+  }
+
   async findMainBranch(tenantContext) {
     if (!tenantContext || !tenantContext.restaurantId) {
       throw new AuthenticationError("TenantContext with restaurantId is required");
@@ -90,9 +91,6 @@ export class BranchRepository {
     });
   }
 
-  /**
-   * Finds branch by code within tenant.
-   */
   async findBranchByCode(tenantContext, code) {
     if (!tenantContext || !tenantContext.restaurantId) {
       throw new AuthenticationError("TenantContext with restaurantId is required");
@@ -106,9 +104,6 @@ export class BranchRepository {
     });
   }
 
-  /**
-   * Creates a new branch.
-   */
   async createBranch(tenantContext, branchData) {
     if (!tenantContext || !tenantContext.restaurantId) {
       throw new AuthenticationError("TenantContext with restaurantId is required");
@@ -123,9 +118,6 @@ export class BranchRepository {
     });
   }
 
-  /**
-   * Updates a branch (ownership verified first via findBranchById).
-   */
   async updateBranch(tenantContext, branchId, data) {
     const existing = await this.findBranchById(tenantContext, branchId);
     if (!existing) {
@@ -145,9 +137,6 @@ export class BranchRepository {
     });
   }
 
-  /**
-   * Deactivates a branch (sets status to INACTIVE).
-   */
   async deactivateBranch(tenantContext, branchId) {
     const existing = await this.findBranchById(tenantContext, branchId);
     if (!existing) {
@@ -166,9 +155,6 @@ export class BranchRepository {
     });
   }
 
-  /**
-   * Hard deletes a branch (only for non-main inactive branches).
-   */
   async deleteBranch(tenantContext, branchId) {
     const existing = await this.findBranchById(tenantContext, branchId);
     if (!existing) {
@@ -183,9 +169,6 @@ export class BranchRepository {
     });
   }
 
-  /**
-   * Gets working hours for a branch.
-   */
   async getWorkingHours(tenantContext, branchId) {
     const branch = await this.findBranchById(tenantContext, branchId);
     if (!branch) {
@@ -201,9 +184,6 @@ export class BranchRepository {
     });
   }
 
-  /**
-   * Batch upserts working hours for a branch within a transaction.
-   */
   async upsertWorkingHours(tenantContext, branchId, hoursArray) {
     const restaurantId = tenantContext.restaurantId;
 
@@ -244,9 +224,6 @@ export class BranchRepository {
     });
   }
 
-  /**
-   * Gets branch settings.
-   */
   async getBranchSettings(tenantContext, branchId) {
     const branch = await this.findBranchById(tenantContext, branchId);
     if (!branch) {
@@ -261,10 +238,7 @@ export class BranchRepository {
     });
   }
 
-  /**
-   * Upserts branch settings.
-   */
-  async upsertBranchSettings(tenantContext, branchId, { currency, timezone }) {
+  async upsertBranchSettings(tenantContext, branchId, { currency, timezone, dailyOrderStartNumber }) {
     const restaurantId = tenantContext.restaurantId;
 
     return prisma.branchSettings.upsert({
@@ -275,6 +249,7 @@ export class BranchRepository {
         restaurantId,
         ...(currency !== undefined ? { currency } : {}),
         ...(timezone !== undefined ? { timezone } : {}),
+        ...(dailyOrderStartNumber !== undefined ? { dailyOrderStartNumber } : {}),
         updatedAt: new Date(),
       },
       create: {
@@ -282,6 +257,7 @@ export class BranchRepository {
         branchId,
         currency: currency || null,
         timezone: timezone || null,
+        dailyOrderStartNumber: dailyOrderStartNumber ?? 200,
       },
     });
   }

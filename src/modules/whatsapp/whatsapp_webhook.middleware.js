@@ -2,9 +2,6 @@ import whatsAppRepository from "./whatsapp.repository.js";
 import getWhatsAppProvider from "./providers/provider_factory.js";
 import { AuthenticationError, ExternalServiceError, NotFoundError } from "../../shared/errors/index.js";
 
-/**
- * Public Webhook Middleware verifying Meta WhatsApp HMAC Signature.
- */
 export async function verifyWhatsAppSignature(req, res, next) {
   try {
     const signature = req.headers["x-hub-signature-256"] || req.headers["x-hub-signature"] || "";
@@ -26,7 +23,6 @@ export async function verifyWhatsAppSignature(req, res, next) {
     const provider = getWhatsAppProvider(connection.provider);
     const secret = connection.webhookSecret || process.env.WHATSAPP_WEBHOOK_SECRET;
 
-    // Fail closed: never fall back to a predictable secret, or HMAC forgery is trivial.
     if (!secret) {
       throw new ExternalServiceError("WhatsApp webhook secret is not configured for this connection");
     }

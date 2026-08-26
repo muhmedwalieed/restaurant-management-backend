@@ -1,5 +1,4 @@
 import { Router } from "express";
-import rateLimit from "express-rate-limit";
 import orderController from "./order.controller.js";
 import {
   orderQuerySchema,
@@ -12,30 +11,14 @@ import {
   refundSchema,
   trackOrderQuerySchema,
 } from "./order.validation.js";
+import { publicOrderRateLimiter } from "../../shared/middleware/rate-limiters.js";
 import { authenticate } from "../auth/authenticate.middleware.js";
 import { authorize } from "../auth/authorize.middleware.js";
 import { requireTenantContext } from "../../shared/middleware/tenant-context.js";
 import { validate } from "../../shared/middleware/validate.js";
-import env from "../../config/env.js";
 
 const router = Router();
 
-// Public rate limiter for unauthenticated public order submissions
-const publicOrderRateLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: env.NODE_ENV === "test" ? 1000 : 30, // 30 requests per 15 minutes in production
-  message: {
-    success: false,
-    error: {
-      code: "RATE_LIMIT_EXCEEDED",
-      message: "Too many order submissions, please try again later",
-    },
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-// ==================== PUBLIC ORDER ENDPOINT (Unauthenticated) ====================
 router.post("/orders/public", publicOrderRateLimiter, validate(publicOrderSchema), (req, res, next) => {
   orderController.createPublicOrder(req, res, next);
 });
@@ -44,7 +27,6 @@ router.get("/orders/track", publicOrderRateLimiter, validate(trackOrderQuerySche
   orderController.trackOrder(req, res, next);
 });
 
-// ==================== POS ORDERING PIPELINE ====================
 const branchPosRouter = Router({ mergeParams: true });
 branchPosRouter.use(authenticate, requireTenantContext);
 
@@ -54,7 +36,15 @@ branchPosRouter.post("/", authorize("orders.create"), validate(posOrderSchema), 
 
 router.use("/branches/:branchId/pos/orders", branchPosRouter);
 
-// ==================== AUTHENTICATED BRANCH ORDERS PIPELINE ====================
+const tenantOrderRouter = Router();
+tenantOrderRouter.use(authenticate, requireTenantContext);
+
+tenantOrderRouter.get("/", authorize("orders.view"), validate(orderQuerySchema), (req, res, next) => {
+  orderController.listAllOrders(req, res, next);
+});
+
+router.use("/orders", tenantOrderRouter);
+
 const branchOrderRouter = Router({ mergeParams: true });
 branchOrderRouter.use(authenticate, requireTenantContext);
 

@@ -63,5 +63,6 @@ export const updateBranchSettingsSchema = z.object({
   body: z.object({
     currency: z.string().min(3).max(3).optional(),
     timezone: z.string().optional(),
+    dailyOrderStartNumber: z.coerce.number().int().min(1).max(99999).optional(),
   }),
 });

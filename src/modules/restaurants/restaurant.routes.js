@@ -8,7 +8,6 @@ import { validate } from "../../shared/middleware/validate.js";
 
 const router = Router();
 
-// Middleware pipeline: authenticate -> requireTenantContext
 router.use(authenticate, requireTenantContext);
 
 router.get("/", authorize("restaurants.manage"), (req, res, next) => {
