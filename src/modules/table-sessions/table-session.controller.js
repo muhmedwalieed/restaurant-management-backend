@@ -171,6 +171,24 @@ export class TableSessionController {
     }
   }
 
+  async acceptWaiterCall(req, res, next) {
+    try {
+      const result = await tableSessionService.acceptWaiterCall(req.tenantContext, req.params.id);
+      return sendSuccess(res, { message: "Waiter call accepted", data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async dismissWaiterCall(req, res, next) {
+    try {
+      const result = await tableSessionService.dismissWaiterCall(req.tenantContext, req.params.id);
+      return sendSuccess(res, { message: "Waiter call resolved", data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async listBranchSessions(req, res, next) {
     try {
       const branchId = req.tenantContext.branchId;

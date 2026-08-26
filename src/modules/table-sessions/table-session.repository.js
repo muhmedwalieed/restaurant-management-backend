@@ -30,6 +30,10 @@ export class TableSessionRepository {
           orderBy: { createdAt: "asc" },
           include: { items: { orderBy: { createdAt: "asc" } } },
         },
+        waiterCalls: {
+          where: { status: { in: ["PENDING", "ACCEPTED"] } },
+          orderBy: { createdAt: "asc" },
+        },
         table: { select: { id: true, label: true } },
       },
     });
@@ -173,9 +177,38 @@ export class TableSessionRepository {
           orderBy: { createdAt: "asc" },
           include: { items: { orderBy: { createdAt: "asc" } } },
         },
+        waiterCalls: {
+          where: { status: { in: ["PENDING", "ACCEPTED"] } },
+          orderBy: { createdAt: "asc" },
+        },
         table: { select: { id: true, label: true } },
       },
       orderBy: { updatedAt: "desc" },
+    });
+  }
+
+  async findActiveWaiterCall(sessionId, restaurantId) {
+    return prisma.tableSessionWaiterCall.findFirst({
+      where: { sessionId, restaurantId, status: { in: ["PENDING", "ACCEPTED"] } },
+      orderBy: { createdAt: "asc" },
+    });
+  }
+
+  async createWaiterCall(data) {
+    return prisma.tableSessionWaiterCall.create({ data });
+  }
+
+  async acceptWaiterCall(callId, restaurantId, employeeId) {
+    return prisma.tableSessionWaiterCall.updateMany({
+      where: { id: callId, restaurantId, status: "PENDING" },
+      data: { status: "ACCEPTED", acceptedByEmployeeId: employeeId, acceptedAt: new Date() },
+    });
+  }
+
+  async dismissWaiterCall(callId, restaurantId) {
+    return prisma.tableSessionWaiterCall.updateMany({
+      where: { id: callId, restaurantId, status: { in: ["PENDING", "ACCEPTED"] } },
+      data: { status: "DISMISSED", dismissedAt: new Date() },
     });
   }
 }

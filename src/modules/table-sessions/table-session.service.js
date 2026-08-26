@@ -235,16 +235,75 @@ export class TableSessionService {
   async callWaiter(restaurantId, sessionId, tableId, { requesterName, note }) {
     const session = await tableSessionRepository.findSessionById(restaurantId, sessionId);
     if (!session) throw new NotFoundError("Session not found");
+    if (session.status === "CLOSED") throw new BusinessRuleError("Session is closed");
+
+    const existing = await tableSessionRepository.findActiveWaiterCall(sessionId, restaurantId);
+    if (existing) {
+      throw new BusinessRuleError("A waiter call is already active for this table");
+    }
+
+    const call = await tableSessionRepository.createWaiterCall({
+      restaurantId,
+      branchId: session.branchId,
+      sessionId,
+      tableId: session.tableId || tableId,
+      memberId: session.members[0]?.id || "",
+      requesterName: requesterName || "عميل",
+      note: note || null,
+    });
+
     emitEvent(DomainEvent.TABLE_SESSION_UPDATED, {
       restaurantId,
       branchId: session.branchId,
       sessionId,
       tableId: session.tableId || tableId,
-      action: "call_waiter",
-      requesterName,
-      note,
+      action: "waiter_call",
+      callId: call.id,
+      requesterName: call.requesterName,
+      note: call.note,
     });
     return { ok: true, message: `The waiter has been called${note ? `: ${note}` : ""}` };
+  }
+
+  async acceptWaiterCall(tenantContext, sessionId) {
+    const session = await tableSessionRepository.findSessionById(tenantContext.restaurantId, sessionId);
+    if (!session) throw new NotFoundError("Session not found");
+    const call = await tableSessionRepository.findActiveWaiterCall(sessionId, tenantContext.restaurantId);
+    if (!call) throw new NotFoundError("No active waiter call for this session");
+
+    if (call.status === "ACCEPTED") {
+      throw new BusinessRuleError("This waiter call is already accepted");
+    }
+
+    await tableSessionRepository.acceptWaiterCall(call.id, tenantContext.restaurantId, tenantContext.employeeId);
+    emitEvent(DomainEvent.TABLE_SESSION_UPDATED, {
+      restaurantId: tenantContext.restaurantId,
+      branchId: session.branchId,
+      sessionId,
+      tableId: session.tableId,
+      action: "waiter_call_accepted",
+      callId: call.id,
+      acceptedByEmployeeId: tenantContext.employeeId,
+    });
+    return this.publicSession(tenantContext.restaurantId, sessionId);
+  }
+
+  async dismissWaiterCall(tenantContext, sessionId) {
+    const session = await tableSessionRepository.findSessionById(tenantContext.restaurantId, sessionId);
+    if (!session) throw new NotFoundError("Session not found");
+    const call = await tableSessionRepository.findActiveWaiterCall(sessionId, tenantContext.restaurantId);
+    if (!call) throw new NotFoundError("No active waiter call for this session");
+
+    await tableSessionRepository.dismissWaiterCall(call.id, tenantContext.restaurantId);
+    emitEvent(DomainEvent.TABLE_SESSION_UPDATED, {
+      restaurantId: tenantContext.restaurantId,
+      branchId: session.branchId,
+      sessionId,
+      tableId: session.tableId,
+      action: "waiter_call_dismissed",
+      callId: call.id,
+    });
+    return this.publicSession(tenantContext.restaurantId, sessionId);
   }
 
   async submitDraft(restaurantId, sessionId) {
@@ -456,6 +515,18 @@ export class TableSessionService {
     });
   }
 
+  waiterCallProjection(call) {
+    if (!call) return null;
+    return {
+      id: call.id,
+      status: call.status,
+      requesterName: call.requesterName,
+      note: call.note,
+      createdAt: call.createdAt,
+      acceptedAt: call.acceptedAt,
+    };
+  }
+
   orderProjection(order) {
     return {
       id: order.id,
@@ -526,6 +597,7 @@ export class TableSessionService {
       grandTotal,
       orders: ordersProjection,
       confirmedOrderId: session.confirmedOrderId,
+waiterCall: this.waiterCallProjection((session.waiterCalls || [])[0] || null),
     };
   }
 }

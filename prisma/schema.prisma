@@ -331,6 +331,7 @@ model TableSession {
   members    TableSessionMember[]
   items      TableSessionItem[]
   orders     TableSessionOrder[]
+  waiterCalls TableSessionWaiterCall[]
 
   @@index([restaurantId, tableId, status])
   @@index([restaurantId, status])
@@ -343,7 +344,8 @@ model TableSessionMember {
   name      String
   joinedAt  DateTime @default(now()) @map("joined_at")
 
-  session TableSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  session    TableSession             @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  waiterCalls TableSessionWaiterCall[]
 
   @@index([sessionId])
   @@map("table_session_members")
@@ -366,6 +368,30 @@ model TableSessionItem {
 
   @@index([sessionId])
   @@map("table_session_items")
+}
+
+model TableSessionWaiterCall {
+  id                   String    @id @default(cuid())
+  restaurantId         String    @map("restaurant_id")
+  branchId             String    @map("branch_id")
+  sessionId            String    @map("session_id")
+  tableId              String    @map("table_id")
+  memberId             String    @map("member_id")
+  requesterName        String    @map("requester_name")
+  note                 String?   @map("note")
+  status               String    @default("PENDING") @map("status") // PENDING | ACCEPTED | DISMISSED
+  acceptedByEmployeeId String?   @map("accepted_by_employee_id")
+  acceptedAt           DateTime? @map("accepted_at")
+  dismissedAt          DateTime? @map("dismissed_at")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  session TableSession       @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  member  TableSessionMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, status])
+  @@index([restaurantId, branchId, status])
+  @@map("table_session_waiter_calls")
 }
 
 model TableSessionOrder {

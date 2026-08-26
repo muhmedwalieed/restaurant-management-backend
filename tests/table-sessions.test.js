@@ -575,6 +575,73 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
     await prisma.tableSession.deleteMany({ where: { id: started.sessionId } });
     await prisma.restaurantTable.deleteMany({ where: { id: editTable.id, restaurantId: tenant.id } });
   });
+
+  test("17. Customer calls the waiter -> staff accepts -> customer sees the waiter coming", async () => {
+    const callTableRes = await fetch(`${baseUrl}/api/v1/branches/${branch.id}/tables`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${ownerToken}` },
+      body: JSON.stringify({ label: "CALL-01", capacity: 4 }),
+    });
+    const callTable = (await callTableRes.json()).data;
+
+    const start = await fetch(`${baseUrl}/api/v1/tables/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${ownerToken}` },
+      body: JSON.stringify({ tableId: callTable.id }),
+    });
+    const started = (await start.json()).data;
+
+    const join = await fetch(`${baseUrl}/api/v1/sessions/${callTable.qrToken}/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "ليلى", pin: started.pin }),
+    });
+    const joined = (await join.json()).data;
+    const memberAuth = { Authorization: `Bearer ${joined.memberToken}` };
+
+    // customer calls the waiter -> PENDING appears on the customer's session view
+    const call = await fetch(`${baseUrl}/api/v1/sessions/${started.sessionId}/call-waiter`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...memberAuth },
+      body: JSON.stringify({ requesterName: "ليلى", note: "محتاجين فاتورة" }),
+    });
+    assert.equal(call.status, 200);
+
+    const pendingView = await fetch(`${baseUrl}/api/v1/sessions/${started.sessionId}`);
+    const pending = (await pendingView.json()).data;
+    assert.equal(pending.waiterCall.status, "PENDING");
+    assert.equal(pending.waiterCall.requesterName, "ليلى");
+
+    // a second call while one is active is rejected
+    const secondCall = await fetch(`${baseUrl}/api/v1/sessions/${started.sessionId}/call-waiter`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...memberAuth },
+      body: JSON.stringify({ requesterName: "ليلى" }),
+    });
+    assert.equal(secondCall.status, 422);
+
+    // staff accepts -> customer session shows ACCEPTED
+    const accept = await fetch(`${baseUrl}/api/v1/tables/${started.sessionId}/waiter-call/accept`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${ownerToken}` },
+    });
+    assert.equal(accept.status, 200);
+    const accepted = (await accept.json()).data;
+    assert.equal(accepted.waiterCall.status, "ACCEPTED");
+    assert.ok(accepted.waiterCall.acceptedAt);
+
+    // staff resolves the call -> no active call remains
+    const dismiss = await fetch(`${baseUrl}/api/v1/tables/${started.sessionId}/waiter-call/dismiss`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${ownerToken}` },
+    });
+    assert.equal(dismiss.status, 200);
+    const dismissed = (await dismiss.json()).data;
+    assert.equal(dismissed.waiterCall, null);
+
+    await prisma.tableSession.deleteMany({ where: { id: started.sessionId } });
+    await prisma.restaurantTable.deleteMany({ where: { id: callTable.id, restaurantId: tenant.id } });
+  });
 });
 
 let sessionState = {};

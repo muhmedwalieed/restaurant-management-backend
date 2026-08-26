@@ -78,6 +78,12 @@ staffRouter.post("/:id/regenerate-pin", authorize("orders.create"), (req, res, n
 staffRouter.post("/:id/reject-order", authorize("orders.create"), (req, res, next) =>
   tableSessionController.rejectPendingOrder(req, res, next)
 );
+staffRouter.post("/:id/waiter-call/accept", authorize("orders.create"), (req, res, next) =>
+  tableSessionController.acceptWaiterCall(req, res, next)
+);
+staffRouter.post("/:id/waiter-call/dismiss", authorize("orders.create"), (req, res, next) =>
+  tableSessionController.dismissWaiterCall(req, res, next)
+);
 staffRouter.patch("/:id/items/:itemId", authorize("orders.create"), (req, res, next) =>
   tableSessionController.updateItemStaff(req, res, next)
 );
