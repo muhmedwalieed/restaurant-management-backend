@@ -379,6 +379,7 @@ model TableSessionWaiterCall {
   memberId             String    @map("member_id")
   requesterName        String    @map("requester_name")
   note                 String?   @map("note")
+  type                 String    @default("HELP") @map("type") // HELP | BILL | OTHER
   status               String    @default("PENDING") @map("status") // PENDING | ACCEPTED | DISMISSED
   acceptedByEmployeeId String?   @map("accepted_by_employee_id")
   acceptedAt           DateTime? @map("accepted_at")

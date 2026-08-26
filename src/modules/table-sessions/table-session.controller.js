@@ -1,4 +1,4 @@
-﻿import { sendSuccess } from "../../shared/utils/response.js";
+import { sendSuccess } from "../../shared/utils/response.js";
 import tableSessionService from "./table-session.service.js";
 
 export class TableSessionController {
@@ -112,10 +112,12 @@ export class TableSessionController {
   async callWaiter(req, res, next) {
     try {
       const body = req.body ?? {};
-      const { restaurantId, sessionId } = req.memberContext;
+      const { restaurantId, sessionId, memberId } = req.memberContext;
       const result = await tableSessionService.callWaiter(restaurantId, sessionId, body.tableId, {
         requesterName: body.requesterName,
         note: body.note,
+        type: body.type,
+        memberId,
       });
       return sendSuccess(res, { data: result });
     } catch (error) {

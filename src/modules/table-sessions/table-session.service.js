@@ -232,7 +232,7 @@ export class TableSessionService {
     }
   }
 
-  async callWaiter(restaurantId, sessionId, tableId, { requesterName, note }) {
+  async callWaiter(restaurantId, sessionId, tableId, { requesterName, note, type, memberId } = {}) {
     const session = await tableSessionRepository.findSessionById(restaurantId, sessionId);
     if (!session) throw new NotFoundError("Session not found");
     if (session.status === "CLOSED") throw new BusinessRuleError("Session is closed");
@@ -242,14 +242,38 @@ export class TableSessionService {
       throw new BusinessRuleError("A waiter call is already active for this table");
     }
 
+    let validMemberId = memberId;
+    if (validMemberId) {
+      const memberExists = await prisma.tableSessionMember.findFirst({
+        where: { id: validMemberId, sessionId },
+      });
+      if (!memberExists) validMemberId = null;
+    }
+    if (!validMemberId && session.members?.length > 0) {
+      validMemberId = session.members[0].id;
+    }
+    if (!validMemberId) {
+      const createdMember = await tableSessionRepository.addMember(
+        restaurantId,
+        sessionId,
+        requesterName || "عميل"
+      );
+      validMemberId = createdMember.id;
+    }
+
+    const callType = ["HELP", "BILL", "OTHER"].includes(type) ? type : "HELP";
+    const name = requesterName || session.members?.find((m) => m.id === validMemberId)?.name || "عميل";
+    const finalNote = note || (callType === "BILL" ? "طلب الفاتورة والحساب" : null);
+
     const call = await tableSessionRepository.createWaiterCall({
       restaurantId,
       branchId: session.branchId,
       sessionId,
       tableId: session.tableId || tableId,
-      memberId: session.members[0]?.id || "",
-      requesterName: requesterName || "عميل",
-      note: note || null,
+      memberId: validMemberId,
+      requesterName: name,
+      note: finalNote,
+      type: callType,
     });
 
     emitEvent(DomainEvent.TABLE_SESSION_UPDATED, {
@@ -261,8 +285,13 @@ export class TableSessionService {
       callId: call.id,
       requesterName: call.requesterName,
       note: call.note,
+      type: callType,
     });
-    return { ok: true, message: `The waiter has been called${note ? `: ${note}` : ""}` };
+    return {
+      ok: true,
+      message: callType === "BILL" ? "تم طلب الفاتورة والحساب بنجاح" : `The waiter has been called${finalNote ? `: ${finalNote}` : ""}`,
+      call: this.waiterCallProjection(call),
+    };
   }
 
   async acceptWaiterCall(tenantContext, sessionId) {
@@ -520,6 +549,7 @@ export class TableSessionService {
     return {
       id: call.id,
       status: call.status,
+      type: call.type,
       requesterName: call.requesterName,
       note: call.note,
       createdAt: call.createdAt,
