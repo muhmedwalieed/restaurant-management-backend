@@ -303,6 +303,7 @@ export class TableSessionService {
       const result = await orderService.createOrder(tenantContext, session.branchId, {
         source: "QR",
         type: "DINE_IN",
+        status: "CONFIRMED", // the waiter already confirmed it here — no second confirmation needed
         tableId: session.tableId,
         items: snapshotItems.map((s) => ({ productId: s.productId, quantity: s.quantity })),
       });

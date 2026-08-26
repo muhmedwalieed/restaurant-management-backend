@@ -218,6 +218,7 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
     });
     assert.ok(realOrder);
     assert.equal(realOrder.source, "QR");
+    assert.equal(realOrder.status, "CONFIRMED"); // waiter's confirmation is final — no second confirmation
     assert.equal(realOrder.tableId, table.id);
     assert.equal(Number(realOrder.total), 125);
   });

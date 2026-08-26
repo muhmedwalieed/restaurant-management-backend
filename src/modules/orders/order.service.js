@@ -267,6 +267,7 @@ export class OrderService {
     const orderPayload = {
       source: payload.source || "CASHIER",
       type: payload.type || "DINE_IN",
+      status: payload.status || "PENDING",
       tableId: payload.tableId || null,
       customerId: payload.customerId || null,
       couponId: payload.couponId || null,
