@@ -1,61 +1,37 @@
 import { Router } from "express";
-import rateLimit from "express-rate-limit";
 import tableSessionController from "./table-session.controller.js";
 import { requireMember } from "./require-member.middleware.js";
+import {
+  joinSessionSchema,
+  addSessionItemSchema,
+  updateSessionItemSchema,
+  callWaiterSchema,
+} from "./table-session.validation.js";
+import { tableCustomerRateLimiter } from "../../shared/middleware/rate-limiters.js";
 import { authenticate } from "../auth/authenticate.middleware.js";
 import { authorize } from "../auth/authorize.middleware.js";
 import { requireTenantContext } from "../../shared/middleware/tenant-context.js";
 import { validate } from "../../shared/middleware/validate.js";
-import { z } from "zod";
-
-const joinSchema = z.object({
-  body: z.object({ name: z.string().min(1).max(60), pin: z.string().length(4) }),
-});
-const addItemSchema = z.object({
-  body: z.object({
-    productId: z.string().min(1),
-    quantity: z.coerce.number().int().min(1),
-  }),
-});
-const updateItemSchema = z.object({
-  body: z.object({ quantity: z.coerce.number().int().min(1) }),
-});
-const callWaiterSchema = z.object({
-  body: z.object({
-    requesterName: z.string().max(60).optional(),
-    note: z.string().max(200).optional(),
-    tableId: z.string().optional(),
-    type: z.enum(["HELP", "BILL", "OTHER"]).optional(),
-  }),
-});
-
-const customerLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 60,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { success: false, error: { code: "RATE_LIMIT_EXCEEDED", message: "Too many requests" } },
-});
 
 const router = Router();
 
-router.post("/sessions/:qrToken/join", customerLimiter, validate(joinSchema), (req, res, next) =>
+router.post("/sessions/:qrToken/join", tableCustomerRateLimiter, validate(joinSessionSchema), (req, res, next) =>
   tableSessionController.joinSession(req, res, next)
 );
-router.get("/sessions/:id", customerLimiter, (req, res, next) => tableSessionController.getSession(req, res, next));
-router.post("/sessions/:id/items", requireMember, customerLimiter, validate(addItemSchema), (req, res, next) =>
+router.get("/sessions/:id", tableCustomerRateLimiter, (req, res, next) => tableSessionController.getSession(req, res, next));
+router.post("/sessions/:id/items", requireMember, tableCustomerRateLimiter, validate(addSessionItemSchema), (req, res, next) =>
   tableSessionController.addItem(req, res, next)
 );
-router.patch("/sessions/:id/items/:itemId", requireMember, customerLimiter, validate(updateItemSchema), (req, res, next) =>
+router.patch("/sessions/:id/items/:itemId", requireMember, tableCustomerRateLimiter, validate(updateSessionItemSchema), (req, res, next) =>
   tableSessionController.updateItem(req, res, next)
 );
-router.delete("/sessions/:id/items/:itemId", requireMember, customerLimiter, (req, res, next) =>
+router.delete("/sessions/:id/items/:itemId", requireMember, tableCustomerRateLimiter, (req, res, next) =>
   tableSessionController.removeItem(req, res, next)
 );
-router.post("/sessions/:id/call-waiter", requireMember, customerLimiter, validate(callWaiterSchema), (req, res, next) =>
+router.post("/sessions/:id/call-waiter", requireMember, tableCustomerRateLimiter, validate(callWaiterSchema), (req, res, next) =>
   tableSessionController.callWaiter(req, res, next)
 );
-router.post("/sessions/:id/submit", requireMember, customerLimiter, (req, res, next) =>
+router.post("/sessions/:id/submit", requireMember, tableCustomerRateLimiter, (req, res, next) =>
   tableSessionController.submitDraft(req, res, next)
 );
 

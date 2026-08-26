@@ -7,8 +7,5 @@ export function requireTenantContext(req, res, next) {
   next();
 }
 
-export function injectTenantContext(req, res, next) {
-  next();
-}
-
 export default requireTenantContext;
+

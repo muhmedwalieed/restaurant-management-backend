@@ -6,6 +6,7 @@ import {
   BusinessRuleError,
   ExternalServiceError,
 } from "../../shared/errors/index.js";
+import { paginateResponse } from "../../shared/utils/pagination.js";
 
 export class WhatsAppService {
 
@@ -108,17 +109,7 @@ export class WhatsAppService {
       q: query.q,
     });
 
-    const totalPages = Math.ceil(result.total / limit) || 1;
-
-    return {
-      items: result.items,
-      pagination: {
-        page,
-        limit,
-        total: result.total,
-        totalPages,
-      },
-    };
+    return paginateResponse(result.items, result.total, page, limit);
   }
 
   async getMessageById(tenantContext, id) {

@@ -1,6 +1,7 @@
 import customerRepository from "./customer.repository.js";
 import { ConflictError, NotFoundError } from "../../shared/errors/index.js";
 import { emitEvent, DomainEvent } from "../../shared/events/event-bus.js";
+import { paginateResponse } from "../../shared/utils/pagination.js";
 
 export class CustomerService {
 
@@ -20,17 +21,7 @@ export class CustomerService {
       limit,
       q,
     });
-
-    const totalPages = Math.ceil(total / limit) || 1;
-    return {
-      items,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages,
-      },
-    };
+    return paginateResponse(items, total, page, limit);
   }
 
   async getCustomerById(tenantContext, customerId) {
@@ -139,16 +130,7 @@ export class CustomerService {
       throw new NotFoundError("Customer not found or access denied");
     }
 
-    const totalPages = Math.ceil(result.total / limit) || 1;
-    return {
-      items: result.items,
-      pagination: {
-        page,
-        limit,
-        total: result.total,
-        totalPages,
-      },
-    };
+    return paginateResponse(result.items, result.total, page, limit);
   }
 
   async listAddresses(tenantContext, customerId) {

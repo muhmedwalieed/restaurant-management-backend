@@ -1,6 +1,6 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { requireTenantContext, injectTenantContext } from "../src/shared/middleware/tenant-context.js";
+import { requireTenantContext } from "../src/shared/middleware/tenant-context.js";
 import { AuthenticationError } from "../src/shared/errors/index.js";
 
 describe("Tenant Context Guard Middleware Tests", () => {
@@ -52,17 +52,5 @@ describe("Tenant Context Guard Middleware Tests", () => {
 
     assert.equal(nextCalled, true);
     assert.equal(req.tenantContext.restaurantId, "rest_12345");
-  });
-
-  test("injectTenantContext does not throw when token is missing", () => {
-    const req = { headers: {} };
-    const res = {};
-    let nextCalled = false;
-
-    injectTenantContext(req, res, () => {
-      nextCalled = true;
-    });
-
-    assert.equal(nextCalled, true);
   });
 });

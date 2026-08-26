@@ -1,5 +1,4 @@
 import { Router } from "express";
-import rateLimit from "express-rate-limit";
 import menuController from "./menu.controller.js";
 import {
   categoryQuerySchema,
@@ -12,27 +11,13 @@ import {
   updateModifierSchema,
   publicMenuQuerySchema,
 } from "./menu.validation.js";
+import { publicMenuRateLimiter } from "../../shared/middleware/rate-limiters.js";
 import { authenticate } from "../auth/authenticate.middleware.js";
 import { authorize, authorizeAny } from "../auth/authorize.middleware.js";
 import { requireTenantContext } from "../../shared/middleware/tenant-context.js";
 import { validate } from "../../shared/middleware/validate.js";
-import env from "../../config/env.js";
 
 const router = Router();
-
-const publicMenuRateLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: env.NODE_ENV === "test" ? 1000 : 60,
-  message: {
-    success: false,
-    error: {
-      code: "RATE_LIMIT_EXCEEDED",
-      message: "Too many requests, please try again after 15 minutes",
-    },
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
 
 router.get("/public", publicMenuRateLimiter, validate(publicMenuQuerySchema), (req, res, next) => {
   menuController.getPublicMenu(req, res, next);

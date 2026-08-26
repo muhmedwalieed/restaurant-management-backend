@@ -1,5 +1,6 @@
 import prisma from "../../lib/prisma.js";
 import { AuthenticationError, NotFoundError } from "../../shared/errors/index.js";
+import { getPaginationOffset } from "../../shared/utils/pagination.js";
 
 export class BranchRepository {
 
@@ -8,7 +9,7 @@ export class BranchRepository {
       throw new AuthenticationError("TenantContext with restaurantId is required");
     }
 
-    const skip = (page - 1) * limit;
+    const { skip, take } = getPaginationOffset(page, limit);
     const where = {
       restaurantId: tenantContext.restaurantId,
       ...(status ? { status } : {}),
@@ -18,7 +19,7 @@ export class BranchRepository {
       prisma.branch.findMany({
         where,
         skip,
-        take: limit,
+        take,
         select: {
           id: true,
           restaurantId: true,
@@ -67,6 +68,14 @@ export class BranchRepository {
         settings: true,
       },
     });
+  }
+
+  async requireBranch(tenantContext, branchId) {
+    const branch = await this.findBranchById(tenantContext, branchId);
+    if (!branch) {
+      throw new NotFoundError("Branch not found or access denied");
+    }
+    return branch;
   }
 
   async findMainBranch(tenantContext) {

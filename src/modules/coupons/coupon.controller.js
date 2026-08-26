@@ -1,72 +1,44 @@
 import couponService from "./coupon.service.js";
 import { sendSuccess } from "../../shared/utils/response.js";
+import { asyncHandler } from "../../shared/utils/async-handler.js";
 
 export class CouponController {
-  async list(req, res, next) {
-    try {
-      const query = req.validated?.query ?? req.query ?? {};
-      const page = query.page ? parseInt(query.page, 10) : 1;
-      const limit = query.limit ? Math.min(parseInt(query.limit, 10), 100) : 20;
-      const { items, pagination } = await couponService.listCoupons(req.tenantContext, {
-        page,
-        limit,
-        isActive: query.isActive,
-        type: query.type,
-        q: query.q,
-      });
-      return sendSuccess(res, { data: items, pagination });
-    } catch (error) {
-      next(error);
-    }
-  }
+  list = asyncHandler(async (req, res) => {
+    const { page, limit, isActive, type, q } = req.query;
+    const { items, pagination } = await couponService.listCoupons(req.tenantContext, {
+      page,
+      limit,
+      isActive,
+      type,
+      q,
+    });
+    return sendSuccess(res, { data: items, pagination });
+  });
 
-  async getById(req, res, next) {
-    try {
-      const coupon = await couponService.getCouponById(req.tenantContext, req.params.id);
-      return sendSuccess(res, { data: coupon });
-    } catch (error) {
-      next(error);
-    }
-  }
+  getById = asyncHandler(async (req, res) => {
+    const coupon = await couponService.getCouponById(req.tenantContext, req.params.id);
+    return sendSuccess(res, { data: coupon });
+  });
 
-  async create(req, res, next) {
-    try {
-      const body = req.validated?.body ?? req.body ?? {};
-      const coupon = await couponService.createCoupon(req.tenantContext, body);
-      return sendSuccess(res, { statusCode: 201, message: "Coupon created successfully", data: coupon });
-    } catch (error) {
-      next(error);
-    }
-  }
+  create = asyncHandler(async (req, res) => {
+    const coupon = await couponService.createCoupon(req.tenantContext, req.body);
+    return sendSuccess(res, { statusCode: 201, message: "Coupon created successfully", data: coupon });
+  });
 
-  async update(req, res, next) {
-    try {
-      const body = req.validated?.body ?? req.body ?? {};
-      const coupon = await couponService.updateCoupon(req.tenantContext, req.params.id, body);
-      return sendSuccess(res, { message: "Coupon updated successfully", data: coupon });
-    } catch (error) {
-      next(error);
-    }
-  }
+  update = asyncHandler(async (req, res) => {
+    const coupon = await couponService.updateCoupon(req.tenantContext, req.params.id, req.body);
+    return sendSuccess(res, { message: "Coupon updated successfully", data: coupon });
+  });
 
-  async remove(req, res, next) {
-    try {
-      const result = await couponService.deleteCoupon(req.tenantContext, req.params.id);
-      return sendSuccess(res, { message: result.message });
-    } catch (error) {
-      next(error);
-    }
-  }
+  remove = asyncHandler(async (req, res) => {
+    const result = await couponService.deleteCoupon(req.tenantContext, req.params.id);
+    return sendSuccess(res, { message: result.message });
+  });
 
-  async validate(req, res, next) {
-    try {
-      const body = req.validated?.body ?? req.body ?? {};
-      const result = await couponService.validateCoupon(req.tenantContext, body);
-      return sendSuccess(res, { data: result });
-    } catch (error) {
-      next(error);
-    }
-  }
+  validate = asyncHandler(async (req, res) => {
+    const result = await couponService.validateCoupon(req.tenantContext, req.body);
+    return sendSuccess(res, { data: result });
+  });
 }
 
 export const couponController = new CouponController();

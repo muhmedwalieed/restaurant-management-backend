@@ -1,105 +1,61 @@
 import employeeService from "./employee.service.js";
 import { sendSuccess } from "../../shared/utils/response.js";
+import { asyncHandler } from "../../shared/utils/async-handler.js";
 
 export class EmployeeController {
-  async listEmployees(req, res, next) {
-    try {
-      const page = req.query.page ? parseInt(req.query.page, 10) : 1;
-      const limit = req.query.limit ? Math.min(parseInt(req.query.limit, 10), 100) : 20;
-      const branchId = req.query.branchId;
-      const search = req.query.search;
-      const status = req.query.status;
-      const roleId = req.query.roleId;
-      const sort = req.query.sort;
+  listEmployees = asyncHandler(async (req, res) => {
+    const { page, limit, branchId, search, status, roleId, sort } = req.query;
+    const { items, pagination } = await employeeService.listEmployees(req.tenantContext, {
+      page,
+      limit,
+      branchId,
+      search,
+      status,
+      roleId,
+      sort,
+    });
+    return sendSuccess(res, { data: items, pagination });
+  });
 
-      const { items, pagination } = await employeeService.listEmployees(req.tenantContext, {
-        page,
-        limit,
-        branchId,
-        search,
-        status,
-        roleId,
-        sort,
-      });
+  getEmployeeById = asyncHandler(async (req, res) => {
+    const employee = await employeeService.getEmployeeById(req.tenantContext, req.params.id);
+    return sendSuccess(res, { data: employee });
+  });
 
-      return sendSuccess(res, {
-        data: items,
-        pagination,
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
+  createEmployee = asyncHandler(async (req, res) => {
+    const employee = await employeeService.createEmployee(req.tenantContext, req.body);
+    return sendSuccess(res, {
+      statusCode: 201,
+      message: "Employee created successfully",
+      data: employee,
+    });
+  });
 
-  async getEmployeeById(req, res, next) {
-    try {
-      const employee = await employeeService.getEmployeeById(req.tenantContext, req.params.id);
-      return sendSuccess(res, {
-        data: employee,
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
+  updateEmployee = asyncHandler(async (req, res) => {
+    const employee = await employeeService.updateEmployee(req.tenantContext, req.params.id, req.body);
+    return sendSuccess(res, {
+      message: "Employee updated successfully",
+      data: employee,
+    });
+  });
 
-  async createEmployee(req, res, next) {
-    try {
-      const employee = await employeeService.createEmployee(req.tenantContext, req.validated?.body ?? req.body ?? {});
-      return sendSuccess(res, {
-        statusCode: 201,
-        message: "Employee created successfully",
-        data: employee,
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
+  changePassword = asyncHandler(async (req, res) => {
+    const result = await employeeService.changePassword(req.tenantContext, req.params.id, req.body);
+    return sendSuccess(res, { message: result.message });
+  });
 
-  async updateEmployee(req, res, next) {
-    try {
-      const employee = await employeeService.updateEmployee(req.tenantContext, req.params.id, req.validated?.body ?? req.body ?? {});
-      return sendSuccess(res, {
-        message: "Employee updated successfully",
-        data: employee,
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
+  updateRole = asyncHandler(async (req, res) => {
+    const employee = await employeeService.updateRole(req.tenantContext, req.params.id, req.body.roleId);
+    return sendSuccess(res, {
+      message: "Employee role updated successfully",
+      data: employee,
+    });
+  });
 
-  async changePassword(req, res, next) {
-    try {
-      const result = await employeeService.changePassword(req.tenantContext, req.params.id, req.validated?.body ?? req.body ?? {});
-      return sendSuccess(res, {
-        message: result.message,
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  async updateRole(req, res, next) {
-    try {
-      const employee = await employeeService.updateRole(req.tenantContext, req.params.id, (req.validated?.body ?? req.body ?? {}).roleId);
-      return sendSuccess(res, {
-        message: "Employee role updated successfully",
-        data: employee,
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  async softDeleteEmployee(req, res, next) {
-    try {
-      const result = await employeeService.softDeleteEmployee(req.tenantContext, req.params.id);
-      return sendSuccess(res, {
-        message: result.message,
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
+  softDeleteEmployee = asyncHandler(async (req, res) => {
+    const result = await employeeService.softDeleteEmployee(req.tenantContext, req.params.id);
+    return sendSuccess(res, { message: result.message });
+  });
 }
 
 export const employeeController = new EmployeeController();

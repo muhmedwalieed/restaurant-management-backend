@@ -1,66 +1,37 @@
 import dashboardService from "./dashboard.service.js";
 import { sendSuccess } from "../../shared/utils/response.js";
+import { asyncHandler } from "../../shared/utils/async-handler.js";
 
 export class DashboardController {
-  async getSummary(req, res, next) {
-    try {
-      const query = req.validated?.query ?? req.query ?? {};
-      const data = await dashboardService.getSummary(req.tenantContext, query);
-      return sendSuccess(res, { data });
-    } catch (error) {
-      next(error);
-    }
-  }
+  getSummary = asyncHandler(async (req, res) => {
+    const data = await dashboardService.getSummary(req.tenantContext, req.query);
+    return sendSuccess(res, { data });
+  });
 
-  async getChannelStats(req, res, next) {
-    try {
-      const query = req.validated?.query ?? req.query ?? {};
-      const data = await dashboardService.getChannelStats(req.tenantContext, query);
-      return sendSuccess(res, { data });
-    } catch (error) {
-      next(error);
-    }
-  }
+  getChannelStats = asyncHandler(async (req, res) => {
+    const data = await dashboardService.getChannelStats(req.tenantContext, req.query);
+    return sendSuccess(res, { data });
+  });
 
-  async getOrderStatusStats(req, res, next) {
-    try {
-      const query = req.validated?.query ?? req.query ?? {};
-      const data = await dashboardService.getOrderStatusStats(req.tenantContext, query);
-      return sendSuccess(res, { data });
-    } catch (error) {
-      next(error);
-    }
-  }
+  getOrderStatusStats = asyncHandler(async (req, res) => {
+    const data = await dashboardService.getOrderStatusStats(req.tenantContext, req.query);
+    return sendSuccess(res, { data });
+  });
 
-  async getSalesTrend(req, res, next) {
-    try {
-      const query = req.validated?.query ?? req.query ?? {};
-      const data = await dashboardService.getSalesTrend(req.tenantContext, query);
-      return sendSuccess(res, { data });
-    } catch (error) {
-      next(error);
-    }
-  }
+  getSalesTrend = asyncHandler(async (req, res) => {
+    const data = await dashboardService.getSalesTrend(req.tenantContext, req.query);
+    return sendSuccess(res, { data });
+  });
 
-  async getEmployeePerformance(req, res, next) {
-    try {
-      const query = req.validated?.query ?? req.query ?? {};
-      const data = await dashboardService.getEmployeePerformance(req.tenantContext, query);
-      return sendSuccess(res, { data });
-    } catch (error) {
-      next(error);
-    }
-  }
+  getEmployeePerformance = asyncHandler(async (req, res) => {
+    const data = await dashboardService.getEmployeePerformance(req.tenantContext, req.query);
+    return sendSuccess(res, { data });
+  });
 
-  async getBranchComparison(req, res, next) {
-    try {
-      const query = req.validated?.query ?? req.query ?? {};
-      const data = await dashboardService.getBranchComparison(req.tenantContext, query);
-      return sendSuccess(res, { data });
-    } catch (error) {
-      next(error);
-    }
-  }
+  getBranchComparison = asyncHandler(async (req, res) => {
+    const data = await dashboardService.getBranchComparison(req.tenantContext, req.query);
+    return sendSuccess(res, { data });
+  });
 }
 
 export const dashboardController = new DashboardController();

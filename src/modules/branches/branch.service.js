@@ -1,5 +1,6 @@
 import branchRepository from "./branch.repository.js";
 import { BusinessRuleError, ConflictError, NotFoundError } from "../../shared/errors/index.js";
+import { paginateResponse } from "../../shared/utils/pagination.js";
 
 export class BranchService {
   async listBranches(tenantContext, { page = 1, limit = 20, status }) {
@@ -8,18 +9,7 @@ export class BranchService {
       limit,
       status,
     });
-
-    const totalPages = Math.ceil(total / limit) || 1;
-
-    return {
-      items,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages,
-      },
-    };
+    return paginateResponse(items, total, page, limit);
   }
 
   async getBranchById(tenantContext, branchId) {

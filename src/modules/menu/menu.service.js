@@ -1,5 +1,6 @@
 import menuRepository from "./menu.repository.js";
 import { BusinessRuleError, ConflictError, NotFoundError } from "../../shared/errors/index.js";
+import { paginateResponse } from "../../shared/utils/pagination.js";
 import prisma from "../../lib/prisma.js";
 import redis from "../../config/redis.js";
 import logger from "../../config/logger.js";
@@ -27,17 +28,7 @@ async function invalidateMenuCache(restaurantId) {
 export class MenuService {
   async listCategories(tenantContext, { page = 1, limit = 20, status } = {}) {
     const { items, total } = await menuRepository.findCategories(tenantContext, { page, limit, status });
-    const totalPages = Math.ceil(total / limit) || 1;
-
-    return {
-      items,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages,
-      },
-    };
+    return paginateResponse(items, total, page, limit);
   }
 
   async getCategoryById(tenantContext, categoryId) {
@@ -109,18 +100,7 @@ export class MenuService {
       status,
       search,
     });
-
-    const totalPages = Math.ceil(total / limit) || 1;
-
-    return {
-      items,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages,
-      },
-    };
+    return paginateResponse(items, total, page, limit);
   }
 
   async getProductById(tenantContext, productId) {

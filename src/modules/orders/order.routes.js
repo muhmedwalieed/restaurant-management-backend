@@ -1,5 +1,4 @@
 import { Router } from "express";
-import rateLimit from "express-rate-limit";
 import orderController from "./order.controller.js";
 import {
   orderQuerySchema,
@@ -12,27 +11,13 @@ import {
   refundSchema,
   trackOrderQuerySchema,
 } from "./order.validation.js";
+import { publicOrderRateLimiter } from "../../shared/middleware/rate-limiters.js";
 import { authenticate } from "../auth/authenticate.middleware.js";
 import { authorize } from "../auth/authorize.middleware.js";
 import { requireTenantContext } from "../../shared/middleware/tenant-context.js";
 import { validate } from "../../shared/middleware/validate.js";
-import env from "../../config/env.js";
 
 const router = Router();
-
-const publicOrderRateLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: env.NODE_ENV === "test" ? 1000 : 30,
-  message: {
-    success: false,
-    error: {
-      code: "RATE_LIMIT_EXCEEDED",
-      message: "Too many order submissions, please try again later",
-    },
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
 
 router.post("/orders/public", publicOrderRateLimiter, validate(publicOrderSchema), (req, res, next) => {
   orderController.createPublicOrder(req, res, next);

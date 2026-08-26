@@ -2,14 +2,11 @@ import kdsRepository from "./kds.repository.js";
 import branchRepository from "../branches/branch.repository.js";
 import orderService from "../orders/order.service.js";
 import { NotFoundError } from "../../shared/errors/index.js";
+import { paginateResponse } from "../../shared/utils/pagination.js";
 
 export class KdsService {
   async verifyBranchOwnership(tenantContext, branchId) {
-    const branch = await branchRepository.findBranchById(tenantContext, branchId);
-    if (!branch) {
-      throw new NotFoundError("Branch not found or access denied");
-    }
-    return branch;
+    return branchRepository.requireBranch(tenantContext, branchId);
   }
 
   async getActiveKitchenOrders(tenantContext, branchId, { page = 1, limit = 20, status } = {}) {
@@ -51,17 +48,7 @@ export class KdsService {
       };
     });
 
-    const totalPages = Math.ceil(total / limit) || 1;
-
-    return {
-      items: formattedItems,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages,
-      },
-    };
+    return paginateResponse(formattedItems, total, page, limit);
   }
 
   async updateKitchenOrderStatus(tenantContext, branchId, orderId, { newStatus, expectedVersion, reason }) {

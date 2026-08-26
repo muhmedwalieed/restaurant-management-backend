@@ -2,6 +2,7 @@ import inboxRepository from "./inbox.repository.js";
 import whatsAppService from "../whatsapp/whatsapp.service.js";
 import { emitEvent, DomainEvent } from "../../shared/events/event-bus.js";
 import { NotFoundError, BusinessRuleError } from "../../shared/errors/index.js";
+import { paginateResponse } from "../../shared/utils/pagination.js";
 
 export class InboxService {
   async listConversations(tenantContext, query = {}) {
@@ -15,11 +16,7 @@ export class InboxService {
       assignedToMe: query.assignedToMe === "true",
     });
 
-    const totalPages = Math.ceil(result.total / limit) || 1;
-    return {
-      items: result.items,
-      pagination: { page, limit, total: result.total, totalPages },
-    };
+    return paginateResponse(result.items, result.total, page, limit);
   }
 
   async getConversation(tenantContext, id) {

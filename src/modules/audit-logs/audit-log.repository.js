@@ -1,11 +1,12 @@
 import prisma from "../../lib/prisma.js";
 import { AuthenticationError } from "../../shared/errors/index.js";
+import { getPaginationOffset } from "../../shared/utils/pagination.js";
 
 export class AuditLogRepository {
 
   async findAuditLogs(tenantContext, { page = 1, limit = 20, action, entityType, entityId, actorEmployeeId, branchId, from, to } = {}) {
     this.assertTenant(tenantContext);
-    const skip = (page - 1) * limit;
+    const { skip, take } = getPaginationOffset(page, limit);
     const where = {
       restaurantId: tenantContext.restaurantId,
       ...(action ? { action } : {}),
@@ -27,7 +28,7 @@ export class AuditLogRepository {
       prisma.auditLog.findMany({
         where,
         skip,
-        take: limit,
+        take,
         include: {
           actor: { select: { id: true, name: true, email: true } },
         },

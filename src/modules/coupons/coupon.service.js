@@ -1,6 +1,7 @@
 import couponRepository from "./coupon.repository.js";
 import { BusinessRuleError, ConflictError, NotFoundError } from "../../shared/errors/index.js";
 import { AuditAction, auditLogService } from "../audit-logs/audit-log.service.js";
+import { paginateResponse } from "../../shared/utils/pagination.js";
 
 function validateCouponRules(coupon, orderSubtotal, items) {
   if (!coupon || coupon.deletedAt) {
@@ -56,11 +57,7 @@ function validateCouponRules(coupon, orderSubtotal, items) {
 export class CouponService {
   async listCoupons(tenantContext, filters) {
     const { items, total } = await couponRepository.findCoupons(tenantContext, filters);
-    const totalPages = Math.ceil(total / filters.limit) || 1;
-    return {
-      items,
-      pagination: { page: filters.page, limit: filters.limit, total, totalPages },
-    };
+    return paginateResponse(items, total, filters.page, filters.limit);
   }
 
   async getCouponById(tenantContext, couponId) {

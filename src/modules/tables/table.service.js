@@ -3,6 +3,7 @@ import tableRepository from "./table.repository.js";
 import branchRepository from "../branches/branch.repository.js";
 import menuRepository from "../menu/menu.repository.js";
 import { ConflictError, NotFoundError } from "../../shared/errors/index.js";
+import { paginateResponse } from "../../shared/utils/pagination.js";
 import env from "../../config/env.js";
 
 function generateQrToken() {
@@ -16,11 +17,7 @@ function buildQrUrl(qrToken) {
 export class TableService {
 
   async verifyBranchOwnership(tenantContext, branchId) {
-    const branch = await branchRepository.findBranchById(tenantContext, branchId);
-    if (!branch) {
-      throw new NotFoundError("Branch not found or access denied");
-    }
-    return branch;
+    return branchRepository.requireBranch(tenantContext, branchId);
   }
 
   async listTables(tenantContext, branchId, { page = 1, limit = 20, status } = {}) {
@@ -32,22 +29,12 @@ export class TableService {
       status,
     });
 
-    const totalPages = Math.ceil(total / limit) || 1;
-
     const itemsWithQrUrl = items.map((table) => ({
       ...table,
       qrUrl: buildQrUrl(table.qrToken),
     }));
 
-    return {
-      items: itemsWithQrUrl,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages,
-      },
-    };
+    return paginateResponse(itemsWithQrUrl, total, page, limit);
   }
 
   async getTableById(tenantContext, branchId, tableId) {

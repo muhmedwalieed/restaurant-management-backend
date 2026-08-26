@@ -7,6 +7,7 @@ import {
   ConflictError,
   NotFoundError,
 } from "../../shared/errors/index.js";
+import { paginateResponse } from "../../shared/utils/pagination.js";
 import prisma from "../../lib/prisma.js";
 import redis from "../../config/redis.js";
 import logger from "../../config/logger.js";
@@ -30,18 +31,7 @@ export class EmployeeService {
       roleId,
       sort,
     });
-
-    const totalPages = Math.ceil(total / limit) || 1;
-
-    return {
-      items,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages,
-      },
-    };
+    return paginateResponse(items, total, page, limit);
   }
 
   async getEmployeeById(tenantContext, id) {

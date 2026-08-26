@@ -1,6 +1,7 @@
 import notificationRepository from "./notification.repository.js";
 import { getSocketIo } from "../../lib/socket.js";
 import { NotFoundError } from "../../shared/errors/index.js";
+import { paginateResponse } from "../../shared/utils/pagination.js";
 import logger from "../../config/logger.js";
 
 export class NotificationService {
@@ -13,8 +14,7 @@ export class NotificationService {
       unreadOnly,
       type,
     });
-    const totalPages = Math.ceil(total / limit) || 1;
-    return { items, pagination: { page, limit, total, totalPages } };
+    return paginateResponse(items, total, page, limit);
   }
 
   async getUnreadCount(tenantContext) {

@@ -1,5 +1,4 @@
 import { Router } from "express";
-import rateLimit from "express-rate-limit";
 import whatsAppController from "./whatsapp.controller.js";
 import automationController from "../whatsapp-automation/automation.controller.js";
 import { verifyWhatsAppSignature } from "./whatsapp_webhook.middleware.js";
@@ -10,27 +9,13 @@ import {
   listMessagesQuerySchema,
 } from "./whatsapp.validation.js";
 import { listConversationsQuerySchema } from "../whatsapp-automation/automation.validation.js";
+import { webhookRateLimiter } from "../../shared/middleware/rate-limiters.js";
 import { authenticate } from "../auth/authenticate.middleware.js";
 import { authorize } from "../auth/authorize.middleware.js";
 import { requireTenantContext } from "../../shared/middleware/tenant-context.js";
 import { validate } from "../../shared/middleware/validate.js";
-import env from "../../config/env.js";
 
 const router = Router();
-
-const webhookRateLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: env.NODE_ENV === "test" ? 1000 : 100,
-  message: {
-    success: false,
-    error: {
-      code: "RATE_LIMIT_EXCEEDED",
-      message: "Too many webhook events, please try again later",
-    },
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
 
 router.post(
   "/webhooks/whatsapp",

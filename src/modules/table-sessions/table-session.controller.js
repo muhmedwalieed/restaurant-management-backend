@@ -1,214 +1,143 @@
 import { sendSuccess } from "../../shared/utils/response.js";
 import tableSessionService from "./table-session.service.js";
+import { asyncHandler } from "../../shared/utils/async-handler.js";
 
 export class TableSessionController {
-  async startSession(req, res, next) {
-    try {
-      const tableId = req.body?.tableId || req.params.tableId;
-      const result = await tableSessionService.startSession(req.tenantContext, tableId);
-      return sendSuccess(res, { statusCode: 201, message: "Table session started", data: result });
-    } catch (error) {
-      next(error);
-    }
-  }
+  startSession = asyncHandler(async (req, res) => {
+    const tableId = req.body?.tableId || req.params.tableId;
+    const result = await tableSessionService.startSession(req.tenantContext, tableId);
+    return sendSuccess(res, { statusCode: 201, message: "Table session started", data: result });
+  });
 
-  async joinSession(req, res, next) {
-    try {
-      const { qrToken } = req.params;
-      const body = req.body ?? {};
-      const restaurantId = await tableSessionService.resolveRestaurantId(qrToken);
-      const result = await tableSessionService.joinSession(restaurantId, qrToken, {
-        name: body.name,
-        pin: body.pin,
-      });
-      return sendSuccess(res, { message: "Joined session", data: result });
-    } catch (error) {
-      next(error);
-    }
-  }
+  joinSession = asyncHandler(async (req, res) => {
+    const { qrToken } = req.params;
+    const body = req.body ?? {};
+    const restaurantId = await tableSessionService.resolveRestaurantId(qrToken);
+    const result = await tableSessionService.joinSession(restaurantId, qrToken, {
+      name: body.name,
+      pin: body.pin,
+    });
+    return sendSuccess(res, { message: "Joined session", data: result });
+  });
 
-  async getSession(req, res, next) {
-    try {
-      const { id } = req.params;
-      const restaurantId = await tableSessionService.resolveRestaurantIdForSession(id);
-      const result = await tableSessionService.getSession(restaurantId, id);
-      return sendSuccess(res, { data: result });
-    } catch (error) {
-      next(error);
-    }
-  }
+  getSession = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const restaurantId = await tableSessionService.resolveRestaurantIdForSession(id);
+    const result = await tableSessionService.getSession(restaurantId, id);
+    return sendSuccess(res, { data: result });
+  });
 
-  async getSessionStaff(req, res, next) {
-    try {
-      const result = await tableSessionService.getStaffSession(req.tenantContext, req.params.id);
-      return sendSuccess(res, { data: result });
-    } catch (error) {
-      next(error);
-    }
-  }
+  getSessionStaff = asyncHandler(async (req, res) => {
+    const result = await tableSessionService.getStaffSession(req.tenantContext, req.params.id);
+    return sendSuccess(res, { data: result });
+  });
 
-  async addItem(req, res, next) {
-    try {
-      const body = req.body ?? {};
-      const { restaurantId, sessionId } = req.memberContext;
-      const result = await tableSessionService.addItem(restaurantId, sessionId, req.memberContext.memberId, {
-        productId: body.productId,
-        quantity: body.quantity,
-      });
-      return sendSuccess(res, { data: result });
-    } catch (error) {
-      next(error);
-    }
-  }
+  addItem = asyncHandler(async (req, res) => {
+    const body = req.body ?? {};
+    const { restaurantId, sessionId, memberId } = req.memberContext;
+    const result = await tableSessionService.addItem(restaurantId, sessionId, memberId, {
+      productId: body.productId,
+      quantity: body.quantity,
+    });
+    return sendSuccess(res, { data: result });
+  });
 
-  async updateItem(req, res, next) {
-    try {
-      const { itemId } = req.params;
-      const body = req.body ?? {};
-      const { restaurantId, sessionId } = req.memberContext;
-      const result = await tableSessionService.updateItem(restaurantId, sessionId, itemId, {
-        quantity: body.quantity,
-      });
-      return sendSuccess(res, { data: result });
-    } catch (error) {
-      next(error);
-    }
-  }
+  updateItem = asyncHandler(async (req, res) => {
+    const { itemId } = req.params;
+    const body = req.body ?? {};
+    const { restaurantId, sessionId } = req.memberContext;
+    const result = await tableSessionService.updateItem(restaurantId, sessionId, itemId, {
+      quantity: body.quantity,
+    });
+    return sendSuccess(res, { data: result });
+  });
 
-  async removeItem(req, res, next) {
-    try {
-      const { itemId } = req.params;
-      const { restaurantId, sessionId } = req.memberContext;
-      const result = await tableSessionService.removeItem(restaurantId, sessionId, itemId);
-      return sendSuccess(res, { data: result });
-    } catch (error) {
-      next(error);
-    }
-  }
+  removeItem = asyncHandler(async (req, res) => {
+    const { itemId } = req.params;
+    const { restaurantId, sessionId } = req.memberContext;
+    const result = await tableSessionService.removeItem(restaurantId, sessionId, itemId);
+    return sendSuccess(res, { data: result });
+  });
 
-  async updateItemStaff(req, res, next) {
-    try {
-      const { id, itemId } = req.params;
-      const body = req.body ?? {};
-      const result = await tableSessionService.updateItem(req.tenantContext.restaurantId, id, itemId, {
-        quantity: body.quantity,
-      });
-      return sendSuccess(res, { data: result });
-    } catch (error) {
-      next(error);
-    }
-  }
+  updateItemStaff = asyncHandler(async (req, res) => {
+    const { id, itemId } = req.params;
+    const body = req.body ?? {};
+    const result = await tableSessionService.updateItem(req.tenantContext.restaurantId, id, itemId, {
+      quantity: body.quantity,
+    });
+    return sendSuccess(res, { data: result });
+  });
 
-  async removeItemStaff(req, res, next) {
-    try {
-      const { id, itemId } = req.params;
-      const result = await tableSessionService.removeItem(req.tenantContext.restaurantId, id, itemId);
-      return sendSuccess(res, { data: result });
-    } catch (error) {
-      next(error);
-    }
-  }
+  removeItemStaff = asyncHandler(async (req, res) => {
+    const { id, itemId } = req.params;
+    const result = await tableSessionService.removeItem(req.tenantContext.restaurantId, id, itemId);
+    return sendSuccess(res, { data: result });
+  });
 
-  async callWaiter(req, res, next) {
-    try {
-      const body = req.body ?? {};
-      const { restaurantId, sessionId, memberId } = req.memberContext;
-      const result = await tableSessionService.callWaiter(restaurantId, sessionId, body.tableId, {
-        requesterName: body.requesterName,
-        note: body.note,
-        type: body.type,
-        memberId,
-      });
-      return sendSuccess(res, { data: result });
-    } catch (error) {
-      next(error);
-    }
-  }
+  callWaiter = asyncHandler(async (req, res) => {
+    const body = req.body ?? {};
+    const { restaurantId, sessionId, memberId } = req.memberContext;
+    const result = await tableSessionService.callWaiter(restaurantId, sessionId, body.tableId, {
+      requesterName: body.requesterName,
+      note: body.note,
+      type: body.type,
+      memberId,
+    });
+    return sendSuccess(res, { data: result });
+  });
 
-  async submitDraft(req, res, next) {
-    try {
-      const { restaurantId, sessionId } = req.memberContext;
-      const result = await tableSessionService.submitDraft(restaurantId, sessionId);
-      return sendSuccess(res, { data: result });
-    } catch (error) {
-      next(error);
-    }
-  }
+  submitDraft = asyncHandler(async (req, res) => {
+    const { restaurantId, sessionId } = req.memberContext;
+    const result = await tableSessionService.submitDraft(restaurantId, sessionId);
+    return sendSuccess(res, { data: result });
+  });
 
-  async confirmSession(req, res, next) {
-    try {
-      const { id } = req.params;
-      const result = await tableSessionService.confirmSession(req.tenantContext, id);
-      return sendSuccess(res, { message: "Order confirmed", data: result });
-    } catch (error) {
-      next(error);
-    }
-  }
+  confirmSession = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const result = await tableSessionService.confirmSession(req.tenantContext, id);
+    return sendSuccess(res, { message: "Order confirmed", data: result });
+  });
 
-  async closeSession(req, res, next) {
-    try {
-      const { id } = req.params;
-      const result = await tableSessionService.closeSession(req.tenantContext, id);
-      return sendSuccess(res, { message: "Session closed", data: result });
-    } catch (error) {
-      next(error);
-    }
-  }
+  closeSession = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const result = await tableSessionService.closeSession(req.tenantContext, id);
+    return sendSuccess(res, { message: "Session closed", data: result });
+  });
 
-  async regeneratePin(req, res, next) {
-    try {
-      const result = await tableSessionService.regeneratePin(req.tenantContext, req.params.id);
-      return sendSuccess(res, { message: "PIN regenerated", data: result });
-    } catch (error) {
-      next(error);
-    }
-  }
+  regeneratePin = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const result = await tableSessionService.regeneratePin(req.tenantContext, id);
+    return sendSuccess(res, { message: "PIN regenerated", data: result });
+  });
 
-  async rejectPendingOrder(req, res, next) {
-    try {
-      const result = await tableSessionService.rejectPendingOrder(req.tenantContext, req.params.id);
-      return sendSuccess(res, { message: "Order returned to customer", data: result });
-    } catch (error) {
-      next(error);
-    }
-  }
+  rejectPendingOrder = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const result = await tableSessionService.rejectPendingOrder(req.tenantContext, id);
+    return sendSuccess(res, { message: "Order returned to customer", data: result });
+  });
 
-  async acceptWaiterCall(req, res, next) {
-    try {
-      const result = await tableSessionService.acceptWaiterCall(req.tenantContext, req.params.id);
-      return sendSuccess(res, { message: "Waiter call accepted", data: result });
-    } catch (error) {
-      next(error);
-    }
-  }
+  acceptWaiterCall = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const result = await tableSessionService.acceptWaiterCall(req.tenantContext, id);
+    return sendSuccess(res, { message: "Waiter call accepted", data: result });
+  });
 
-  async dismissWaiterCall(req, res, next) {
-    try {
-      const result = await tableSessionService.dismissWaiterCall(req.tenantContext, req.params.id);
-      return sendSuccess(res, { message: "Waiter call resolved", data: result });
-    } catch (error) {
-      next(error);
-    }
-  }
+  dismissWaiterCall = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const result = await tableSessionService.dismissWaiterCall(req.tenantContext, id);
+    return sendSuccess(res, { message: "Waiter call resolved", data: result });
+  });
 
-  async listBranchSessions(req, res, next) {
-    try {
-      const branchId = req.tenantContext.branchId;
-      const result = await tableSessionService.listBranchSessions(req.tenantContext, branchId);
-      return sendSuccess(res, { data: result });
-    } catch (error) {
-      next(error);
-    }
-  }
+  listBranchSessions = asyncHandler(async (req, res) => {
+    const branchId = req.tenantContext.branchId;
+    const result = await tableSessionService.listBranchSessions(req.tenantContext, branchId);
+    return sendSuccess(res, { data: result });
+  });
 
-  async getActiveSessionForTable(req, res, next) {
-    try {
-      const result = await tableSessionService.getActiveSessionForTable(req.tenantContext, req.params.tableId);
-      return sendSuccess(res, { data: result });
-    } catch (error) {
-      next(error);
-    }
-  }
+  getActiveSessionForTable = asyncHandler(async (req, res) => {
+    const result = await tableSessionService.getActiveSessionForTable(req.tenantContext, req.params.tableId);
+    return sendSuccess(res, { data: result });
+  });
 }
 
 export const tableSessionController = new TableSessionController();

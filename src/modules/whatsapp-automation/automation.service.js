@@ -5,6 +5,7 @@ import whatsAppService from "../whatsapp/whatsapp.service.js";
 import prisma from "../../lib/prisma.js";
 import { NotFoundError, BusinessRuleError } from "../../shared/errors/index.js";
 import { emitEvent, DomainEvent } from "../../shared/events/event-bus.js";
+import { paginateResponse } from "../../shared/utils/pagination.js";
 
 const WELCOME_TEXT =
   "👋 *أهلاً بك في مطعمنا!*\nكيف يمكننا خدمتك اليوم؟\n\n" +
@@ -423,17 +424,7 @@ export class WhatsAppAutomationService {
       status: query.status,
     });
 
-    const totalPages = Math.ceil(result.total / limit) || 1;
-
-    return {
-      items: result.items,
-      pagination: {
-        page,
-        limit,
-        total: result.total,
-        totalPages,
-      },
-    };
+    return paginateResponse(result.items, result.total, page, limit);
   }
 
   async getConversationById(tenantContext, id) {

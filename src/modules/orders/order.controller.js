@@ -1,233 +1,159 @@
 import orderService from "./order.service.js";
 import { sendSuccess } from "../../shared/utils/response.js";
+import { asyncHandler } from "../../shared/utils/async-handler.js";
 
 export class OrderController {
-  async listOrders(req, res, next) {
-    try {
-      const query = req.validated?.query ?? req.query ?? {};
-      const page = query.page ? parseInt(query.page, 10) : 1;
-      const limit = query.limit ? Math.min(parseInt(query.limit, 10), 100) : 20;
+  listOrders = asyncHandler(async (req, res) => {
+    const { page, limit, status, type, source, tableId } = req.query;
+    const { items, pagination } = await orderService.listOrders(req.tenantContext, req.params.branchId, {
+      page,
+      limit,
+      status,
+      type,
+      source,
+      tableId,
+    });
+    return sendSuccess(res, { data: items, pagination });
+  });
 
-      const { items, pagination } = await orderService.listOrders(req.tenantContext, req.params.branchId, {
-        page,
-        limit,
-        status: query.status,
-        type: query.type,
-        source: query.source,
-        tableId: query.tableId,
-      });
+  listAllOrders = asyncHandler(async (req, res) => {
+    const { page, limit, status, type, source, branchId, tableId } = req.query;
+    const { items, pagination } = await orderService.listAllOrders(req.tenantContext, {
+      page,
+      limit,
+      status,
+      type,
+      source,
+      branchId,
+      tableId,
+    });
+    return sendSuccess(res, { data: items, pagination });
+  });
 
-      return sendSuccess(res, {
-        data: items,
-        pagination,
-      });
-    } catch (error) {
-      next(error);
+  getOrderById = asyncHandler(async (req, res) => {
+    const order = await orderService.getOrderById(req.tenantContext, req.params.branchId, req.params.id);
+    return sendSuccess(res, { data: order });
+  });
+
+  createOrder = asyncHandler(async (req, res) => {
+    const idempotencyKey = req.headers["idempotency-key"] || req.headers["x-idempotency-key"] || null;
+    const result = await orderService.createOrder(req.tenantContext, req.params.branchId, req.body, idempotencyKey);
+
+    if (result.isCached) {
+      return res.status(result.statusCode).json(result.data);
     }
-  }
 
-  async listAllOrders(req, res, next) {
-    try {
-      const query = req.validated?.query ?? req.query ?? {};
-      const page = query.page ? parseInt(query.page, 10) : 1;
-      const limit = query.limit ? Math.min(parseInt(query.limit, 10), 100) : 20;
+    return sendSuccess(res, {
+      statusCode: 201,
+      message: "Order created successfully",
+      data: result.data,
+    });
+  });
 
-      const { items, pagination } = await orderService.listAllOrders(req.tenantContext, {
-        page,
-        limit,
-        status: query.status,
-        type: query.type,
-        source: query.source,
-        branchId: query.branchId,
-        tableId: query.tableId,
-      });
-
-      return sendSuccess(res, {
-        data: items,
-        pagination,
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  async getOrderById(req, res, next) {
-    try {
-      const order = await orderService.getOrderById(req.tenantContext, req.params.branchId, req.params.id);
-      return sendSuccess(res, {
-        data: order,
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  async createOrder(req, res, next) {
-    try {
-      const body = req.validated?.body ?? req.body ?? {};
-      const idempotencyKey = req.headers["idempotency-key"] || req.headers["x-idempotency-key"] || null;
-
-      const result = await orderService.createOrder(req.tenantContext, req.params.branchId, body, idempotencyKey);
-
-      if (result.isCached) {
-        return res.status(result.statusCode).json(result.data);
+  updateOrderStatus = asyncHandler(async (req, res) => {
+    const { newStatus, expectedVersion, reason } = req.body;
+    const updatedOrder = await orderService.updateOrderStatus(
+      req.tenantContext,
+      req.params.branchId,
+      req.params.id,
+      {
+        newStatus,
+        expectedVersion,
+        reason,
       }
+    );
 
-      return sendSuccess(res, {
-        statusCode: 201,
-        message: "Order created successfully",
-        data: result.data,
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
+    return sendSuccess(res, {
+      message: `Order status updated to '${updatedOrder.status}'`,
+      data: updatedOrder,
+    });
+  });
 
-  async updateOrderStatus(req, res, next) {
-    try {
-      const body = req.validated?.body ?? req.body ?? {};
-      const updatedOrder = await orderService.updateOrderStatus(
-        req.tenantContext,
-        req.params.branchId,
-        req.params.id,
-        {
-          newStatus: body.newStatus,
-          expectedVersion: body.expectedVersion,
-          reason: body.reason,
-        }
-      );
-
-      return sendSuccess(res, {
-        message: `Order status updated to '${updatedOrder.status}'`,
-        data: updatedOrder,
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  async cancelOrder(req, res, next) {
-    try {
-      const body = req.validated?.body ?? req.body ?? {};
-      const cancelledOrder = await orderService.cancelOrder(
-        req.tenantContext,
-        req.params.branchId,
-        req.params.id,
-        {
-          expectedVersion: body.expectedVersion,
-          reason: body.reason,
-        }
-      );
-
-      return sendSuccess(res, {
-        message: "Order cancelled successfully",
-        data: cancelledOrder,
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  async getOrderHistory(req, res, next) {
-    try {
-      const history = await orderService.getOrderHistory(req.tenantContext, req.params.branchId, req.params.id);
-      return sendSuccess(res, {
-        data: history,
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  async createPublicOrder(req, res, next) {
-    try {
-      const body = req.validated?.body ?? req.body ?? {};
-      const idempotencyKey = req.headers["idempotency-key"] || req.headers["x-idempotency-key"] || null;
-
-      const result = await orderService.createPublicOrder(body, idempotencyKey);
-
-      if (result.isCached) {
-        return res.status(result.statusCode).json(result.data);
+  cancelOrder = asyncHandler(async (req, res) => {
+    const { expectedVersion, reason } = req.body;
+    const cancelledOrder = await orderService.cancelOrder(
+      req.tenantContext,
+      req.params.branchId,
+      req.params.id,
+      {
+        expectedVersion,
+        reason,
       }
+    );
 
-      return sendSuccess(res, {
-        statusCode: 201,
-        message: "Order submitted successfully",
-        data: result.data,
-      });
-    } catch (error) {
-      next(error);
+    return sendSuccess(res, {
+      message: "Order cancelled successfully",
+      data: cancelledOrder,
+    });
+  });
+
+  getOrderHistory = asyncHandler(async (req, res) => {
+    const history = await orderService.getOrderHistory(req.tenantContext, req.params.branchId, req.params.id);
+    return sendSuccess(res, { data: history });
+  });
+
+  createPublicOrder = asyncHandler(async (req, res) => {
+    const idempotencyKey = req.headers["idempotency-key"] || req.headers["x-idempotency-key"] || null;
+    const result = await orderService.createPublicOrder(req.body, idempotencyKey);
+
+    if (result.isCached) {
+      return res.status(result.statusCode).json(result.data);
     }
-  }
 
-  async trackOrder(req, res, next) {
-    try {
-      const query = req.validated?.query ?? req.query ?? {};
-      const order = await orderService.trackOrder(query);
-      return sendSuccess(res, { data: order });
-    } catch (error) {
-      next(error);
+    return sendSuccess(res, {
+      statusCode: 201,
+      message: "Order submitted successfully",
+      data: result.data,
+    });
+  });
+
+  trackOrder = asyncHandler(async (req, res) => {
+    const order = await orderService.trackOrder(req.query);
+    return sendSuccess(res, { data: order });
+  });
+
+  createPosOrder = asyncHandler(async (req, res) => {
+    const idempotencyKey = req.headers["idempotency-key"] || req.headers["x-idempotency-key"] || null;
+    const result = await orderService.createPosOrder(req.tenantContext, req.params.branchId, req.body, idempotencyKey);
+
+    if (result.isCached) {
+      return res.status(result.statusCode).json(result.data);
     }
-  }
 
-  async createPosOrder(req, res, next) {
-    try {
-      const body = req.validated?.body ?? req.body ?? {};
-      const idempotencyKey = req.headers["idempotency-key"] || req.headers["x-idempotency-key"] || null;
+    return sendSuccess(res, {
+      statusCode: 201,
+      message: "POS order created successfully",
+      data: result.data,
+    });
+  });
 
-      const result = await orderService.createPosOrder(req.tenantContext, req.params.branchId, body, idempotencyKey);
+  processOrderPayment = asyncHandler(async (req, res) => {
+    const paidOrder = await orderService.processOrderPayment(
+      req.tenantContext,
+      req.params.branchId,
+      req.params.id,
+      req.body
+    );
 
-      if (result.isCached) {
-        return res.status(result.statusCode).json(result.data);
-      }
+    return sendSuccess(res, {
+      message: "Order payment processed successfully",
+      data: paidOrder,
+    });
+  });
 
-      return sendSuccess(res, {
-        statusCode: 201,
-        message: "POS order created successfully",
-        data: result.data,
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
+  processOrderRefund = asyncHandler(async (req, res) => {
+    const refundedOrder = await orderService.processOrderRefund(
+      req.tenantContext,
+      req.params.branchId,
+      req.params.id,
+      req.body
+    );
 
-  async processOrderPayment(req, res, next) {
-    try {
-      const body = req.validated?.body ?? req.body ?? {};
-      const paidOrder = await orderService.processOrderPayment(
-        req.tenantContext,
-        req.params.branchId,
-        req.params.id,
-        body
-      );
-
-      return sendSuccess(res, {
-        message: "Order payment processed successfully",
-        data: paidOrder,
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  async processOrderRefund(req, res, next) {
-    try {
-      const body = req.validated?.body ?? req.body ?? {};
-      const refundedOrder = await orderService.processOrderRefund(
-        req.tenantContext,
-        req.params.branchId,
-        req.params.id,
-        body
-      );
-
-      return sendSuccess(res, {
-        message: "Order payment refunded successfully",
-        data: refundedOrder,
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
+    return sendSuccess(res, {
+      message: "Order payment refunded successfully",
+      data: refundedOrder,
+    });
+  });
 }
 
 export const orderController = new OrderController();

@@ -6,6 +6,7 @@ import { emitEvent, DomainEvent } from "../../shared/events/event-bus.js";
 import prisma from "../../lib/prisma.js";
 import { BusinessRuleError, NotFoundError, AuthorizationError } from "../../shared/errors/index.js";
 import { getEmployeePermissions } from "../auth/authorize.middleware.js";
+import { paginateResponse } from "../../shared/utils/pagination.js";
 
 function validateStateTransition(currentStatus, newStatus, orderType) {
   if (currentStatus === newStatus) {
@@ -34,11 +35,7 @@ function validateStateTransition(currentStatus, newStatus, orderType) {
 
 export class OrderService {
   async verifyBranchOwnership(tenantContext, branchId) {
-    const branch = await branchRepository.findBranchById(tenantContext, branchId);
-    if (!branch) {
-      throw new NotFoundError("Branch not found or access denied");
-    }
-    return branch;
+    return branchRepository.requireBranch(tenantContext, branchId);
   }
 
   async listOrders(tenantContext, branchId, { page = 1, limit = 20, status, type, source, tableId } = {}) {
@@ -51,17 +48,7 @@ export class OrderService {
       source,
       tableId,
     });
-
-    const totalPages = Math.ceil(total / limit) || 1;
-    return {
-      items,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages,
-      },
-    };
+    return paginateResponse(items, total, page, limit);
   }
 
   async listAllOrders(tenantContext, { page = 1, limit = 20, status, type, source, branchId, tableId } = {}) {
@@ -74,17 +61,7 @@ export class OrderService {
       branchId,
       tableId,
     });
-
-    const totalPages = Math.ceil(total / limit) || 1;
-    return {
-      items,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages,
-      },
-    };
+    return paginateResponse(items, total, page, limit);
   }
 
   async getOrderById(tenantContext, branchId, orderId) {

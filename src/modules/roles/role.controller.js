@@ -1,75 +1,44 @@
 import roleService from "./role.service.js";
 import { sendSuccess } from "../../shared/utils/response.js";
+import { asyncHandler } from "../../shared/utils/async-handler.js";
 
 export class RoleController {
-  async listRoles(req, res, next) {
-    try {
-      const roles = await roleService.listRoles(req.tenantContext);
-      return sendSuccess(res, {
-        data: roles,
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
+  listRoles = asyncHandler(async (req, res) => {
+    const roles = await roleService.listRoles(req.tenantContext);
+    return sendSuccess(res, { data: roles });
+  });
 
-  async getPermissionsCatalog(req, res, next) {
-    try {
-      const catalog = roleService.getPermissionsCatalog();
-      return sendSuccess(res, {
-        data: catalog,
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
+  getPermissionsCatalog = asyncHandler(async (req, res) => {
+    const catalog = roleService.getPermissionsCatalog();
+    return sendSuccess(res, { data: catalog });
+  });
 
-  async getRoleById(req, res, next) {
-    try {
-      const role = await roleService.getRoleById(req.tenantContext, req.params.id);
-      return sendSuccess(res, {
-        data: role,
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
+  getRoleById = asyncHandler(async (req, res) => {
+    const role = await roleService.getRoleById(req.tenantContext, req.params.id);
+    return sendSuccess(res, { data: role });
+  });
 
-  async createRole(req, res, next) {
-    try {
-      const role = await roleService.createRole(req.tenantContext, req.validated?.body ?? req.body ?? {});
-      return sendSuccess(res, {
-        statusCode: 201,
-        message: "Role created successfully",
-        data: role,
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
+  createRole = asyncHandler(async (req, res) => {
+    const role = await roleService.createRole(req.tenantContext, req.body);
+    return sendSuccess(res, {
+      statusCode: 201,
+      message: "Role created successfully",
+      data: role,
+    });
+  });
 
-  async updateRole(req, res, next) {
-    try {
-      const role = await roleService.updateRole(req.tenantContext, req.params.id, req.validated?.body ?? req.body ?? {});
-      return sendSuccess(res, {
-        message: "Role updated successfully",
-        data: role,
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
+  updateRole = asyncHandler(async (req, res) => {
+    const role = await roleService.updateRole(req.tenantContext, req.params.id, req.body);
+    return sendSuccess(res, {
+      message: "Role updated successfully",
+      data: role,
+    });
+  });
 
-  async deleteRole(req, res, next) {
-    try {
-      const result = await roleService.deleteRole(req.tenantContext, req.params.id);
-      return sendSuccess(res, {
-        message: result.message,
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
+  deleteRole = asyncHandler(async (req, res) => {
+    const result = await roleService.deleteRole(req.tenantContext, req.params.id);
+    return sendSuccess(res, { message: result.message });
+  });
 }
 
 export const roleController = new RoleController();

@@ -1,5 +1,6 @@
 import auditLogRepository from "./audit-log.repository.js";
 import { NotFoundError } from "../../shared/errors/index.js";
+import { paginateResponse } from "../../shared/utils/pagination.js";
 
 export const AuditAction = Object.freeze({
   ORDER_CREATED: "ORDER_CREATED",
@@ -21,11 +22,7 @@ export const AuditAction = Object.freeze({
 export class AuditLogService {
   async listAuditLogs(tenantContext, filters) {
     const { items, total } = await auditLogRepository.findAuditLogs(tenantContext, filters);
-    const totalPages = Math.ceil(total / filters.limit) || 1;
-    return {
-      items,
-      pagination: { page: filters.page, limit: filters.limit, total, totalPages },
-    };
+    return paginateResponse(items, total, filters.page, filters.limit);
   }
 
   async getAuditLogById(tenantContext, id) {
