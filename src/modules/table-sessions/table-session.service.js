@@ -8,6 +8,10 @@ import prisma from "../../lib/prisma.js";
 
 const PIN_LENGTH = 4;
 
+// Serializes concurrent startSession calls per table so rapid double-clicks
+// can't create two active sessions (the unique partial index is the hard guard).
+const sessionStartLocks = new Map();
+
 const LOCKOUT_LEVELS = [
   { failAfter: 3, baseSeconds: 60 },
 ];
@@ -32,42 +36,59 @@ export class TableSessionService {
   }
 
   async startSession(tenantContext, tableId) {
-    const byToken = await tableSessionRepository.findTableByQrToken(tableId, tenantContext.restaurantId);
-    const table =
-      byToken ||
-      (await prisma.restaurantTable.findFirst({
-        where: { id: tableId, restaurantId: tenantContext.restaurantId, deletedAt: null },
-      }));
-    if (!table || table.restaurantId !== tenantContext.restaurantId) {
-      throw new NotFoundError("Table not found in this restaurant");
+    const lockKey = `${tenantContext.restaurantId}:${tableId}`;
+    const inFlight = sessionStartLocks.get(lockKey);
+    if (inFlight) {
+      try {
+        await inFlight;
+      } catch {
+        /* the first attempt failed — fall through and re-check below */
+      }
     }
+    const attempt = (async () => {
+      const byToken = await tableSessionRepository.findTableByQrToken(tableId, tenantContext.restaurantId);
+      const table =
+        byToken ||
+        (await prisma.restaurantTable.findFirst({
+          where: { id: tableId, restaurantId: tenantContext.restaurantId, deletedAt: null },
+        }));
+      if (!table || table.restaurantId !== tenantContext.restaurantId) {
+        throw new NotFoundError("Table not found in this restaurant");
+      }
 
-    const existing = await tableSessionRepository.findActiveSessionByTable(tenantContext.restaurantId, table.id);
-    if (existing) {
-      throw new BusinessRuleError("This table already has an active session");
+      const existing = await tableSessionRepository.findActiveSessionByTable(tenantContext.restaurantId, table.id);
+      if (existing) {
+        throw new BusinessRuleError("This table already has an active session");
+      }
+
+      const pin = String(randomInt(0, 10000)).padStart(PIN_LENGTH, "0");
+      const pinHash = await bcrypt.hash(pin, 10);
+      const session = await tableSessionRepository.createSession(
+        tenantContext.restaurantId,
+        table.branchId,
+        table.id,
+        pinHash,
+        pin,
+        tenantContext.employeeId
+      );
+      await tableSessionRepository.setTableStatus(table.id, tenantContext.restaurantId, "OCCUPIED");
+
+      emitEvent(DomainEvent.TABLE_SESSION_UPDATED, {
+        restaurantId: tenantContext.restaurantId,
+        branchId: table.branchId,
+        sessionId: session.id,
+        tableId: table.id,
+        action: "started",
+      });
+
+      return { sessionId: session.id, pin };
+    })();
+    sessionStartLocks.set(lockKey, attempt);
+    try {
+      return await attempt;
+    } finally {
+      if (sessionStartLocks.get(lockKey) === attempt) sessionStartLocks.delete(lockKey);
     }
-
-    const pin = String(randomInt(0, 10000)).padStart(PIN_LENGTH, "0");
-    const pinHash = await bcrypt.hash(pin, 10);
-    const session = await tableSessionRepository.createSession(
-      tenantContext.restaurantId,
-      table.branchId,
-      table.id,
-      pinHash,
-      pin,
-      tenantContext.employeeId
-    );
-    await tableSessionRepository.setTableStatus(table.id, tenantContext.restaurantId, "OCCUPIED");
-
-    emitEvent(DomainEvent.TABLE_SESSION_UPDATED, {
-      restaurantId: tenantContext.restaurantId,
-      branchId: table.branchId,
-      sessionId: session.id,
-      tableId: table.id,
-      action: "started",
-    });
-
-    return { sessionId: session.id, pin };
   }
 
   async joinSession(restaurantId, tableId, { name, pin }) {

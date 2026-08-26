@@ -479,6 +479,39 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
 
     await prisma.tableSession.deleteMany({ where: { id: sessionId } });
   });
+
+  test("15. Two concurrent start requests create only ONE session per table", async () => {
+    const raceTableRes = await fetch(`${baseUrl}/api/v1/branches/${branch.id}/tables`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${ownerToken}` },
+      body: JSON.stringify({ label: "RACE-01", capacity: 2 }),
+    });
+    const raceTable = (await raceTableRes.json()).data;
+
+    const [r1, r2] = await Promise.all([
+      fetch(`${baseUrl}/api/v1/tables/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${ownerToken}` },
+        body: JSON.stringify({ tableId: raceTable.id }),
+      }),
+      fetch(`${baseUrl}/api/v1/tables/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${ownerToken}` },
+        body: JSON.stringify({ tableId: raceTable.id }),
+      }),
+    ]);
+
+    const statuses = [r1.status, r2.status].sort();
+    assert.deepEqual(statuses, [201, 422]); // one succeeds, the duplicate is rejected
+
+    const active = await prisma.tableSession.count({
+      where: { tableId: raceTable.id, restaurantId: tenant.id, status: { in: ["ACTIVE", "AWAITING_CONFIRMATION", "CONFIRMED"] } },
+    });
+    assert.equal(active, 1);
+
+    await prisma.tableSession.deleteMany({ where: { tableId: raceTable.id, restaurantId: tenant.id } });
+    await prisma.restaurantTable.deleteMany({ where: { id: raceTable.id, restaurantId: tenant.id } });
+  });
 });
 
 let sessionState = {};

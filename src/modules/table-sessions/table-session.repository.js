@@ -1,5 +1,5 @@
 import prisma from "../../lib/prisma.js";
-import { NotFoundError } from "../../shared/errors/index.js";
+import { NotFoundError, BusinessRuleError } from "../../shared/errors/index.js";
 
 export class TableSessionRepository {
   async findTableByQrToken(qrToken, restaurantId) {
@@ -16,6 +16,7 @@ export class TableSessionRepository {
   async findActiveSessionByTable(restaurantId, tableId) {
     return prisma.tableSession.findFirst({
       where: { restaurantId, tableId, status: { in: ["ACTIVE", "AWAITING_CONFIRMATION", "CONFIRMED"] } },
+      orderBy: { createdAt: "asc" },
     });
   }
 
@@ -35,9 +36,16 @@ export class TableSessionRepository {
   }
 
   async createSession(restaurantId, branchId, tableId, pinHash, pin, createdByEmployeeId) {
-    return prisma.tableSession.create({
-      data: { restaurantId, branchId, tableId, pinHash, pin, createdByEmployeeId },
-    });
+    try {
+      return await prisma.tableSession.create({
+        data: { restaurantId, branchId, tableId, pinHash, pin, createdByEmployeeId },
+      });
+    } catch (error) {
+      if (error?.code === "P2002") {
+        throw new BusinessRuleError("This table already has an active session");
+      }
+      throw error;
+    }
   }
 
   async setSessionStatus(restaurantId, sessionId, status, { confirmedOrderId = null } = {}) {
