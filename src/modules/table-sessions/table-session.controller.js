@@ -86,6 +86,29 @@ export class TableSessionController {
     }
   }
 
+  async updateItemStaff(req, res, next) {
+    try {
+      const { id, itemId } = req.params;
+      const body = req.body ?? {};
+      const result = await tableSessionService.updateItem(req.tenantContext.restaurantId, id, itemId, {
+        quantity: body.quantity,
+      });
+      return sendSuccess(res, { data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async removeItemStaff(req, res, next) {
+    try {
+      const { id, itemId } = req.params;
+      const result = await tableSessionService.removeItem(req.tenantContext.restaurantId, id, itemId);
+      return sendSuccess(res, { data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async callWaiter(req, res, next) {
     try {
       const body = req.body ?? {};

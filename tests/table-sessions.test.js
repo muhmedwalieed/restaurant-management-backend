@@ -512,6 +512,64 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
     await prisma.tableSession.deleteMany({ where: { tableId: raceTable.id, restaurantId: tenant.id } });
     await prisma.restaurantTable.deleteMany({ where: { id: raceTable.id, restaurantId: tenant.id } });
   });
+
+  test("16. Staff can edit pending-order items via staff endpoints", async () => {
+    const editTableRes = await fetch(`${baseUrl}/api/v1/branches/${branch.id}/tables`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${ownerToken}` },
+      body: JSON.stringify({ label: "EDIT-01", capacity: 4 }),
+    });
+    const editTable = (await editTableRes.json()).data;
+
+    const start = await fetch(`${baseUrl}/api/v1/tables/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${ownerToken}` },
+      body: JSON.stringify({ tableId: editTable.id }),
+    });
+    const started = (await start.json()).data;
+
+    const join = await fetch(`${baseUrl}/api/v1/sessions/${editTable.qrToken}/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "عمر", pin: started.pin }),
+    });
+    const joined = (await join.json()).data;
+    const memberAuth = { Authorization: `Bearer ${joined.memberToken}` };
+
+    await fetch(`${baseUrl}/api/v1/sessions/${started.sessionId}/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...memberAuth },
+      body: JSON.stringify({ productId: product1.id, quantity: 2 }),
+    });
+    const submitted = await fetch(`${baseUrl}/api/v1/sessions/${started.sessionId}/submit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...memberAuth },
+    });
+    const pending = (await submitted.json()).data;
+    const pendingOrder = pending.orders[0];
+    const item = pendingOrder.items[0];
+
+    // staff bumps the quantity, then removes the item entirely
+    const bump = await fetch(`${baseUrl}/api/v1/tables/${started.sessionId}/items/${item.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${ownerToken}` },
+      body: JSON.stringify({ quantity: 5 }),
+    });
+    assert.equal(bump.status, 200);
+    const bumped = (await bump.json()).data;
+    assert.equal(bumped.orders[0].items[0].quantity, 5);
+
+    const remove = await fetch(`${baseUrl}/api/v1/tables/${started.sessionId}/items/${item.id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${ownerToken}` },
+    });
+    assert.equal(remove.status, 200);
+    const afterRemove = (await remove.json()).data;
+    assert.equal(afterRemove.orders[0].items.length, 0);
+
+    await prisma.tableSession.deleteMany({ where: { id: started.sessionId } });
+    await prisma.restaurantTable.deleteMany({ where: { id: editTable.id, restaurantId: tenant.id } });
+  });
 });
 
 let sessionState = {};
