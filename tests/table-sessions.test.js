@@ -461,7 +461,7 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
     assert.equal(rejected.status, "ACTIVE");
 
     assert.equal(rejected.items.length, 1);
-    assert.equal(rejected.orders[0].status, "CANCELLED");
+    assert.equal(rejected.orders.length, 0); // returned round is removed, not counted as an order
 
     const itemId = rejected.items[0].id;
     await fetch(`${baseUrl}/api/v1/sessions/${sessionId}/items/${itemId}`, {

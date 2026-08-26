@@ -370,10 +370,11 @@ export class TableSessionService {
     const pendingOrder = await tableSessionRepository.findPendingOrder(sessionId);
     if (!pendingOrder) throw new BusinessRuleError("No order is awaiting confirmation");
 
+    // Returning the order to the customer removes the round entirely — a round only
+    // counts as an order once the waiter confirms it. So no "cancelled" order is left.
     await tableSessionRepository.unlinkOrderItems(sessionId, pendingOrder.id);
-    await prisma.tableSessionOrder.updateMany({
+    await prisma.tableSessionOrder.deleteMany({
       where: { id: pendingOrder.id, sessionId },
-      data: { status: "CANCELLED" },
     });
     await tableSessionRepository.setSessionStatus(tenantContext.restaurantId, sessionId, "ACTIVE");
 
@@ -420,7 +421,9 @@ export class TableSessionService {
         members: s.members || [],
         itemCount: currentItems.length,
         total: currentTotal,
-        grandTotal: currentTotal + ordersProjection.reduce((acc, o) => acc + Number(o.total || 0), 0),
+        grandTotal: currentTotal + ordersProjection
+        .filter((o) => o.status === "CONFIRMED")
+        .reduce((acc, o) => acc + Number(o.total || 0), 0),
         confirmedOrderId: s.confirmedOrderId,
         orders: ordersProjection,
       };
@@ -474,7 +477,9 @@ export class TableSessionService {
     const currentItems = (session.items || []).filter((i) => !i.sessionOrderId);
     const currentTotal = currentItems.reduce((s, i) => s + Number(i.unitPrice) * i.quantity, 0);
     const ordersProjection = (session.orders || []).map((o) => this.orderProjection(o));
-    const grandTotal = currentTotal + ordersProjection.reduce((acc, o) => acc + Number(o.total || 0), 0);
+    const grandTotal = currentTotal + ordersProjection
+      .filter((o) => o.status === "CONFIRMED")
+      .reduce((acc, o) => acc + Number(o.total || 0), 0);
     return {
       id: session.id,
       status: session.status,
