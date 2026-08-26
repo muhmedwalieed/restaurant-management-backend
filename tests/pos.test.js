@@ -596,6 +596,7 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
   test("16. Payment Guard: Payment on cancelled order returns 422 BusinessRuleError", async () => {
     const cancelledOrder = await prisma.order.create({
       data: {
+        orderDate: "2026-08-25",
         orderNumber: 3100,
         restaurantId: tenantA.id,
         branchId: branchA.id,

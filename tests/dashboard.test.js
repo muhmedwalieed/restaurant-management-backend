@@ -66,6 +66,7 @@ describe("Module 15 — Dashboard & Analytics Integration Tests", () => {
     const mkOrder = (orderNumber, data) =>
       prisma.order.create({
         data: {
+        orderDate: "2026-08-25",
           orderNumber,
           restaurantId: tenantA.id,
           branchId: branchA.id,
@@ -132,8 +133,8 @@ describe("Module 15 — Dashboard & Analytics Integration Tests", () => {
     const loginB = await authService.login({ email: regB.employee.email, password: "Password123!", device: "B", ipAddress: "127.0.0.1" });
     ownerBToken = loginB.accessToken;
 
-    await prisma.order.create({
-      data: { orderNumber: 5001, restaurantId: tenantB.id, branchId: branchB.id, source: "CASHIER", type: "DINE_IN", status: "DELIVERED", paymentStatus: "PAID", subtotal: 999, total: 999 },
+await prisma.order.create({
+      data: { orderNumber: 5001, restaurantId: tenantB.id, branchId: branchB.id, source: "CASHIER", type: "DINE_IN", status: "DELIVERED", paymentStatus: "PAID", subtotal: 999, total: 999, orderDate: "2026-08-25" },
     });
   });
 

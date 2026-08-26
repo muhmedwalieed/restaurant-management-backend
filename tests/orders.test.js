@@ -267,6 +267,61 @@ describe("Order Management & KDS Module Integration Tests", () => {
     createdOrder = body.data;
   });
 
+  test("1b. Order item with QUANTITY modifier computes price = base + delta × qty", async () => {
+    const qtyModifier = await prisma.productModifier.create({
+      data: {
+        restaurantId: tenantA.id,
+        productId: productA1.id,
+        name: "Extra Patty",
+        priceDelta: 3.0,
+        quantityMode: "QUANTITY",
+        maxQuantity: 4,
+      },
+    });
+
+    const freshTable = await prisma.restaurantTable.create({
+      data: {
+        restaurantId: tenantA.id,
+        branchId: branchA.id,
+        label: `T-qty-${Date.now()}`,
+        qrToken: `qr-qty-${Date.now()}`,
+      },
+    });
+
+    const res = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/orders`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${ownerAToken}`,
+      },
+      body: JSON.stringify({
+        type: "DINE_IN",
+        source: "CASHIER",
+        tableId: freshTable.id,
+        items: [
+          {
+            productId: productA1.id,
+            quantity: 1,
+            modifiers: [{ modifierId: qtyModifier.id, quantity: 3 }],
+          },
+        ],
+      }),
+    });
+
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    const item = body.data.items[0];
+    // base 15 + (3 × 3) = 24
+    assert.equal(Number(item.unitPrice), 24);
+    assert.equal(Number(item.subtotal), 24);
+    assert.equal(Number(body.data.total), 24);
+    assert.equal(item.selectedModifiers[0].quantity, 3);
+
+    await prisma.order.deleteMany({ where: { id: body.data.id, restaurantId: tenantA.id } });
+    await prisma.restaurantTable.deleteMany({ where: { id: freshTable.id, restaurantId: tenantA.id } });
+    await prisma.productModifier.deleteMany({ where: { id: qtyModifier.id, restaurantId: tenantA.id } });
+  });
+
   test("2. Idempotency Key Engine: Duplicate request with same Idempotency-Key returns cached response without duplicate creation", async () => {
     const testKey = `idem-dup-test-${Date.now()}`;
 

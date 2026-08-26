@@ -201,13 +201,14 @@ model WorkingHours {
 }
 
 model BranchSettings {
-  id           String   @id @default(cuid())
-  restaurantId String   @map("restaurant_id")
-  branchId     String   @unique @map("branch_id")
-  currency     String?
-  timezone     String?
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  id                   String   @id @default(cuid())
+  restaurantId         String   @map("restaurant_id")
+  branchId             String   @unique @map("branch_id")
+  currency             String?
+  timezone             String?
+  dailyOrderStartNumber Int      @default(200) @map("daily_order_start_number")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
 
   restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
   branch     Branch     @relation(fields: [branchId], references: [id], onDelete: Cascade)
@@ -269,6 +270,8 @@ model ProductModifier {
   name         String
   priceDelta   Decimal   @default(0.00) @map("price_delta") @db.Decimal(10, 2)
   isRequired   Boolean   @default(false) @map("is_required")
+  quantityMode String    @default("SINGLE") @map("quantity_mode") // SINGLE | QUANTITY
+  maxQuantity  Int       @default(10) @map("max_quantity")
   deletedAt    DateTime? @map("deleted_at")
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
@@ -387,6 +390,7 @@ model TableSessionOrder {
 model Order {
   id             String        @id @default(cuid())
   orderNumber    Int           @map("order_number")
+  orderDate      String        @map("order_date") // YYYY-MM-DD (branch timezone); number resets daily
   restaurantId   String        @map("restaurant_id")
   branchId       String        @map("branch_id")
   source         OrderSource   @default(CASHIER)
@@ -420,7 +424,7 @@ model Order {
   items         OrderItem[]
   statusHistory OrderStatusHistory[]
 
-  @@unique([branchId, orderNumber])
+  @@unique([branchId, orderDate, orderNumber])
   @@index([restaurantId])
   @@index([branchId])
   @@index([restaurantId, branchId, status])

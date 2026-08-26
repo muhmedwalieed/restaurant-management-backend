@@ -2,6 +2,19 @@ import prisma from "../../lib/prisma.js";
 import { AuthenticationError, ConflictError, NotFoundError } from "../../shared/errors/index.js";
 import couponService from "../coupons/coupon.service.js";
 
+function dateKeyInTimezone(date, timezone) {
+  try {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(date);
+  } catch {
+    return new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+  }
+}
+
 export class OrderRepository {
 
   async findIdempotencyKey(restaurantId, key) {
@@ -19,17 +32,18 @@ export class OrderRepository {
     });
   }
 
-  async findNextOrderNumber(restaurantId, branchId, tx = prisma) {
+  async findNextOrderNumber(restaurantId, branchId, tx = prisma, dateKey, startNumber) {
     const lastOrder = await tx.order.findFirst({
       where: {
         restaurantId,
         branchId,
+        orderDate: dateKey,
       },
       orderBy: { orderNumber: "desc" },
       select: { orderNumber: true },
     });
 
-    return (lastOrder?.orderNumber || 1000) + 1;
+    return lastOrder ? lastOrder.orderNumber + 1 : startNumber;
   }
 
   async findOrdersByBranch(tenantContext, branchId, { page = 1, limit = 20, status, type, source, tableId } = {}) {
@@ -165,12 +179,16 @@ export class OrderRepository {
   async createOrderTransaction(tenantContext, branchId, orderPayload, itemsPayload, idempotencyKey = null) {
     const restaurantId = tenantContext.restaurantId;
 
+    const settings = await prisma.branchSettings.findFirst({ where: { branchId, restaurantId } });
+    const startNumber = settings?.dailyOrderStartNumber || 200;
+    const dateKey = dateKeyInTimezone(new Date(), settings?.timezone || undefined);
+
     const MAX_RETRIES = 3;
     for (let attempt = 0; ; attempt++) {
       try {
         return await prisma.$transaction(async (tx) => {
 
-      const orderNumber = await this.findNextOrderNumber(restaurantId, branchId, tx);
+      const orderNumber = await this.findNextOrderNumber(restaurantId, branchId, tx, dateKey, startNumber);
 
       const subtotal = Number(orderPayload.subtotal);
       let discountAmount = Number(orderPayload.discountAmount || 0);
@@ -187,6 +205,7 @@ export class OrderRepository {
       const order = await tx.order.create({
         data: {
           orderNumber,
+          orderDate: dateKey,
           restaurantId,
           branchId,
           source: orderPayload.source || "CASHIER",

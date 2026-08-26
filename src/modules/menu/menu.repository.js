@@ -188,6 +188,8 @@ export class MenuRepository {
               name: true,
               priceDelta: true,
               isRequired: true,
+              quantityMode: true,
+              maxQuantity: true,
             },
           },
         },
@@ -346,6 +348,8 @@ export class MenuRepository {
         name: data.name,
         priceDelta: data.priceDelta !== undefined ? data.priceDelta : 0.0,
         isRequired: Boolean(data.isRequired),
+        quantityMode: data.quantityMode || "SINGLE",
+        maxQuantity: data.maxQuantity ?? 10,
       },
     });
   }

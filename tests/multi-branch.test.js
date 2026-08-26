@@ -218,6 +218,7 @@ describe("Module 19 — Multi-Branch Management Integration Tests", () => {
     const mkOrder = (branchId, orderNumber, total, status = "DELIVERED") =>
       prisma.order.create({
         data: {
+        orderDate: "2026-08-25",
           orderNumber,
           restaurantId: tenantA.id,
           branchId,

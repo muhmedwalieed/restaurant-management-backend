@@ -55,6 +55,7 @@ describe("Module 14 — Phone Ordering Integration Tests", () => {
     });
     await prisma.order.create({
       data: {
+        orderDate: "2026-08-25",
         orderNumber: 1001,
         restaurantId: tenantA.id,
         branchId: branchA.id,

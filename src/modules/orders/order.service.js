@@ -182,10 +182,16 @@ export class OrderService {
       let modifiersTotal = 0;
       const selectedModifiersList = [];
 
-      if (Array.isArray(itemInput.modifierIds) && itemInput.modifierIds.length > 0) {
+      const modifierSelection =
+        Array.isArray(itemInput.modifiers) && itemInput.modifiers.length > 0
+          ? itemInput.modifiers
+          : (itemInput.modifierIds || []).map((id) => ({ modifierId: id, quantity: 1 }));
+
+      if (modifierSelection.length > 0) {
+        const modifierIds = modifierSelection.map((m) => m.modifierId);
         const modifiers = await prisma.productModifier.findMany({
           where: {
-            id: { in: itemInput.modifierIds },
+            id: { in: modifierIds },
             productId: product.id,
             restaurantId,
             deletedAt: null,
@@ -193,12 +199,18 @@ export class OrderService {
         });
 
         for (const mod of modifiers) {
-          const delta = Number(mod.priceDelta);
+          const selection = modifierSelection.find((s) => s.modifierId === mod.id);
+          const quantity = Math.min(
+            Math.max(1, Number(selection?.quantity) || 1),
+            mod.quantityMode === "QUANTITY" ? mod.maxQuantity : 1
+          );
+          const delta = Number(mod.priceDelta) * quantity;
           modifiersTotal += delta;
           selectedModifiersList.push({
             id: mod.id,
             name: mod.name,
-            priceDelta: delta,
+            priceDelta: Number(mod.priceDelta),
+            quantity,
           });
         }
       }

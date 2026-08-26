@@ -229,7 +229,7 @@ export class BranchRepository {
     });
   }
 
-  async upsertBranchSettings(tenantContext, branchId, { currency, timezone }) {
+  async upsertBranchSettings(tenantContext, branchId, { currency, timezone, dailyOrderStartNumber }) {
     const restaurantId = tenantContext.restaurantId;
 
     return prisma.branchSettings.upsert({
@@ -240,6 +240,7 @@ export class BranchRepository {
         restaurantId,
         ...(currency !== undefined ? { currency } : {}),
         ...(timezone !== undefined ? { timezone } : {}),
+        ...(dailyOrderStartNumber !== undefined ? { dailyOrderStartNumber } : {}),
         updatedAt: new Date(),
       },
       create: {
@@ -247,6 +248,7 @@ export class BranchRepository {
         branchId,
         currency: currency || null,
         timezone: timezone || null,
+        dailyOrderStartNumber: dailyOrderStartNumber ?? 200,
       },
     });
   }

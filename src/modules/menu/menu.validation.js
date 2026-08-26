@@ -83,6 +83,8 @@ export const createModifierSchema = z.object({
     name: z.string().min(2, "Modifier name must be at least 2 characters"),
     priceDelta: z.coerce.number().min(0, "priceDelta cannot be negative").optional().default(0),
     isRequired: z.boolean().optional().default(false),
+    quantityMode: z.enum(["SINGLE", "QUANTITY"]).optional().default("SINGLE"),
+    maxQuantity: z.coerce.number().int().min(1).max(99).optional(),
   }),
 });
 
@@ -91,6 +93,8 @@ export const updateModifierSchema = z.object({
     name: z.string().min(2).optional(),
     priceDelta: z.coerce.number().min(0).optional(),
     isRequired: z.boolean().optional(),
+    quantityMode: z.enum(["SINGLE", "QUANTITY"]).optional(),
+    maxQuantity: z.coerce.number().int().min(1).max(99).optional(),
   }),
 });
 

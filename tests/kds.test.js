@@ -138,6 +138,7 @@ describe("Kitchen Display System (KDS) Integration Tests", () => {
 
     confirmedOrder = await prisma.order.create({
       data: {
+        orderDate: "2026-08-25",
         orderNumber: 101,
         restaurantId: tenantA.id,
         branchId: branchA.id,
@@ -164,6 +165,7 @@ describe("Kitchen Display System (KDS) Integration Tests", () => {
 
     preparingOrder = await prisma.order.create({
       data: {
+        orderDate: "2026-08-25",
         orderNumber: 102,
         restaurantId: tenantA.id,
         branchId: branchA.id,
@@ -190,6 +192,7 @@ describe("Kitchen Display System (KDS) Integration Tests", () => {
 
     readyOrder = await prisma.order.create({
       data: {
+        orderDate: "2026-08-25",
         orderNumber: 103,
         restaurantId: tenantA.id,
         branchId: branchA.id,
@@ -202,6 +205,7 @@ describe("Kitchen Display System (KDS) Integration Tests", () => {
 
     deliveredOrder = await prisma.order.create({
       data: {
+        orderDate: "2026-08-25",
         orderNumber: 104,
         restaurantId: tenantA.id,
         branchId: branchA.id,
@@ -214,6 +218,7 @@ describe("Kitchen Display System (KDS) Integration Tests", () => {
 
     cancelledOrder = await prisma.order.create({
       data: {
+        orderDate: "2026-08-25",
         orderNumber: 105,
         restaurantId: tenantA.id,
         branchId: branchA.id,

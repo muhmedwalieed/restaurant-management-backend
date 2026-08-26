@@ -380,6 +380,7 @@ describe("Customer Management & CRM Module Integration Tests", () => {
 
     customerOrderA = await prisma.order.create({
       data: {
+        orderDate: "2026-08-25",
         orderNumber: 2001,
         restaurantId: tenantA.id,
         branchId: branchA.id,

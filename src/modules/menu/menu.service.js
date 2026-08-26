@@ -177,6 +177,8 @@ export class MenuService {
       name: data.name,
       priceDelta: data.priceDelta !== undefined ? data.priceDelta : 0.0,
       isRequired: Boolean(data.isRequired),
+      quantityMode: data.quantityMode || "SINGLE",
+      maxQuantity: data.maxQuantity ?? 10,
     });
   }
 
@@ -191,6 +193,8 @@ export class MenuService {
       ...(data.name ? { name: data.name } : {}),
       ...(data.priceDelta !== undefined ? { priceDelta: data.priceDelta } : {}),
       ...(data.isRequired !== undefined ? { isRequired: Boolean(data.isRequired) } : {}),
+      ...(data.quantityMode ? { quantityMode: data.quantityMode } : {}),
+      ...(data.maxQuantity !== undefined ? { maxQuantity: data.maxQuantity } : {}),
     };
 
     await menuRepository.updateModifier(tenantContext, productId, modifierId, updatePayload);
