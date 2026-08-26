@@ -1,8 +1,30 @@
 import menuRepository from "./menu.repository.js";
 import { BusinessRuleError, ConflictError, NotFoundError } from "../../shared/errors/index.js";
+import prisma from "../../lib/prisma.js";
+import redis from "../../config/redis.js";
+import logger from "../../config/logger.js";
+
+const PUBLIC_MENU_CACHE_TTL = 600; // 10 minutes in seconds
+const inFlightMenuRequests = new Map();
+
+async function invalidateMenuCache(restaurantId) {
+  if (!restaurantId) return;
+  try {
+    const restaurant = await prisma.restaurant.findUnique({
+      where: { id: restaurantId },
+      select: { slug: true },
+    });
+    const keys = [`public_menu:id:${restaurantId}`];
+    if (restaurant?.slug) {
+      keys.push(`public_menu:slug:${restaurant.slug}`);
+    }
+    await redis.del(...keys);
+  } catch (err) {
+    logger.warn({ err: err.message, restaurantId }, "Failed to invalidate menu cache");
+  }
+}
 
 export class MenuService {
-
   async listCategories(tenantContext, { page = 1, limit = 20, status } = {}) {
     const { items, total } = await menuRepository.findCategories(tenantContext, { page, limit, status });
     const totalPages = Math.ceil(total / limit) || 1;
@@ -27,18 +49,20 @@ export class MenuService {
   }
 
   async createCategory(tenantContext, data) {
-
     const existing = await menuRepository.findCategoryByName(tenantContext, data.name);
     if (existing) {
       throw new ConflictError(`Category with name '${data.name}' already exists`);
     }
 
-    return menuRepository.createCategory(tenantContext, {
+    const created = await menuRepository.createCategory(tenantContext, {
       name: data.name,
       description: data.description || null,
       sortOrder: data.sortOrder !== undefined ? data.sortOrder : 0,
       status: data.status || "ACTIVE",
     });
+
+    await invalidateMenuCache(tenantContext.restaurantId);
+    return created;
   }
 
   async updateCategory(tenantContext, categoryId, data) {
@@ -59,6 +83,7 @@ export class MenuService {
     };
 
     await menuRepository.updateCategory(tenantContext, categoryId, updatePayload);
+    await invalidateMenuCache(tenantContext.restaurantId);
     return this.getCategoryById(tenantContext, categoryId);
   }
 
@@ -71,6 +96,7 @@ export class MenuService {
     }
 
     await menuRepository.softDeleteCategory(tenantContext, categoryId);
+    await invalidateMenuCache(tenantContext.restaurantId);
     return { message: `Category '${category.name}' deleted successfully` };
   }
 
@@ -106,7 +132,6 @@ export class MenuService {
   }
 
   async createProduct(tenantContext, data) {
-
     const category = await menuRepository.findCategoryById(tenantContext, data.categoryId);
     if (!category) {
       throw new NotFoundError("Target category not found in this restaurant");
@@ -117,7 +142,7 @@ export class MenuService {
       throw new ConflictError(`Product with name '${data.name}' already exists`);
     }
 
-    return menuRepository.createProduct(tenantContext, {
+    const created = await menuRepository.createProduct(tenantContext, {
       categoryId: data.categoryId,
       name: data.name,
       description: data.description || null,
@@ -126,6 +151,9 @@ export class MenuService {
       isAvailable: data.isAvailable !== undefined ? data.isAvailable : true,
       status: data.status || "ACTIVE",
     });
+
+    await invalidateMenuCache(tenantContext.restaurantId);
+    return created;
   }
 
   async updateProduct(tenantContext, productId, data) {
@@ -156,12 +184,14 @@ export class MenuService {
     };
 
     await menuRepository.updateProduct(tenantContext, productId, updatePayload);
+    await invalidateMenuCache(tenantContext.restaurantId);
     return this.getProductById(tenantContext, productId);
   }
 
   async deleteProduct(tenantContext, productId) {
     const product = await this.getProductById(tenantContext, productId);
     await menuRepository.softDeleteProduct(tenantContext, productId);
+    await invalidateMenuCache(tenantContext.restaurantId);
     return { message: `Product '${product.name}' deleted successfully` };
   }
 
@@ -173,13 +203,16 @@ export class MenuService {
   async createModifier(tenantContext, productId, data) {
     await this.getProductById(tenantContext, productId);
 
-    return menuRepository.createModifier(tenantContext, productId, {
+    const created = await menuRepository.createModifier(tenantContext, productId, {
       name: data.name,
       priceDelta: data.priceDelta !== undefined ? data.priceDelta : 0.0,
       isRequired: Boolean(data.isRequired),
       quantityMode: data.quantityMode || "SINGLE",
       maxQuantity: data.maxQuantity ?? 10,
     });
+
+    await invalidateMenuCache(tenantContext.restaurantId);
+    return created;
   }
 
   async updateModifier(tenantContext, productId, modifierId, data) {
@@ -198,6 +231,7 @@ export class MenuService {
     };
 
     await menuRepository.updateModifier(tenantContext, productId, modifierId, updatePayload);
+    await invalidateMenuCache(tenantContext.restaurantId);
     return menuRepository.findModifierById(tenantContext, productId, modifierId);
   }
 
@@ -209,6 +243,7 @@ export class MenuService {
     }
 
     await menuRepository.softDeleteModifier(tenantContext, productId, modifierId);
+    await invalidateMenuCache(tenantContext.restaurantId);
     return { message: "Modifier deleted successfully" };
   }
 
@@ -217,12 +252,56 @@ export class MenuService {
       throw new BusinessRuleError("Either restaurantSlug or restaurantId must be provided");
     }
 
-    const menu = await menuRepository.getPublicMenuBySlugOrId({ restaurantSlug, restaurantId });
-    if (!menu) {
-      throw new NotFoundError("Restaurant menu not found or restaurant is inactive");
+    const cacheKey = restaurantId
+      ? `public_menu:id:${restaurantId}`
+      : `public_menu:slug:${restaurantSlug}`;
+
+    try {
+      const cached = await redis.get(cacheKey);
+      if (cached) {
+        return JSON.parse(cached);
+      }
+    } catch (err) {
+      logger.warn({ err: err.message, cacheKey }, "Redis read error for public menu cache");
     }
 
-    return menu;
+    // Cache Stampede Singleflight Guard:
+    let inFlight = inFlightMenuRequests.get(cacheKey);
+    if (!inFlight) {
+      inFlight = (async () => {
+        const menu = await menuRepository.getPublicMenuBySlugOrId({ restaurantSlug, restaurantId });
+        if (!menu) {
+          throw new NotFoundError("Restaurant menu not found or restaurant is inactive");
+        }
+
+        try {
+          const serialized = JSON.stringify(menu);
+          const pipeline = redis.pipeline();
+          pipeline.set(cacheKey, serialized, "EX", PUBLIC_MENU_CACHE_TTL);
+          if (menu.restaurant?.id && menu.restaurant?.slug) {
+            const alternateKey = restaurantId
+              ? `public_menu:slug:${menu.restaurant.slug}`
+              : `public_menu:id:${menu.restaurant.id}`;
+            pipeline.set(alternateKey, serialized, "EX", PUBLIC_MENU_CACHE_TTL);
+          }
+          await pipeline.exec();
+        } catch (err) {
+          logger.warn({ err: err.message, cacheKey }, "Redis set error for public menu cache");
+        }
+
+        return menu;
+      })();
+
+      inFlightMenuRequests.set(cacheKey, inFlight);
+    }
+
+    try {
+      return await inFlight;
+    } finally {
+      if (inFlightMenuRequests.get(cacheKey) === inFlight) {
+        inFlightMenuRequests.delete(cacheKey);
+      }
+    }
   }
 }
 

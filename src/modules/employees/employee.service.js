@@ -115,12 +115,16 @@ export class EmployeeService {
       ...(data.name ? { name: data.name } : {}),
       ...(data.phone !== undefined ? { phone: data.phone } : {}),
       ...(data.branchId ? { branchId: data.branchId } : {}),
+      ...(data.status ? { status: data.status } : {}),
     });
 
     if (!updated) {
       throw new NotFoundError("Employee not found");
     }
 
+    if (data.status && data.status !== "ACTIVE") {
+      await authRepository.forceLogoutEmployee(tenantContext.restaurantId, id);
+    }
     await invalidatePermissionCache(id);
     return updated;
   }
@@ -160,7 +164,6 @@ export class EmployeeService {
   }
 
   async updateRole(tenantContext, targetId, roleId) {
-
     if (tenantContext.employeeId === targetId) {
       throw new BusinessRuleError("You cannot modify your own role");
     }
@@ -195,6 +198,7 @@ export class EmployeeService {
       throw new NotFoundError("Employee not found");
     }
 
+    await authRepository.forceLogoutEmployee(tenantContext.restaurantId, id);
     await invalidatePermissionCache(id);
     return { message: "Employee soft-deleted successfully" };
   }

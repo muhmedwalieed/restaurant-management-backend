@@ -20,20 +20,34 @@ const LOCKOUT_LEVELS = [
 export class TableSessionService {
 
   async resolveRestaurantId(qrToken) {
-
-    const row = await prisma.$queryRaw`
-      SELECT t."restaurant_id" FROM "tables" t WHERE t."qr_token" = ${qrToken} LIMIT 1
-    `;
-    if (!row || !row[0]) throw new NotFoundError("Table not found");
-    return row[0].restaurant_id;
+    const candidateRestaurant = await prisma.restaurant.findFirst({
+      where: {
+        tables: {
+          some: {
+            qrToken,
+            deletedAt: null,
+          },
+        },
+        status: "ACTIVE",
+      },
+      select: { id: true },
+    });
+    if (!candidateRestaurant) throw new NotFoundError("Table not found");
+    return candidateRestaurant.id;
   }
 
   async resolveRestaurantIdForSession(sessionId) {
-    const row = await prisma.$queryRaw`
-      SELECT s."restaurant_id" FROM "table_sessions" s WHERE s."id" = ${sessionId} LIMIT 1
-    `;
-    if (!row || !row[0]) throw new NotFoundError("Session not found");
-    return row[0].restaurant_id;
+    const candidateRestaurant = await prisma.restaurant.findFirst({
+      where: {
+        tableSessions: {
+          some: { id: sessionId },
+        },
+        status: "ACTIVE",
+      },
+      select: { id: true },
+    });
+    if (!candidateRestaurant) throw new NotFoundError("Session not found");
+    return candidateRestaurant.id;
   }
 
   async startSession(tenantContext, tableId) {

@@ -94,4 +94,13 @@ export function authorize(permissionKey) {
   return authorizeAny(permissionKey);
 }
 
+export async function invalidateEmployeePermissions(employeeId) {
+  if (!employeeId) return;
+  try {
+    await redis.del(`permissions:${employeeId}`);
+  } catch (err) {
+    logger.warn({ err: err.message, employeeId }, "Failed to invalidate employee permissions cache");
+  }
+}
+
 export default authorize;
