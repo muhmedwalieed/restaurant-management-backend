@@ -1,5 +1,3 @@
-import env from "../config/env.js";
-
 const TENANT_SCOPED_MODELS = new Set([
   "Branch",
   "Employee",
@@ -29,6 +27,9 @@ const TENANT_SCOPED_MODELS = new Set([
   "Notification",
   "NotificationPreference",
   "AuditLog",
+  // Parent session row is tenant-scoped. Child TableSession* models have no
+  // restaurantId column — isolation is via sessionId FK only.
+  "TableSession",
 ]);
 
 function hasRestaurantId(obj) {
@@ -36,17 +37,12 @@ function hasRestaurantId(obj) {
 }
 
 export function applyTenantSafetyNetExtension(client) {
-  if (env.NODE_ENV === "production") {
-    return client;
-  }
-
   return client.$extends({
     name: "tenant-safety-net",
     query: {
       $allModels: {
         async $allOperations({ model, operation, args, query }) {
           if (model && TENANT_SCOPED_MODELS.has(model)) {
-
             const isWhereQuery = [
               "findFirst",
               "findMany",
@@ -84,12 +80,9 @@ export function applyTenantSafetyNetExtension(client) {
               }
             }
 
-            const isUniqueQuery = [
-              "findUnique",
-              "findUniqueOrThrow",
-              "update",
-              "delete",
-            ].includes(operation);
+            const isUniqueQuery = ["findUnique", "findUniqueOrThrow", "update", "delete"].includes(
+              operation
+            );
 
             if (isUniqueQuery) {
               if (!args?.where || !hasRestaurantId(args.where)) {

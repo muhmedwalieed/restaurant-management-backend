@@ -24,6 +24,8 @@ export class AuthController {
       forceLogout: req.body.forceLogout,
     });
 
+    const { refreshToken, ...publicData } = data;
+
     res.cookie("accessToken", data.accessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
@@ -31,7 +33,7 @@ export class AuthController {
       maxAge: 15 * 60 * 1000,
     });
 
-    res.cookie("refreshToken", data.refreshToken, {
+    res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
@@ -40,7 +42,7 @@ export class AuthController {
 
     return sendSuccess(res, {
       message: "Login successful",
-      data,
+      data: publicData,
     });
   });
 

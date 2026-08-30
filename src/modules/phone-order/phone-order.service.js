@@ -1,16 +1,21 @@
 import phoneOrderRepository from "./phone-order.repository.js";
 import orderService from "../orders/order.service.js";
 import customerService from "../customers/customer.service.js";
+import customerRepository from "../customers/customer.repository.js";
 import branchRepository from "../branches/branch.repository.js";
 import { NotFoundError, BusinessRuleError } from "../../shared/errors/index.js";
 
 export class PhoneOrderService {
 
   async lookup(tenantContext, { phone }) {
-    const customer = await customerService.findOrCreateCustomerByPhone(tenantContext, {
-      phone,
-      name: `عميل هاتف ${phone}`,
-    });
+    const customer = await customerRepository.findCustomerByPhone(tenantContext, phone);
+    if (!customer) {
+      return {
+        customer: null,
+        defaultAddress: null,
+        recentOrders: [],
+      };
+    }
 
     const orders = await phoneOrderRepository.findRecentOrdersByCustomer(tenantContext, customer.id, 5);
     const defaultAddress = await phoneOrderRepository.findDefaultAddress(tenantContext, customer.id);

@@ -5,7 +5,7 @@ export class WhatsAppProviderInterface {
     throw new Error("verifySignature must be implemented by Provider");
   }
 
-  async sendMessage({ to, text, type = "TEXT" }) {
+  async sendMessage({ phoneNumberId, apiToken, to, text, type = "TEXT" }) {
     throw new Error("sendMessage must be implemented by Provider");
   }
 

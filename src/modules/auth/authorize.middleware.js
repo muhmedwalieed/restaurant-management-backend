@@ -2,6 +2,7 @@ import { AuthorizationError } from "../../shared/errors/index.js";
 import prisma from "../../lib/prisma.js";
 import { withCache, invalidateCacheKeys } from "../../shared/utils/cache.js";
 import logger from "../../config/logger.js";
+import { asyncHandler } from "../../shared/utils/async-handler.js";
 
 export async function getEmployeePermissions(employeeId, restaurantId) {
   const cacheKey = `permissions:${employeeId}`;
@@ -50,35 +51,31 @@ export async function getEmployeePermissions(employeeId, restaurantId) {
 }
 
 export function authorizeAny(...permissionKeys) {
-  return async (req, res, next) => {
-    try {
-      if (!req.tenantContext || !req.tenantContext.employeeId || !req.tenantContext.restaurantId) {
-        throw new AuthorizationError("Tenant context required for authorization check");
-      }
-
-      const { employeeId, restaurantId } = req.tenantContext;
-      const { roleName, isSystem, permissions } = await getEmployeePermissions(employeeId, restaurantId);
-
-      if (isSystem && roleName === "owner") {
-        return next();
-      }
-
-      const allowed = permissionKeys.some((key) => permissions.includes(key));
-      if (!allowed) {
-        logger.warn(
-          { employeeId, requiredPermissions: permissionKeys, roleName },
-          "Authorization failure: insufficient permissions"
-        );
-        throw new AuthorizationError(
-          `One of '${permissionKeys.join("', '")}' permissions is required to perform this action`
-        );
-      }
-
-      next();
-    } catch (error) {
-      next(error);
+  return asyncHandler(async (req, res, next) => {
+    if (!req.tenantContext || !req.tenantContext.employeeId || !req.tenantContext.restaurantId) {
+      throw new AuthorizationError("Tenant context required for authorization check");
     }
-  };
+
+    const { employeeId, restaurantId } = req.tenantContext;
+    const { roleName, isSystem, permissions } = await getEmployeePermissions(employeeId, restaurantId);
+
+    if (isSystem && roleName === "owner") {
+      return next();
+    }
+
+    const allowed = permissionKeys.some((key) => permissions.includes(key));
+    if (!allowed) {
+      logger.warn(
+        { employeeId, requiredPermissions: permissionKeys, roleName },
+        "Authorization failure: insufficient permissions"
+      );
+      throw new AuthorizationError(
+        `One of '${permissionKeys.join("', '")}' permissions is required to perform this action`
+      );
+    }
+
+    next();
+  });
 }
 
 export function authorize(permissionKey) {

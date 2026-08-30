@@ -1,9 +1,9 @@
 import crypto from "crypto";
 import tableRepository from "./table.repository.js";
-import branchRepository from "../branches/branch.repository.js";
 import menuService from "../menu/menu.service.js";
 import { ConflictError, NotFoundError } from "../../shared/errors/index.js";
 import { paginateResponse } from "../../shared/utils/pagination.js";
+import { assertBranchInTenant } from "../../shared/utils/assert-branch.js";
 import env from "../../config/env.js";
 
 function generateQrToken() {
@@ -16,7 +16,7 @@ function buildQrUrl(qrToken) {
 
 export class TableService {
   async verifyBranchOwnership(tenantContext, branchId) {
-    return branchRepository.requireBranch(tenantContext, branchId);
+    return assertBranchInTenant(tenantContext, branchId);
   }
 
   async listTables(tenantContext, branchId, { page = 1, limit = 20, status } = {}) {

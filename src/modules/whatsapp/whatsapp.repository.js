@@ -1,8 +1,8 @@
 import prisma from "../../lib/prisma.js";
-import { assertTenantContext } from "../../shared/middleware/tenant-context.js";
-import { getPaginationOffset } from "../../shared/utils/pagination.js";
+import { BaseRepository, assertTenantContext, getPaginationOffset } from "../../shared/repositories/base.repository.js";
+import { encrypt, decrypt } from "../../shared/utils/crypto.js";
 
-export class WhatsAppRepository {
+export class WhatsAppRepository extends BaseRepository {
   async findConnectionByTenant(tenantContext) {
     assertTenantContext(tenantContext);
 
@@ -62,8 +62,41 @@ export class WhatsAppRepository {
     });
   }
 
+  async findConnectionByVerifyToken(verifyToken) {
+    if (!verifyToken) return null;
+
+    const candidateRestaurant = await prisma.restaurant.findFirst({
+      where: {
+        whatsappConnections: {
+          some: {
+            verifyToken,
+            status: "ACTIVE",
+          },
+        },
+        status: "ACTIVE",
+      },
+    });
+
+    if (!candidateRestaurant) return null;
+
+    return prisma.whatsAppConnection.findFirst({
+      where: {
+        restaurantId: candidateRestaurant.id,
+        verifyToken,
+        status: "ACTIVE",
+      },
+    });
+  }
+
   async createConnectionTransaction(tenantContext, connectionData) {
     const restaurantId = tenantContext.restaurantId;
+
+    const encryptedApiToken = connectionData.apiToken
+      ? encrypt(connectionData.apiToken)
+      : null;
+    const encryptedWebhookSecret = connectionData.webhookSecret
+      ? encrypt(connectionData.webhookSecret)
+      : null;
 
     return prisma.$transaction(async (tx) => {
       if (connectionData.status === "ACTIVE" || connectionData.status === undefined) {
@@ -86,7 +119,9 @@ export class WhatsAppRepository {
           providerAccountId: connectionData.providerAccountId,
           providerPhoneNumberId: connectionData.providerPhoneNumberId,
           displayName: connectionData.displayName || null,
-          webhookSecret: connectionData.webhookSecret || null,
+          apiToken: encryptedApiToken,
+          webhookSecret: encryptedWebhookSecret,
+          verifyToken: connectionData.verifyToken || null,
           status: connectionData.status || "ACTIVE",
         },
       });
@@ -95,6 +130,14 @@ export class WhatsAppRepository {
 
   async updateConnectionTransaction(tenantContext, connectionId, data) {
     const restaurantId = tenantContext.restaurantId;
+
+    const updateData = { ...data };
+    if ("apiToken" in data) {
+      updateData.apiToken = data.apiToken ? encrypt(data.apiToken) : null;
+    }
+    if ("webhookSecret" in data) {
+      updateData.webhookSecret = data.webhookSecret ? encrypt(data.webhookSecret) : null;
+    }
 
     return prisma.$transaction(async (tx) => {
       if (data.status === "ACTIVE") {
@@ -117,7 +160,7 @@ export class WhatsAppRepository {
           restaurantId,
         },
         data: {
-          ...data,
+          ...updateData,
           updatedAt: new Date(),
         },
       });

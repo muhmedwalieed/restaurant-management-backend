@@ -217,6 +217,7 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
     assert.ok(order.orderId, "real order id should be set");
     assert.ok(order.confirmedAt);
     assert.equal(s.confirmedOrderId, order.orderId);
+    sessionState.confirmedOrderId = s.confirmedOrderId;
 
     const realOrder = await prisma.order.findFirst({
       where: { id: order.orderId, restaurantId: tenant.id },
@@ -286,7 +287,13 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
   });
 
   test("9. Items of a confirmed order round cannot be edited", async () => {
-    const s = (await (await fetch(`${baseUrl}/api/v1/sessions/${sessionState.sessionId}`)).json()).data;
+    const s = (
+      await (
+        await fetch(`${baseUrl}/api/v1/sessions/${sessionState.sessionId}`, {
+          headers: { Authorization: `Bearer ${sessionState.tokenA}` },
+        })
+      ).json()
+    ).data;
     const confirmedOrder = s.orders[0];
     const itemId = confirmedOrder.items[0].id;
 
@@ -299,7 +306,25 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
     assert.equal((await res.json()).error.code, "BUSINESS_RULE_ERROR");
   });
 
-  test("10. Closing the session locks ordering; submit after close is rejected", async () => {
+  test("10. Closing the session requires paying linked order; locks ordering afterwards", async () => {
+    const unpaidx = await fetch(`${baseUrl}/api/v1/tables/${sessionState.sessionId}/close`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${ownerToken}` },
+    });
+    assert.equal(unpaidx.status, 422);
+    const unpaidBody = await unpaidx.json();
+    assert.equal(unpaidBody.error.code, "BUSINESS_RULE_ERROR");
+
+    const order = await prisma.order.findFirst({
+      where: { id: sessionState.confirmedOrderId, restaurantId: tenant.id },
+    });
+    const pay = await fetch(`${baseUrl}/api/v1/branches/${branch.id}/orders/${order.id}/payment`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${ownerToken}` },
+      body: JSON.stringify({ paymentMethod: "CASH", amount: Number(order.total), expectedVersion: order.version }),
+    });
+    assert.equal(pay.status, 200);
+
     const close = await fetch(`${baseUrl}/api/v1/tables/${sessionState.sessionId}/close`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${ownerToken}` },
@@ -319,8 +344,7 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
     assert.equal(sub.status, 422);
   });
 
-  test("11. Staff endpoint returns the session PIN; public endpoint never leaks it", async () => {
-
+  test("11. PIN is returned only at start/regenerate; public GET requires member auth and never leaks PIN", async () => {
     const start = await fetch(`${baseUrl}/api/v1/tables/start`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${ownerToken}` },
@@ -335,14 +359,27 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
     });
     assert.equal(staff.status, 200);
     const staffBody = await staff.json();
-    assert.equal(staffBody.data.pin, started.pin);
+    assert.equal(staffBody.data.pin, undefined);
 
-    const pub = await fetch(`${baseUrl}/api/v1/sessions/${started.sessionId}`);
+    const unauth = await fetch(`${baseUrl}/api/v1/sessions/${started.sessionId}`);
+    assert.equal(unauth.status, 401);
+
+    const join = await fetch(`${baseUrl}/api/v1/sessions/${table.qrToken}/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "ضيف", pin: started.pin }),
+    });
+    assert.equal(join.status, 200);
+    const memberToken = (await join.json()).data.memberToken;
+
+    const pub = await fetch(`${baseUrl}/api/v1/sessions/${started.sessionId}`, {
+      headers: { Authorization: `Bearer ${memberToken}` },
+    });
     assert.equal(pub.status, 200);
     const pubBody = await pub.json();
     assert.equal(pubBody.data.pin, undefined);
 
-    await prisma.tableSession.deleteMany({ where: { id: started.sessionId } });
+    await prisma.tableSession.deleteMany({ where: { id: started.sessionId, restaurantId: tenant.id } });
   });
 
   test("12. Staff can regenerate a PIN for an open session (fixes legacy null-pin sessions)", async () => {
@@ -353,7 +390,7 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
     });
     const started = (await start.json()).data;
 
-    await prisma.tableSession.update({ where: { id: started.sessionId }, data: { pin: null } });
+    await prisma.tableSession.update({ where: { id: started.sessionId, restaurantId: tenant.id }, data: { pin: null } });
 
     const regen = await fetch(`${baseUrl}/api/v1/tables/${started.sessionId}/regenerate-pin`, {
       method: "POST",
@@ -369,9 +406,10 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
       headers: { Authorization: `Bearer ${ownerToken}` },
     });
     const staffBody = await staff.json();
-    assert.equal(staffBody.data.pin, regenBody.data.pin);
+    assert.equal(staffBody.data.pin, undefined);
+    assert.ok(staffBody.data.id);
 
-    await prisma.tableSession.deleteMany({ where: { id: started.sessionId } });
+    await prisma.tableSession.deleteMany({ where: { id: started.sessionId, restaurantId: tenant.id } });
   });
 
   test("13. Cart quantity update and item removal work on an open session", async () => {
@@ -418,7 +456,7 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
     assert.equal(rm.status, 200);
     assert.equal((await rm.json()).data.items.length, 0);
 
-    await prisma.tableSession.deleteMany({ where: { id: sessionId } });
+    await prisma.tableSession.deleteMany({ where: { id: sessionId, restaurantId: tenant.id } });
   });
 
   test("13a. Item mutations require a valid member token (401 without one)", async () => {
@@ -482,7 +520,7 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
     assert.equal(resub.status, 200);
     assert.equal((await resub.json()).data.status, "AWAITING_CONFIRMATION");
 
-    await prisma.tableSession.deleteMany({ where: { id: sessionId } });
+    await prisma.tableSession.deleteMany({ where: { id: sessionId, restaurantId: tenant.id } });
   });
 
   test("15. Two concurrent start requests create only ONE session per table", async () => {
@@ -572,7 +610,7 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
     const afterRemove = (await remove.json()).data;
     assert.equal(afterRemove.orders[0].items.length, 0);
 
-    await prisma.tableSession.deleteMany({ where: { id: started.sessionId } });
+    await prisma.tableSession.deleteMany({ where: { id: started.sessionId, restaurantId: tenant.id } });
     await prisma.restaurantTable.deleteMany({ where: { id: editTable.id, restaurantId: tenant.id } });
   });
 
@@ -607,7 +645,9 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
     });
     assert.equal(call.status, 200);
 
-    const pendingView = await fetch(`${baseUrl}/api/v1/sessions/${started.sessionId}`);
+    const pendingView = await fetch(`${baseUrl}/api/v1/sessions/${started.sessionId}`, {
+      headers: memberAuth,
+    });
     const pending = (await pendingView.json()).data;
     assert.equal(pending.waiterCall.status, "PENDING");
     assert.equal(pending.waiterCall.requesterName, "ليلى");
@@ -639,7 +679,7 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
     const dismissed = (await dismiss.json()).data;
     assert.equal(dismissed.waiterCall, null);
 
-    await prisma.tableSession.deleteMany({ where: { id: started.sessionId } });
+    await prisma.tableSession.deleteMany({ where: { id: started.sessionId, restaurantId: tenant.id } });
     await prisma.restaurantTable.deleteMany({ where: { id: callTable.id, restaurantId: tenant.id } });
   });
 });

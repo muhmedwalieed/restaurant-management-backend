@@ -1,6 +1,7 @@
 import { sendSuccess } from "../../shared/utils/response.js";
 import tableSessionService from "./table-session.service.js";
 import { asyncHandler } from "../../shared/utils/async-handler.js";
+import { AuthenticationError } from "../../shared/errors/index.js";
 
 export class TableSessionController {
   startSession = asyncHandler(async (req, res) => {
@@ -22,8 +23,10 @@ export class TableSessionController {
 
   getSession = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const restaurantId = await tableSessionService.resolveRestaurantIdForSession(id);
-    const result = await tableSessionService.getSession(restaurantId, id);
+    if (req.memberContext.sessionId !== id) {
+      throw new AuthenticationError("Session token does not match requested session");
+    }
+    const result = await tableSessionService.getSession(req.memberContext.restaurantId, id);
     return sendSuccess(res, { data: result });
   });
 

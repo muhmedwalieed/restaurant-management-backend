@@ -2,7 +2,12 @@ import bcrypt from "bcrypt";
 import { randomInt } from "crypto";
 import tableSessionRepository from "./table-session.repository.js";
 import { emitEvent, DomainEvent } from "../../shared/events/event-bus.js";
-import { NotFoundError, ValidationError, BusinessRuleError } from "../../shared/errors/index.js";
+import {
+  NotFoundError,
+  ValidationError,
+  BusinessRuleError,
+  ConflictError,
+} from "../../shared/errors/index.js";
 import { signAccessToken } from "../../utils/jwt.js";
 import env from "../../config/env.js";
 import prisma from "../../lib/prisma.js";
@@ -16,6 +21,8 @@ const sessionStartLocks = new Map();
 const LOCKOUT_LEVELS = [
   { failAfter: 3, baseSeconds: 60 },
 ];
+
+const APPENDABLE_ORDER_STATUSES = ["PENDING", "CONFIRMED", "PREPARING", "READY"];
 
 export class TableSessionService {
 
@@ -83,7 +90,7 @@ export class TableSessionService {
         table.branchId,
         table.id,
         pinHash,
-        pin,
+        null,
         tenantContext.employeeId
       );
       await tableSessionRepository.setTableStatus(table.id, tenantContext.restaurantId, "OCCUPIED");
@@ -375,89 +382,153 @@ export class TableSessionService {
   }
 
   async confirmSession(tenantContext, sessionId) {
-    const session = await tableSessionRepository.findSessionById(tenantContext.restaurantId, sessionId);
+    const restaurantId = tenantContext.restaurantId;
+    const session = await tableSessionRepository.findSessionById(restaurantId, sessionId);
     if (!session) throw new NotFoundError("Session not found");
     if (session.status === "CLOSED") throw new BusinessRuleError("Session is closed");
 
-    const pendingOrder = await tableSessionRepository.findPendingOrder(sessionId);
-    if (!pendingOrder) throw new BusinessRuleError("No order is awaiting confirmation");
-    if (pendingOrder.items.length === 0) throw new BusinessRuleError("Cannot confirm an empty order");
+    const orderRepository = (await import("../orders/order.repository.js")).default;
 
-    const snapshotItems = [];
-    for (const i of pendingOrder.items) {
-      const product = await prisma.product.findFirst({
-        where: {
-          id: i.productId,
-          restaurantId: tenantContext.restaurantId,
-          isAvailable: true,
-          status: "ACTIVE",
-          deletedAt: null,
-        },
-      });
-      if (!product) throw new NotFoundError(`Product '${i.productId}' not found or unavailable`);
-      const unitPrice = Number(product.price);
-      snapshotItems.push({
-        productId: product.id,
-        productName: product.name,
-        quantity: i.quantity,
-        unitPrice,
-        subtotal: unitPrice * i.quantity,
-        notes: null,
-        selectedModifiers: null,
-        round: pendingOrder.orderNumber,
-      });
-    }
+    let pendingOrderNumber = null;
+    let realOrderId = null;
 
-    const existingOrder = session.confirmedOrderId
-      ? await prisma.order.findFirst({
-          where: { id: session.confirmedOrderId, restaurantId: tenantContext.restaurantId },
-        })
-      : null;
-    const canAppend =
-      existingOrder && ["PENDING", "CONFIRMED", "PREPARING", "READY"].includes(existingOrder.status);
+    await prisma.$transaction(
+      async (tx) => {
+        const locked = await tx.$queryRaw`
+          SELECT id, session_id AS "sessionId", order_number AS "orderNumber", status, total
+          FROM table_session_orders
+          WHERE session_id = ${sessionId} AND status = 'AWAITING_CONFIRMATION'
+          FOR UPDATE
+        `;
+        const pendingMeta = locked?.[0];
+        if (!pendingMeta) throw new BusinessRuleError("No order is awaiting confirmation");
 
-    let realOrderId;
-    if (canAppend) {
-      const orderRepository = (await import("../orders/order.repository.js")).default;
-      realOrderId = await orderRepository.appendItemsToOrder(
-        tenantContext,
-        session.branchId,
-        existingOrder.id,
-        snapshotItems
-      );
-    } else {
-      const orderService = (await import("../orders/order.service.js")).default;
-      const result = await orderService.createOrder(tenantContext, session.branchId, {
-        source: "QR",
-        type: "DINE_IN",
-        status: "CONFIRMED", // the waiter already confirmed it here — no second confirmation needed
-        tableId: session.tableId,
-        items: snapshotItems.map((s) => ({ productId: s.productId, quantity: s.quantity })),
-      });
-      realOrderId = result.data.id;
-    }
+        const pendingOrder = await tx.tableSessionOrder.findFirst({
+          where: { id: pendingMeta.id, sessionId },
+          include: { items: { orderBy: { createdAt: "asc" } } },
+        });
+        if (!pendingOrder || pendingOrder.items.length === 0) {
+          throw new BusinessRuleError("Cannot confirm an empty order");
+        }
+        pendingOrderNumber = pendingOrder.orderNumber;
 
-    const total = pendingOrder.items.reduce((acc, i) => acc + Number(i.unitPrice) * i.quantity, 0);
-    await tableSessionRepository.confirmOrder(sessionId, pendingOrder.id, realOrderId, total);
-    await tableSessionRepository.setSessionStatus(tenantContext.restaurantId, sessionId, "ACTIVE", {
-      confirmedOrderId: realOrderId,
-    });
+        const productIds = [...new Set(pendingOrder.items.map((i) => i.productId))];
+        const products = await tx.product.findMany({
+          where: {
+            id: { in: productIds },
+            restaurantId,
+            isAvailable: true,
+            status: "ACTIVE",
+            deletedAt: null,
+          },
+        });
+        const productById = new Map(products.map((p) => [p.id, p]));
+
+        const snapshotItems = [];
+        for (const i of pendingOrder.items) {
+          const product = productById.get(i.productId);
+          if (!product) throw new NotFoundError(`Product '${i.productId}' not found or unavailable`);
+          const unitPrice = Number(product.price);
+          snapshotItems.push({
+            productId: product.id,
+            productName: product.name,
+            quantity: i.quantity,
+            unitPrice,
+            subtotal: unitPrice * i.quantity,
+            notes: null,
+            selectedModifiers: null,
+            round: pendingOrder.orderNumber,
+          });
+        }
+
+        const existingOrder = session.confirmedOrderId
+          ? await tx.order.findFirst({
+              where: { id: session.confirmedOrderId, restaurantId },
+            })
+          : null;
+
+        const canAppend =
+          existingOrder &&
+          APPENDABLE_ORDER_STATUSES.includes(existingOrder.status) &&
+          existingOrder.paymentStatus === "PENDING";
+
+        if (canAppend) {
+          realOrderId = await orderRepository.appendItemsToOrder(
+            tenantContext,
+            session.branchId,
+            existingOrder.id,
+            snapshotItems,
+            tx
+          );
+        } else {
+          const subtotal = snapshotItems.reduce((acc, s) => acc + Number(s.subtotal), 0);
+          const created = await orderRepository.createOrderTransaction(
+            tenantContext,
+            session.branchId,
+            {
+              source: "QR",
+              type: "DINE_IN",
+              status: "CONFIRMED",
+              tableId: session.tableId,
+              subtotal,
+              discountAmount: 0,
+            },
+            snapshotItems,
+            null,
+            tx
+          );
+          realOrderId = created.id;
+        }
+
+        const total = pendingOrder.items.reduce((acc, i) => acc + Number(i.unitPrice) * i.quantity, 0);
+        const confirmedCount = await tableSessionRepository.confirmOrder(
+          sessionId,
+          pendingOrder.id,
+          realOrderId,
+          total,
+          tx
+        );
+        if (confirmedCount === 0) {
+          throw new ConflictError("Session order was already confirmed by another request");
+        }
+
+        await tx.tableSession.updateMany({
+          where: { id: sessionId, restaurantId },
+          data: {
+            status: "ACTIVE",
+            confirmedOrderId: realOrderId,
+          },
+        });
+      },
+      { timeout: 20000 }
+    );
 
     emitEvent(DomainEvent.TABLE_SESSION_UPDATED, {
-      restaurantId: tenantContext.restaurantId,
+      restaurantId,
       branchId: session.branchId,
       sessionId,
       tableId: session.tableId,
       action: "confirmed",
       orderId: realOrderId,
-      orderNumber: pendingOrder.orderNumber,
+      orderNumber: pendingOrderNumber,
     });
-    return this.publicSession(tenantContext.restaurantId, sessionId);
+    return this.publicSession(restaurantId, sessionId);
   }
 
   async closeSession(tenantContext, sessionId) {
     const session = await tableSessionRepository.findSessionById(tenantContext.restaurantId, sessionId);
     if (!session) throw new NotFoundError("Session not found");
+    if (session.status === "CLOSED") throw new BusinessRuleError("Session is closed");
+
+    if (session.confirmedOrderId) {
+      const order = await prisma.order.findFirst({
+        where: { id: session.confirmedOrderId, restaurantId: tenantContext.restaurantId },
+      });
+      if (order && order.paymentStatus === "PENDING" && order.status !== "CANCELLED") {
+        throw new BusinessRuleError("Cannot close session while linked confirmed order is unpaid");
+      }
+    }
+
     await tableSessionRepository.cancelPendingOrders(sessionId);
     const updated = await tableSessionRepository.setSessionStatus(tenantContext.restaurantId, sessionId, "CLOSED");
     await tableSessionRepository.setTableStatus(session.tableId, tenantContext.restaurantId, "AVAILABLE");
@@ -478,7 +549,7 @@ export class TableSessionService {
 
     const pin = String(randomInt(0, 10000)).padStart(PIN_LENGTH, "0");
     const pinHash = await bcrypt.hash(pin, 10);
-    await tableSessionRepository.updatePin(sessionId, tenantContext.restaurantId, pin, pinHash);
+    await tableSessionRepository.updatePin(sessionId, tenantContext.restaurantId, null, pinHash);
 
     emitEvent(DomainEvent.TABLE_SESSION_UPDATED, {
       restaurantId: tenantContext.restaurantId,
@@ -528,11 +599,11 @@ export class TableSessionService {
     if (!table) throw new NotFoundError("Table not found");
     const session = await tableSessionRepository.findActiveSessionByTable(tenantContext.restaurantId, table.id);
     if (!session) return null;
-    return this.publicSession(tenantContext.restaurantId, session.id, { includePin: true });
+    return this.publicSession(tenantContext.restaurantId, session.id);
   }
 
   async getStaffSession(tenantContext, sessionId) {
-    return this.publicSession(tenantContext.restaurantId, sessionId, { includePin: true });
+    return this.publicSession(tenantContext.restaurantId, sessionId);
   }
 
   async listBranchSessions(tenantContext, branchId) {
@@ -612,7 +683,7 @@ export class TableSessionService {
     return Array.from(map.values());
   }
 
-  async publicSession(restaurantId, sessionId, { includePin = false } = {}) {
+  async publicSession(restaurantId, sessionId) {
     const session = await tableSessionRepository.findSessionById(restaurantId, sessionId);
     if (!session) throw new NotFoundError("Session not found");
     const currentItems = (session.items || []).filter((i) => !i.sessionOrderId);
@@ -626,7 +697,6 @@ export class TableSessionService {
       status: session.status,
       tableId: session.tableId,
       tableLabel: session.table?.label || null,
-      ...(includePin ? { pin: session.pin || null } : {}),
       members: session.members || [],
       items: currentItems.map((i) => ({
         id: i.id,
@@ -641,7 +711,7 @@ export class TableSessionService {
       grandTotal,
       orders: ordersProjection,
       confirmedOrderId: session.confirmedOrderId,
-waiterCall: this.waiterCallProjection((session.waiterCalls || [])[0] || null),
+      waiterCall: this.waiterCallProjection((session.waiterCalls || [])[0] || null),
     };
   }
 }

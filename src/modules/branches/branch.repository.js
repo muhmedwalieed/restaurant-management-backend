@@ -1,9 +1,8 @@
 import prisma from "../../lib/prisma.js";
 import { NotFoundError } from "../../shared/errors/index.js";
-import { getPaginationOffset } from "../../shared/utils/pagination.js";
-import { assertTenantContext } from "../../shared/middleware/tenant-context.js";
+import { BaseRepository, assertTenantContext, getPaginationOffset } from "../../shared/repositories/base.repository.js";
 
-export class BranchRepository {
+export class BranchRepository extends BaseRepository {
   async findBranches(tenantContext, { page = 1, limit = 20, status } = {}) {
     assertTenantContext(tenantContext);
     const { skip, take } = getPaginationOffset(page, limit);

@@ -26,12 +26,9 @@ export class MetaProvider extends WhatsAppProviderInterface {
     }
   }
 
-  async sendMessage({ to, text, type = "TEXT" }) {
-    const apiToken = process.env.WHATSAPP_API_TOKEN;
-    const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
-
+  async sendMessage({ phoneNumberId, apiToken, to, text, type = "TEXT" }) {
     if (!apiToken || !phoneNumberId) {
-      throw new ExternalServiceError("WhatsApp Cloud API credentials not configured in environment");
+      throw new ExternalServiceError("WhatsApp Cloud API credentials not configured for this connection");
     }
 
     try {

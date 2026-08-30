@@ -435,6 +435,7 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
       },
       body: JSON.stringify({
         paymentMethod: "CASH",
+        amount: Number(posOrderDineIn.total),
         expectedVersion: posOrderDineIn.version,
       }),
     });
@@ -460,6 +461,7 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
       },
       body: JSON.stringify({
         paymentMethod: "CARD",
+        amount: Number(posOrderDineIn.total),
         expectedVersion: posOrderDineIn.version,
       }),
     });
@@ -470,7 +472,7 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
     assert.ok(body.error.message.includes("already paid"));
   });
 
-  test("10. Payment Amount Guard: Payment amount exceeding order total returns 422 BusinessRuleError", async () => {
+  test("10. Payment Amount Guard: Payment amount not equal to order total returns 422 BusinessRuleError", async () => {
     const res = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/orders/${posOrderDelivery.id}/payment`, {
       method: "POST",
       headers: {
@@ -480,6 +482,26 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
       body: JSON.stringify({
         paymentMethod: "CASH",
         amount: 999.0,
+        expectedVersion: posOrderDelivery.version,
+      }),
+    });
+
+    assert.equal(res.status, 422);
+    const body = await res.json();
+    assert.equal(body.error.code, "BUSINESS_RULE_ERROR");
+  });
+
+  test("10b. Payment Amount Guard: Underpayment returns 422 BusinessRuleError", async () => {
+    const under = Math.max(0.01, Number(posOrderDelivery.total) - 0.01);
+    const res = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/orders/${posOrderDelivery.id}/payment`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${cashierAToken}`,
+      },
+      body: JSON.stringify({
+        paymentMethod: "CASH",
+        amount: under,
         expectedVersion: posOrderDelivery.version,
       }),
     });
@@ -540,6 +562,7 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
       },
       body: JSON.stringify({
         paymentMethod: "CASH",
+        amount: Number(posOrderDelivery.total),
         expectedVersion: 99,
       }),
     });
@@ -572,6 +595,7 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
       },
       body: JSON.stringify({
         paymentMethod: "CASH",
+        amount: Number(posOrderDelivery.total),
         expectedVersion: 1,
       }),
     });
@@ -629,6 +653,7 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
       },
       body: JSON.stringify({
         paymentMethod: "CASH",
+        amount: 15.0,
         expectedVersion: cancelledOrder.version,
       }),
     });
@@ -648,6 +673,7 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
       },
       body: JSON.stringify({
         paymentMethod: "CASH",
+        amount: Number(posOrderDineIn.total),
         expectedVersion: posOrderDineIn.version,
       }),
     });
@@ -684,6 +710,7 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
       },
       body: JSON.stringify({
         paymentMethod: "CASH",
+        amount: Number(posOrderDelivery.total),
         expectedVersion: posOrderDelivery.version,
       }),
     });

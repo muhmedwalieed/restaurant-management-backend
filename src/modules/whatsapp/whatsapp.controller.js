@@ -59,7 +59,7 @@ export class WhatsAppController {
   });
 
   handleVerification = asyncHandler(async (req, res) => {
-    const challenge = whatsAppService.handleVerification(req.query);
+    const challenge = await whatsAppService.handleVerification(req.query);
     return res.status(200).send(challenge);
   });
 

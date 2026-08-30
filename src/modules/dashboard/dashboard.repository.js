@@ -1,34 +1,28 @@
 import prisma from "../../lib/prisma.js";
-import { assertTenantContext } from "../../shared/middleware/tenant-context.js";
+import { BaseRepository, buildDateRangeFilter } from "../../shared/repositories/base.repository.js";
 
 function buildOrderWhere(tenantContext, { branchId, from, to, excludeCancelled = false, statuses, paymentStatus } = {}) {
+  const dateFilter = buildDateRangeFilter(from, to);
   const where = {
     restaurantId: tenantContext.restaurantId,
     ...(branchId ? { branchId } : {}),
     ...(statuses ? { status: { in: statuses } } : {}),
     ...(paymentStatus ? { paymentStatus } : {}),
     ...(excludeCancelled ? { status: { not: "CANCELLED" } } : {}),
-    ...(from || to
-      ? {
-          createdAt: {
-            ...(from ? { gte: new Date(from) } : {}),
-            ...(to ? { lte: new Date(to) } : {}),
-          },
-        }
-      : {}),
+    ...(dateFilter ? { createdAt: dateFilter } : {}),
   };
 
   return where;
 }
 
-export class DashboardRepository {
+export class DashboardRepository extends BaseRepository {
   async countOrders(tenantContext, filters) {
-    assertTenantContext(tenantContext);
+    this.assertTenant(tenantContext);
     return prisma.order.count({ where: buildOrderWhere(tenantContext, filters) });
   }
 
   async aggregateOrderTotals(tenantContext, filters) {
-    assertTenantContext(tenantContext);
+    this.assertTenant(tenantContext);
     const result = await prisma.order.aggregate({
       where: buildOrderWhere(tenantContext, filters),
       _sum: { total: true },
@@ -41,14 +35,14 @@ export class DashboardRepository {
   }
 
   async countCustomers(tenantContext) {
-    assertTenantContext(tenantContext);
+    this.assertTenant(tenantContext);
     return prisma.customer.count({
       where: { restaurantId: tenantContext.restaurantId, deletedAt: null },
     });
   }
 
   async countOccupiedTables(tenantContext, branchId) {
-    assertTenantContext(tenantContext);
+    this.assertTenant(tenantContext);
     return prisma.restaurantTable.count({
       where: {
         restaurantId: tenantContext.restaurantId,
@@ -60,7 +54,7 @@ export class DashboardRepository {
   }
 
   async groupOrdersBySource(tenantContext, filters) {
-    assertTenantContext(tenantContext);
+    this.assertTenant(tenantContext);
     const rows = await prisma.order.groupBy({
       by: ["source"],
       where: buildOrderWhere(tenantContext, { ...filters, excludeCancelled: true }),
@@ -76,7 +70,7 @@ export class DashboardRepository {
   }
 
   async groupOrdersByStatus(tenantContext, filters) {
-    assertTenantContext(tenantContext);
+    this.assertTenant(tenantContext);
     const rows = await prisma.order.groupBy({
       by: ["status"],
       where: buildOrderWhere(tenantContext, filters),
@@ -86,7 +80,7 @@ export class DashboardRepository {
   }
 
   async groupOrdersByPaymentStatus(tenantContext, filters) {
-    assertTenantContext(tenantContext);
+    this.assertTenant(tenantContext);
     const rows = await prisma.order.groupBy({
       by: ["paymentStatus"],
       where: buildOrderWhere(tenantContext, filters),
@@ -96,18 +90,12 @@ export class DashboardRepository {
   }
 
   async branchComparison(tenantContext, { from, to } = {}) {
-    assertTenantContext(tenantContext);
+    this.assertTenant(tenantContext);
+    const dateFilter = buildDateRangeFilter(from, to);
     const where = {
       restaurantId: tenantContext.restaurantId,
       status: { not: "CANCELLED" },
-      ...(from || to
-        ? {
-            createdAt: {
-              ...(from ? { gte: new Date(from) } : {}),
-              ...(to ? { lte: new Date(to) } : {}),
-            },
-          }
-        : {}),
+      ...(dateFilter ? { createdAt: dateFilter } : {}),
     };
 
     const [byBranch, paidByBranch, branches] = await Promise.all([
@@ -132,32 +120,47 @@ export class DashboardRepository {
   }
 
   async findOrdersForTrend(tenantContext, filters) {
-    assertTenantContext(tenantContext);
-    return prisma.order.findMany({
-      where: buildOrderWhere(tenantContext, { ...filters, excludeCancelled: true }),
-      select: { id: true, createdAt: true, total: true },
-      orderBy: { createdAt: "asc" },
-    });
+    this.assertTenant(tenantContext);
+    const restaurantId = tenantContext.restaurantId;
+    const from = filters.from ? new Date(filters.from) : null;
+    const to = filters.to ? new Date(filters.to) : null;
+    const branchId = filters.branchId || null;
+
+    const rows = await prisma.$queryRaw`
+      SELECT
+        (DATE_TRUNC('day', o.created_at AT TIME ZONE 'UTC'))::date AS day,
+        COUNT(*)::int AS orders,
+        COALESCE(SUM(o.total), 0)::float AS revenue
+      FROM orders o
+      WHERE o.restaurant_id = ${restaurantId}
+        AND o.status <> 'CANCELLED'
+        AND (${branchId}::text IS NULL OR o.branch_id = ${branchId})
+        AND (${from}::timestamptz IS NULL OR o.created_at >= ${from})
+        AND (${to}::timestamptz IS NULL OR o.created_at <= ${to})
+      GROUP BY 1
+      ORDER BY 1 ASC
+    `;
+
+    return rows.map((r) => ({
+      date: r.day instanceof Date ? r.day.toISOString().slice(0, 10) : String(r.day).slice(0, 10),
+      orders: Number(r.orders),
+      revenue: Number(Number(r.revenue).toFixed(2)),
+    }));
   }
 
   async topProducts(tenantContext, filters, take = 5) {
-    assertTenantContext(tenantContext);
+    this.assertTenant(tenantContext);
+    const dateFilter = buildDateRangeFilter(filters.from, filters.to);
+    const orderFilter = {
+      status: { not: "CANCELLED" },
+      ...(filters.branchId ? { branchId: filters.branchId } : {}),
+      ...(dateFilter ? { createdAt: dateFilter } : {}),
+    };
     const rows = await prisma.orderItem.groupBy({
       by: ["productName"],
       where: {
         restaurantId: tenantContext.restaurantId,
-        ...(filters.branchId ? { order: { branchId: filters.branchId } } : {}),
-        ...(filters.from || filters.to
-          ? {
-              order: {
-                createdAt: {
-                  ...(filters.from ? { gte: new Date(filters.from) } : {}),
-                  ...(filters.to ? { lte: new Date(filters.to) } : {}),
-                },
-              },
-            }
-          : {}),
-        order: { status: { not: "CANCELLED" } },
+        order: orderFilter,
       },
       _sum: { quantity: true },
       _count: { _all: true },
@@ -172,7 +175,8 @@ export class DashboardRepository {
   }
 
   async employeePerformance(tenantContext, filters) {
-    assertTenantContext(tenantContext);
+    this.assertTenant(tenantContext);
+    const dateFilter = buildDateRangeFilter(filters.from, filters.to);
 
     const orderWhere = buildOrderWhere(tenantContext, filters);
     const paidOrders = await prisma.order.findMany({
@@ -186,13 +190,8 @@ export class DashboardRepository {
       ...(filters.branchId
         ? { order: { branchId: filters.branchId } }
         : {}),
-      ...(filters.from || filters.to
-        ? {
-            createdAt: {
-              ...(filters.from ? { gte: new Date(filters.from) } : {}),
-              ...(filters.to ? { lte: new Date(filters.to) } : {}),
-            },
-          }
+      ...(dateFilter
+        ? { createdAt: dateFilter }
         : {}),
     };
     const actions = await prisma.orderStatusHistory.findMany({

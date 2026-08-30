@@ -4,14 +4,6 @@ import { NotFoundError } from "../../shared/errors/index.js";
 
 const ACTIVE_ORDER_STATUSES = ["PENDING", "CONFIRMED", "PREPARING", "READY", "OUT_FOR_DELIVERY"];
 
-function dayKey(date) {
-  const d = new Date(date);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
 function startOfToday() {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
@@ -118,34 +110,24 @@ export class DashboardService {
   async getSalesTrend(tenantContext, { branchId, from, to, days = 7 }) {
     await this.resolveBranch(tenantContext, branchId);
 
-    const rangeFrom = from || startOfDaysAgo(days);
-    const rows = await dashboardRepository.findOrdersForTrend(tenantContext, {
+    const rangeFrom = from || startOfDaysAgo(Math.min(Number(days) || 7, 90));
+    const rangeTo = to || new Date().toISOString();
+    return dashboardRepository.findOrdersForTrend(tenantContext, {
       branchId,
       from: rangeFrom,
-      to,
+      to: rangeTo,
     });
-
-    const buckets = new Map();
-    for (const row of rows) {
-      const key = dayKey(row.createdAt);
-      const bucket = buckets.get(key) || { orders: 0, revenue: 0 };
-      bucket.orders += 1;
-      bucket.revenue += Number(row.total);
-      buckets.set(key, bucket);
-    }
-
-    return [...buckets.entries()]
-      .map(([date, bucket]) => ({
-        date,
-        orders: bucket.orders,
-        revenue: Number(bucket.revenue.toFixed(2)),
-      }))
-      .sort((a, b) => a.date.localeCompare(b.date));
   }
 
   async getEmployeePerformance(tenantContext, { branchId, from, to }) {
     await this.resolveBranch(tenantContext, branchId);
-    return dashboardRepository.employeePerformance(tenantContext, { branchId, from, to });
+    const rangeFrom = from || startOfDaysAgo(30);
+    const rangeTo = to || new Date().toISOString();
+    return dashboardRepository.employeePerformance(tenantContext, {
+      branchId,
+      from: rangeFrom,
+      to: rangeTo,
+    });
   }
 }
 

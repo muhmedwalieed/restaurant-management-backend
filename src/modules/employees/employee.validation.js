@@ -1,9 +1,9 @@
 import { z } from "zod";
+import { paginationQuerySchema } from "../../shared/validation/common.schemas.js";
 
 export const employeeQuerySchema = z.object({
   query: z.object({
-    page: z.coerce.number().int().min(1).default(1),
-    limit: z.coerce.number().int().min(1).max(100).default(20),
+    ...paginationQuerySchema,
     branchId: z.string().optional(),
     search: z.string().optional(),
     status: z.enum(["ACTIVE", "INACTIVE", "SUSPENDED"]).optional(),

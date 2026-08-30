@@ -1,9 +1,9 @@
 import { z } from "zod";
+import { paginationQuerySchema } from "../../shared/validation/common.schemas.js";
 
 export const inboxQuerySchema = z.object({
   query: z.object({
-    page: z.coerce.number().int().min(1).default(1),
-    limit: z.coerce.number().int().min(1).max(100).default(20),
+    ...paginationQuerySchema,
     status: z.enum(["WAITING", "ACTIVE", "PENDING", "RESOLVED", "CLOSED"]).optional(),
     assignedToMe: z.enum(["true", "false"]).optional(),
   }),

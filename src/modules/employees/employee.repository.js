@@ -1,8 +1,7 @@
 import prisma from "../../lib/prisma.js";
-import { getPaginationOffset } from "../../shared/utils/pagination.js";
-import { assertTenantContext } from "../../shared/middleware/tenant-context.js";
+import { BaseRepository, assertTenantContext, getPaginationOffset } from "../../shared/repositories/base.repository.js";
 
-export class EmployeeRepository {
+export class EmployeeRepository extends BaseRepository {
   async findEmployees(tenantContext, { page = 1, limit = 20, branchId, search, status, roleId, sort }) {
     assertTenantContext(tenantContext);
     const { skip, take } = getPaginationOffset(page, limit);

@@ -1,12 +1,13 @@
 import prisma from "../../lib/prisma.js";
-import { AuthenticationError } from "../../shared/errors/index.js";
-import { getPaginationOffset } from "../../shared/utils/pagination.js";
+import { BaseRepository, ACTOR_SUMMARY_SELECT, buildDateRangeFilter } from "../../shared/repositories/base.repository.js";
 
-export class AuditLogRepository {
+export class AuditLogRepository extends BaseRepository {
 
   async findAuditLogs(tenantContext, { page = 1, limit = 20, action, entityType, entityId, actorEmployeeId, branchId, from, to } = {}) {
     this.assertTenant(tenantContext);
-    const { skip, take } = getPaginationOffset(page, limit);
+    const { skip, take } = this.getPaginationOffset(page, limit);
+    const dateFilter = buildDateRangeFilter(from, to);
+
     const where = {
       restaurantId: tenantContext.restaurantId,
       ...(action ? { action } : {}),
@@ -14,14 +15,7 @@ export class AuditLogRepository {
       ...(entityId ? { entityId } : {}),
       ...(actorEmployeeId ? { actorEmployeeId } : {}),
       ...(branchId ? { branchId } : {}),
-      ...(from || to
-        ? {
-            createdAt: {
-              ...(from ? { gte: new Date(from) } : {}),
-              ...(to ? { lte: new Date(to) } : {}),
-            },
-          }
-        : {}),
+      ...(dateFilter ? { createdAt: dateFilter } : {}),
     };
 
     const [items, total] = await Promise.all([
@@ -30,7 +24,7 @@ export class AuditLogRepository {
         skip,
         take,
         include: {
-          actor: { select: { id: true, name: true, email: true } },
+          actor: { select: ACTOR_SUMMARY_SELECT },
         },
         orderBy: { createdAt: "desc" },
       }),
@@ -44,7 +38,7 @@ export class AuditLogRepository {
     this.assertTenant(tenantContext);
     return prisma.auditLog.findFirst({
       where: { id, restaurantId: tenantContext.restaurantId },
-      include: { actor: { select: { id: true, name: true, email: true } } },
+      include: { actor: { select: ACTOR_SUMMARY_SELECT } },
     });
   }
 
@@ -62,12 +56,6 @@ export class AuditLogRepository {
         ipAddress: ipAddress || null,
       },
     });
-  }
-
-  assertTenant(tenantContext) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
   }
 }
 

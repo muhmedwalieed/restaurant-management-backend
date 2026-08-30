@@ -33,7 +33,7 @@ export class MockProvider extends WhatsAppProviderInterface {
     }
   }
 
-  async sendMessage({ to, text, type = "TEXT" }) {
+  async sendMessage({ phoneNumberId, apiToken, to, text, type = "TEXT" }) {
     if (simulateOutageGlobal) {
       throw new ExternalServiceError("WhatsApp provider service is currently unavailable (Mock Outage)");
     }

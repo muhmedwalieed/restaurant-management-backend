@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { paginationQuerySchema } from "../../shared/validation/common.schemas.js";
 
 export const NOTIFICATION_TYPES = [
   "ORDER_CREATED",
@@ -11,8 +12,7 @@ export const NOTIFICATION_TYPES = [
 
 export const listNotificationsQuerySchema = z.object({
   query: z.object({
-    page: z.coerce.number().int().min(1).default(1),
-    limit: z.coerce.number().int().min(1).max(100).default(20),
+    ...paginationQuerySchema,
     unreadOnly: z.enum(["true", "false"]).optional().transform((v) => (v === undefined ? undefined : v === "true")),
     type: z.enum(NOTIFICATION_TYPES).optional(),
   }),

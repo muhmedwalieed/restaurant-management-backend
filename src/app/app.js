@@ -15,6 +15,13 @@ import "../modules/audit-logs/audit-log.subscriptions.js";
 
 const app = express();
 
+const trustProxy = env.TRUST_PROXY ?? "1";
+if (trustProxy && trustProxy !== "false" && trustProxy !== "0") {
+  app.set("trust proxy", /^\d+$/.test(trustProxy) ? Number(trustProxy) : trustProxy === "true" ? true : trustProxy);
+} else {
+  app.set("trust proxy", false);
+}
+
 app.set("etag", "strong");
 
 app.use(requestIdMiddleware);

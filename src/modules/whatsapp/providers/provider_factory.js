@@ -3,7 +3,7 @@ import { metaProvider } from "./meta_provider.js";
 import env from "../../../config/env.js";
 
 export function getWhatsAppProvider(providerType = "META") {
-  if (providerType === "MOCK" || env.NODE_ENV === "test" || env.NODE_ENV === "development") {
+  if (providerType === "MOCK") {
     return mockProvider;
   }
   return metaProvider;

@@ -2,6 +2,7 @@ import { Router } from "express";
 import { checkDatabaseHealth } from "../config/database.js";
 import { checkRedisHealth } from "../config/redis.js";
 import { sendSuccess } from "../shared/utils/response.js";
+import { asyncHandler } from "../shared/utils/async-handler.js";
 
 const router = Router();
 
@@ -15,7 +16,7 @@ router.get("/health", (req, res) => {
   });
 });
 
-router.get("/ready", async (req, res) => {
+router.get("/ready", asyncHandler(async (req, res) => {
   const [dbHealthy, redisHealthy] = await Promise.all([
     checkDatabaseHealth(),
     checkRedisHealth(),
@@ -48,6 +49,6 @@ router.get("/ready", async (req, res) => {
       },
     },
   });
-});
+}));
 
 export default router;

@@ -15,6 +15,7 @@ import { publicOrderRateLimiter } from "../../shared/middleware/rate-limiters.js
 import { authenticate } from "../auth/authenticate.middleware.js";
 import { authorize } from "../auth/authorize.middleware.js";
 import { requireTenantContext } from "../../shared/middleware/tenant-context.js";
+import { requireBranchAccess } from "../../shared/middleware/require-branch-access.js";
 import { validate } from "../../shared/middleware/validate.js";
 
 const router = Router();
@@ -28,7 +29,7 @@ router.get("/orders/track", publicOrderRateLimiter, validate(trackOrderQuerySche
 });
 
 const branchPosRouter = Router({ mergeParams: true });
-branchPosRouter.use(authenticate, requireTenantContext);
+branchPosRouter.use(authenticate, requireTenantContext, requireBranchAccess());
 
 branchPosRouter.post("/", authorize("orders.create"), validate(posOrderSchema), (req, res, next) => {
   orderController.createPosOrder(req, res, next);
@@ -46,7 +47,7 @@ tenantOrderRouter.get("/", authorize("orders.view"), validate(orderQuerySchema),
 router.use("/orders", tenantOrderRouter);
 
 const branchOrderRouter = Router({ mergeParams: true });
-branchOrderRouter.use(authenticate, requireTenantContext);
+branchOrderRouter.use(authenticate, requireTenantContext, requireBranchAccess());
 
 branchOrderRouter.get("/", authorize("orders.view"), validate(orderQuerySchema), (req, res, next) => {
   orderController.listOrders(req, res, next);

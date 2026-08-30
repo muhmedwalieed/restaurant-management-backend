@@ -169,6 +169,10 @@ export class EmployeeService {
       throw new NotFoundError("Target role not found");
     }
 
+    if (role.isSystem && role.name === "owner") {
+      throw new BusinessRuleError("Cannot assign the owner role to another employee");
+    }
+
     const updated = await employeeRepository.updateRole(tenantContext, targetId, roleId);
     if (!updated) {
       throw new NotFoundError("Employee not found");

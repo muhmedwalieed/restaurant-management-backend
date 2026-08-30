@@ -174,7 +174,7 @@ describe("Module 17 — Notifications Integration Tests", () => {
     const pay = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/orders/${order.id}/payment`, {
       method: "POST",
       headers: auth(ownerToken),
-      body: JSON.stringify({ paymentMethod: "CASH", expectedVersion: order.version }),
+      body: JSON.stringify({ paymentMethod: "CASH", amount: Number(order.total), expectedVersion: order.version }),
     });
     assert.equal(pay.status, 200);
 

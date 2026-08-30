@@ -1,11 +1,11 @@
 import prisma from "../../lib/prisma.js";
-import { AuthenticationError } from "../../shared/errors/index.js";
+import { BaseRepository } from "../../shared/repositories/base.repository.js";
 
-export class NotificationRepository {
+export class NotificationRepository extends BaseRepository {
 
   async findNotifications(tenantContext, employeeId, { page = 1, limit = 20, unreadOnly, type } = {}) {
     this.assertTenant(tenantContext);
-    const skip = (page - 1) * limit;
+    const { skip, take } = this.getPaginationOffset(page, limit);
     const where = {
       restaurantId: tenantContext.restaurantId,
       targetEmployeeId: employeeId,
@@ -17,7 +17,7 @@ export class NotificationRepository {
       prisma.notification.findMany({
         where,
         skip,
-        take: limit,
+        take,
         orderBy: { createdAt: "desc" },
       }),
       prisma.notification.count({ where }),
@@ -67,6 +67,23 @@ export class NotificationRepository {
     });
   }
 
+  async createNotifications(tenantContext, rows) {
+    this.assertTenant(tenantContext);
+    if (!rows.length) return;
+    await prisma.notification.createMany({
+      data: rows.map((row) => ({
+        restaurantId: tenantContext.restaurantId,
+        branchId: row.branchId || null,
+        targetEmployeeId: row.targetEmployeeId,
+        type: row.type,
+        title: row.title,
+        body: row.body,
+        referenceType: row.referenceType || null,
+        referenceId: row.referenceId || null,
+      })),
+    });
+  }
+
   async findPreference(tenantContext, employeeId) {
     this.assertTenant(tenantContext);
     return prisma.notificationPreference.findFirst({
@@ -105,12 +122,6 @@ export class NotificationRepository {
     return prisma.notificationPreference.findMany({
       where: { restaurantId: tenantContext.restaurantId, employeeId: { in: employeeIds } },
     });
-  }
-
-  assertTenant(tenantContext) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
   }
 }
 

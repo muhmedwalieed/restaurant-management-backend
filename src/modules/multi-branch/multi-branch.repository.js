@@ -1,7 +1,7 @@
 import prisma from "../../lib/prisma.js";
-import { AuthenticationError } from "../../shared/errors/index.js";
+import { BaseRepository, BRANCH_SUMMARY_SELECT } from "../../shared/repositories/base.repository.js";
 
-export class MultiBranchRepository {
+export class MultiBranchRepository extends BaseRepository {
 
   async findBranchUsers(tenantContext, branchId) {
     this.assertTenant(tenantContext);
@@ -81,7 +81,7 @@ export class MultiBranchRepository {
     const branchIds = [employee.branchId, ...assigned.map((a) => a.branchId)];
     return prisma.branch.findMany({
       where: { restaurantId: tenantContext.restaurantId, id: { in: branchIds } },
-      select: { id: true, name: true, code: true, isMain: true, status: true },
+      select: BRANCH_SUMMARY_SELECT,
       orderBy: { name: "asc" },
     });
   }
@@ -90,15 +90,9 @@ export class MultiBranchRepository {
     this.assertTenant(tenantContext);
     return prisma.branch.findMany({
       where: { restaurantId: tenantContext.restaurantId },
-      select: { id: true, name: true, code: true, isMain: true, status: true },
+      select: BRANCH_SUMMARY_SELECT,
       orderBy: [{ isMain: "desc" }, { name: "asc" }],
     });
-  }
-
-  assertTenant(tenantContext) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
   }
 }
 

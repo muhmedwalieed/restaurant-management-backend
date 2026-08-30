@@ -756,7 +756,9 @@ model WhatsAppConnection {
   providerAccountId     String             @map("provider_account_id")
   providerPhoneNumberId String             @map("provider_phone_number_id")
   displayName           String?            @map("display_name")
-  webhookSecret         String?            @map("webhook_secret")
+  apiToken              String?            @map("api_token") @db.Text
+  webhookSecret         String?            @map("webhook_secret") @db.Text
+  verifyToken           String?            @map("verify_token")
   createdAt             DateTime           @default(now()) @map("created_at")
   updatedAt             DateTime           @updatedAt @map("updated_at")
 
@@ -767,6 +769,7 @@ model WhatsAppConnection {
   @@unique([restaurantId, providerAccountId])
   @@index([restaurantId])
   @@index([providerPhoneNumberId])
+  @@index([verifyToken])
   @@map("whatsapp_connections")
 }
 

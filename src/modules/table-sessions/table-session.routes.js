@@ -18,7 +18,9 @@ const router = Router();
 router.post("/sessions/:qrToken/join", tableCustomerRateLimiter, validate(joinSessionSchema), (req, res, next) =>
   tableSessionController.joinSession(req, res, next)
 );
-router.get("/sessions/:id", tableCustomerRateLimiter, (req, res, next) => tableSessionController.getSession(req, res, next));
+router.get("/sessions/:id", requireMember, tableCustomerRateLimiter, (req, res, next) =>
+  tableSessionController.getSession(req, res, next)
+);
 router.post("/sessions/:id/items", requireMember, tableCustomerRateLimiter, validate(addSessionItemSchema), (req, res, next) =>
   tableSessionController.addItem(req, res, next)
 );
@@ -41,8 +43,8 @@ staffRouter.use(authenticate, requireTenantContext);
 staffRouter.post("/start", authorize("orders.create"), (req, res, next) =>
   tableSessionController.startSession(req, res, next)
 );
-staffRouter.get("/sessions", (req, res, next) => tableSessionController.listBranchSessions(req, res, next));
-staffRouter.get("/table/:tableId/session", (req, res, next) => tableSessionController.getActiveSessionForTable(req, res, next));
+staffRouter.get("/sessions", authorize("orders.view"), (req, res, next) => tableSessionController.listBranchSessions(req, res, next));
+staffRouter.get("/table/:tableId/session", authorize("orders.view"), (req, res, next) => tableSessionController.getActiveSessionForTable(req, res, next));
 staffRouter.post("/:id/confirm", authorize("orders.create"), (req, res, next) =>
   tableSessionController.confirmSession(req, res, next)
 );
@@ -67,7 +69,7 @@ staffRouter.patch("/:id/items/:itemId", authorize("orders.create"), (req, res, n
 staffRouter.delete("/:id/items/:itemId", authorize("orders.create"), (req, res, next) =>
   tableSessionController.removeItemStaff(req, res, next)
 );
-staffRouter.get("/:id", (req, res, next) => tableSessionController.getSessionStaff(req, res, next));
+staffRouter.get("/:id", authorize("orders.view"), (req, res, next) => tableSessionController.getSessionStaff(req, res, next));
 
 router.use("/tables", staffRouter);
 
