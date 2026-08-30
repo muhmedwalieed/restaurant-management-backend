@@ -7,6 +7,8 @@ import app from "../src/app/app.js";
 import prisma from "../src/lib/prisma.js";
 import { authService } from "../src/modules/auth/auth.service.js";
 import { MockProvider } from "../src/modules/whatsapp/providers/mock_provider.js";
+import { metaProvider } from "../src/modules/whatsapp/providers/meta_provider.js";
+import { encrypt, decrypt } from "../src/shared/utils/crypto.js";
 import { disconnectRedis } from "../src/config/redis.js";
 
 describe("Module 9 — WhatsApp Integration Module Tests", () => {
@@ -24,6 +26,8 @@ describe("Module 9 — WhatsApp Integration Module Tests", () => {
   const phoneIdA = `+201${Date.now().toString().slice(-9)}`;
   const accountIdA = `waba_acc_${Date.now()}`;
   const webhookSecretA = "secret_key_tenant_a_123";
+  const apiTokenA = "EAAG_secret_meta_api_token_tenant_a_98765";
+  const verifyTokenA = "verify_token_tenant_a_custom_12345";
 
   let connectionA;
   let outboundMsgA;
@@ -188,7 +192,9 @@ describe("Module 9 — WhatsApp Integration Module Tests", () => {
         providerAccountId: accountIdA,
         providerPhoneNumberId: phoneIdA,
         displayName: "Main Branch WA",
+        apiToken: apiTokenA,
         webhookSecret: webhookSecretA,
+        verifyToken: verifyTokenA,
       }),
     });
 
@@ -199,6 +205,11 @@ describe("Module 9 — WhatsApp Integration Module Tests", () => {
     assert.equal(body.data.providerAccountId, accountIdA);
     assert.equal(body.data.providerPhoneNumberId, phoneIdA);
     assert.equal(body.data.status, "ACTIVE");
+    assert.equal(body.data.hasApiToken, true);
+    assert.equal(body.data.hasWebhookSecret, true);
+    assert.equal(body.data.hasVerifyToken, true);
+    assert.equal(body.data.apiToken, undefined);
+    assert.equal(body.data.webhookSecret, undefined);
 
     connectionA = body.data;
   });
@@ -629,10 +640,10 @@ describe("Module 9 — WhatsApp Integration Module Tests", () => {
     assert.equal(eventInDb.status, "PROCESSED");
   });
 
-  test("18. GET /api/webhooks/whatsapp verification handshake (hub.mode=subscribe)", async () => {
+  test("18. GET /api/webhooks/whatsapp verification handshake with tenant verifyToken (hub.mode=subscribe)", async () => {
     const challengeStr = "challenge_token_123456";
     const res = await fetch(
-      `${baseUrl}/api/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=default_verify_token&hub.challenge=${challengeStr}`
+      `${baseUrl}/api/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=${verifyTokenA}&hub.challenge=${challengeStr}`
     );
 
     assert.equal(res.status, 200);
@@ -740,4 +751,156 @@ describe("Module 9 — WhatsApp Integration Module Tests", () => {
     });
     assert.equal(count, 1);
   });
+
+  test("22. GET /api/webhooks/whatsapp verification behind reverse proxy / ngrok (with X-Forwarded-For)", async () => {
+    const challengeStr = "ngrok_challenge_987654";
+    const res = await fetch(
+      `${baseUrl}/api/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=${verifyTokenA}&hub.challenge=${challengeStr}`,
+      {
+        headers: {
+          "X-Forwarded-For": "203.0.113.195",
+          "X-Forwarded-Proto": "https",
+        },
+      }
+    );
+
+    assert.equal(res.status, 200);
+    const text = await res.text();
+    assert.equal(text, challengeStr);
+  });
+
+  test("23. POST /api/webhooks/whatsapp delivery behind reverse proxy / ngrok (with X-Forwarded-For)", async () => {
+    const webhookPayload = {
+      object: "whatsapp_business_account",
+      entry: [
+        {
+          id: accountIdA,
+          changes: [
+            {
+              value: {
+                messaging_product: "whatsapp",
+                metadata: {
+                  display_phone_number: "1555000",
+                  phone_number_id: phoneIdA,
+                },
+                messages: [
+                  {
+                    from: "201099998888",
+                    id: `wamid_inbound_ngrok_${Date.now()}`,
+                    text: { body: "Hello through ngrok proxy" },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    const rawBodyStr = JSON.stringify(webhookPayload);
+    const validHmac = crypto
+      .createHmac("sha256", webhookSecretA)
+      .update(rawBodyStr)
+      .digest("hex");
+
+    const res = await fetch(`${baseUrl}/api/webhooks/whatsapp`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Hub-Signature-256": `sha256=${validHmac}`,
+        "X-Forwarded-For": "203.0.113.195, 127.0.0.1",
+        "X-Forwarded-Proto": "https",
+      },
+      body: rawBodyStr,
+    });
+
+    assert.equal(res.status, 200);
+    const json = await res.json();
+    assert.equal(json.success, true);
+  });
+
+  test("24. Direct Database Check: Sensitive credentials (apiToken, webhookSecret) are encrypted at rest using AES-256-GCM", async () => {
+    const connInDb = await prisma.whatsAppConnection.findFirst({
+      where: { id: connectionA.id, restaurantId: tenantA.id },
+    });
+
+    assert.ok(connInDb);
+    // Verify apiToken is encrypted
+    assert.notEqual(connInDb.apiToken, apiTokenA);
+    const apiTokenParts = connInDb.apiToken.split(":");
+    assert.equal(apiTokenParts.length, 3, "Encrypted apiToken must be in iv:authTag:ciphertext format");
+    assert.equal(decrypt(connInDb.apiToken), apiTokenA, "Decrypted apiToken must match original plain token");
+
+    // Verify webhookSecret is encrypted
+    assert.notEqual(connInDb.webhookSecret, webhookSecretA);
+    const secretParts = connInDb.webhookSecret.split(":");
+    assert.equal(secretParts.length, 3, "Encrypted webhookSecret must be in iv:authTag:ciphertext format");
+    assert.equal(decrypt(connInDb.webhookSecret), webhookSecretA, "Decrypted webhookSecret must match original secret");
+  });
+
+  test("25. GET /api/v1/whatsapp/connection response sanitization: Never returns raw encrypted or plaintext credentials", async () => {
+    const res = await fetch(`${baseUrl}/api/v1/whatsapp/connection`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${managerAToken}`,
+      },
+    });
+
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.success, true);
+    assert.equal(body.data.hasApiToken, true);
+    assert.equal(body.data.hasWebhookSecret, true);
+    assert.equal(body.data.hasVerifyToken, true);
+    assert.equal(body.data.apiToken, undefined);
+    assert.equal(body.data.webhookSecret, undefined);
+  });
+
+  test("26. MetaProvider Connection-Awareness: MetaProvider requires connection credentials and does not depend on .env", async () => {
+    // Missing credentials throws ExternalServiceError
+    await assert.rejects(
+      async () => {
+        await metaProvider.sendMessage({
+          phoneNumberId: null,
+          apiToken: null,
+          to: "+201099998888",
+          text: "Test missing credentials",
+        });
+      },
+      (err) => {
+        assert.equal(err.name, "ExternalServiceError");
+        assert.match(err.message, /WhatsApp Cloud API credentials not configured for this connection/);
+        return true;
+      }
+    );
+  });
+
+  test("27. Crypto Utility Unit Test: AES-256-GCM encrypt and decrypt properly round-trips plaintext and rejects tampered data", async () => {
+    const plaintext = "super_secret_token_value_xyz_12345!@#";
+    const encrypted = encrypt(plaintext);
+    assert.ok(encrypted);
+    assert.notEqual(encrypted, plaintext);
+
+    const decrypted = decrypt(encrypted);
+    assert.equal(decrypted, plaintext);
+
+    // Tampered auth tag should fail decryption
+    const [iv, authTag, cipher] = encrypted.split(":");
+    const tamperedAuthTag = "0".repeat(authTag.length);
+    const tampered = `${iv}:${tamperedAuthTag}:${cipher}`;
+    assert.throws(() => {
+      decrypt(tampered);
+    });
+  });
+
+  test("28. Verification Handshake Failure: Invalid verify token returns 403 AuthorizationError", async () => {
+    const res = await fetch(
+      `${baseUrl}/api/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=completely_invalid_token_999&hub.challenge=test_challenge`
+    );
+
+    assert.equal(res.status, 403);
+    const body = await res.json();
+    assert.equal(body.error.code, "AUTHORIZATION_ERROR");
+  });
 });
+
