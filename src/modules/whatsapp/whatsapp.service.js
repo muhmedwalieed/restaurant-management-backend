@@ -1,14 +1,27 @@
 import whatsAppRepository from "./whatsapp.repository.js";
 import getWhatsAppProvider from "./providers/provider_factory.js";
+import { decrypt } from "../../shared/utils/crypto.js";
 import {
   NotFoundError,
   ConflictError,
   BusinessRuleError,
   ExternalServiceError,
+  AuthorizationError,
 } from "../../shared/errors/index.js";
 import { paginateResponse } from "../../shared/utils/pagination.js";
 
 export class WhatsAppService {
+
+  sanitizeConnection(connection) {
+    if (!connection) return connection;
+    const { apiToken, webhookSecret, verifyToken, ...safe } = connection;
+    return {
+      ...safe,
+      hasApiToken: Boolean(apiToken),
+      hasWebhookSecret: Boolean(webhookSecret),
+      hasVerifyToken: Boolean(verifyToken),
+    };
+  }
 
   async connectAccount(tenantContext, payload) {
     const existing = await whatsAppRepository.findConnectionByAccountId(
@@ -27,7 +40,9 @@ export class WhatsAppService {
       throw new ConflictError("WhatsApp phone number is already connected to another restaurant");
     }
 
-    return whatsAppRepository.createConnectionTransaction(tenantContext, payload);
+    return this.sanitizeConnection(
+      await whatsAppRepository.createConnectionTransaction(tenantContext, payload)
+    );
   }
 
   async getConnection(tenantContext) {
@@ -35,14 +50,19 @@ export class WhatsAppService {
     if (!connection) {
       throw new NotFoundError("No active WhatsApp connection found for this restaurant");
     }
-    return connection;
+    return this.sanitizeConnection(connection);
   }
 
   async updateConnection(tenantContext, payload) {
-    const connection = await this.getConnection(tenantContext);
+    const connection = await whatsAppRepository.findConnectionByTenant(tenantContext);
+    if (!connection) {
+      throw new NotFoundError("No active WhatsApp connection found for this restaurant");
+    }
 
     await whatsAppRepository.updateConnectionTransaction(tenantContext, connection.id, payload);
-    return whatsAppRepository.findConnectionById(tenantContext, connection.id);
+    return this.sanitizeConnection(
+      await whatsAppRepository.findConnectionById(tenantContext, connection.id)
+    );
   }
 
   async disconnectAccount(tenantContext) {
@@ -59,9 +79,12 @@ export class WhatsAppService {
     }
 
     const provider = getWhatsAppProvider(connection.provider);
+    const decryptedApiToken = connection.apiToken ? decrypt(connection.apiToken) : null;
 
     try {
       const result = await provider.sendMessage({
+        phoneNumberId: connection.providerPhoneNumberId,
+        apiToken: decryptedApiToken,
         to: payload.to,
         text: payload.text,
         type: payload.type || "TEXT",
@@ -90,7 +113,7 @@ export class WhatsAppService {
         status: "FAILED",
       });
 
-      if (error instanceof ExternalServiceError) {
+      if (error instanceof ExternalServiceError || error instanceof BusinessRuleError) {
         throw error;
       }
       throw new ExternalServiceError(error.message || "Failed to send WhatsApp message via provider");
@@ -202,15 +225,28 @@ export class WhatsAppService {
     }
   }
 
-  handleVerification(queryParams) {
-    const expectedToken = process.env.WHATSAPP_VERIFY_TOKEN;
+  async handleVerification(queryParams) {
+    const token = queryParams["hub.verify_token"] || queryParams.verify_token || queryParams.token;
 
-    if (!expectedToken) {
-      throw new ExternalServiceError("WHATSAPP_VERIFY_TOKEN is not configured in the environment");
+    if (!token) {
+      throw new AuthorizationError("Verification token missing");
     }
 
-    const provider = getWhatsAppProvider("META");
-    return provider.handleVerification(queryParams, expectedToken);
+    // 1. Check if token matches a tenant's connection in DB
+    const connection = await whatsAppRepository.findConnectionByVerifyToken(token);
+    if (connection) {
+      const provider = getWhatsAppProvider(connection.provider);
+      return provider.handleVerification(queryParams, connection.verifyToken);
+    }
+
+    // 2. Check fallback global verify token if configured
+    const fallbackToken = process.env.WHATSAPP_VERIFY_TOKEN;
+    if (fallbackToken && token === fallbackToken) {
+      const provider = getWhatsAppProvider("META");
+      return provider.handleVerification(queryParams, fallbackToken);
+    }
+
+    throw new AuthorizationError("Verification token mismatch");
   }
 
   async retryFailedWebhookEvents(tenantContext) {

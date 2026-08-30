@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { paginationQuerySchema } from "../../shared/validation/common.schemas.js";
 
 export const connectConnectionSchema = z.object({
   body: z.object({
@@ -6,7 +7,9 @@ export const connectConnectionSchema = z.object({
     providerAccountId: z.string().min(1, "providerAccountId is required"),
     providerPhoneNumberId: z.string().min(1, "providerPhoneNumberId is required"),
     displayName: z.string().optional(),
+    apiToken: z.string().optional(),
     webhookSecret: z.string().optional(),
+    verifyToken: z.string().optional(),
   }),
 });
 
@@ -15,7 +18,9 @@ export const updateConnectionSchema = z.object({
     status: z.enum(["ACTIVE", "DISCONNECTED", "FAILED"]).optional(),
     displayName: z.string().optional(),
     providerPhoneNumberId: z.string().optional(),
+    apiToken: z.string().optional(),
     webhookSecret: z.string().optional(),
+    verifyToken: z.string().optional(),
   }),
 });
 
@@ -29,8 +34,7 @@ export const sendMessageSchema = z.object({
 
 export const listMessagesQuerySchema = z.object({
   query: z.object({
-    page: z.coerce.number().int().min(1).default(1),
-    limit: z.coerce.number().int().min(1).max(100).default(20),
+    ...paginationQuerySchema,
     direction: z.enum(["INBOUND", "OUTBOUND"]).optional(),
     status: z.enum(["PENDING", "SENT", "DELIVERED", "READ", "FAILED"]).optional(),
     q: z.string().optional(),
