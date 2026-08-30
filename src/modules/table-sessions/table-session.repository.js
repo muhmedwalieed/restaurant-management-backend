@@ -93,8 +93,9 @@ export class TableSessionRepository {
     });
   }
 
-  async confirmOrder(sessionId, orderId, realOrderId, total) {
-    await prisma.tableSessionOrder.updateMany({
+  async confirmOrder(sessionId, orderId, realOrderId, total, txClient = null) {
+    const client = txClient || prisma;
+    const result = await client.tableSessionOrder.updateMany({
       where: { id: orderId, sessionId, status: "AWAITING_CONFIRMATION" },
       data: {
         status: "CONFIRMED",
@@ -103,6 +104,7 @@ export class TableSessionRepository {
         confirmedAt: new Date(),
       },
     });
+    return result.count;
   }
 
   async cancelPendingOrders(sessionId) {
@@ -120,7 +122,7 @@ export class TableSessionRepository {
   }
 
   async updatePin(sessionId, restaurantId, pin, pinHash) {
-    await prisma.tableSession.update({
+    await prisma.tableSession.updateMany({
       where: { id: sessionId, restaurantId },
       data: { pin, pinHash },
     });
@@ -161,7 +163,7 @@ export class TableSessionRepository {
   }
 
   async lockout(sessionId, restaurantId, failedAttempts, lockoutLevel, lockoutUntil) {
-    await prisma.tableSession.update({
+    await prisma.tableSession.updateMany({
       where: { id: sessionId, restaurantId },
       data: { failedAttempts, lockoutLevel, lockoutUntil },
     });

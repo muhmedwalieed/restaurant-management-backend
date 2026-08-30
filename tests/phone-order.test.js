@@ -113,7 +113,7 @@ describe("Module 14 — Phone Ordering Integration Tests", () => {
     assert.equal(body.data.defaultAddress.city, "القاهرة");
   });
 
-  test("2. POST /v1/phone-order/lookup auto-creates a NEW customer for an unknown phone", async () => {
+  test("2. POST /v1/phone-order/lookup returns null customer for an unknown phone (find-only)", async () => {
     const res = await fetch(`${baseUrl}/api/v1/phone-order/lookup`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${ownerToken}` },
@@ -121,7 +121,7 @@ describe("Module 14 — Phone Ordering Integration Tests", () => {
     });
     assert.equal(res.status, 200);
     const body = await res.json();
-    assert.equal(body.data.customer.phone, "+201077770002");
+    assert.equal(body.data.customer, null);
     assert.equal(body.data.recentOrders.length, 0);
     assert.equal(body.data.defaultAddress, null);
   });

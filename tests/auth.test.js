@@ -122,11 +122,15 @@ describe("Auth Module Integration & E2E Tests", () => {
 
     assert.equal(body.success, true);
     assert.ok(body.data.accessToken);
-    assert.ok(body.data.refreshToken);
+    assert.equal(body.data.refreshToken, undefined);
     assert.equal(body.data.employee.passwordHash, undefined);
 
+    const cookieHeader = res.headers.get("set-cookie") || "";
+    const match = cookieHeader.match(/refreshToken=([^;]+)/);
+    refreshToken = match ? match[1] : undefined;
+    assert.ok(refreshToken, "refreshToken cookie should be set");
+
     accessToken = body.data.accessToken;
-    refreshToken = body.data.refreshToken;
   });
 
   test("2b. GET /api/v1/auth/me returns current employee profile with role permissions", async () => {

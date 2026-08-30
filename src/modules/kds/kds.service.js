@@ -1,12 +1,12 @@
 import kdsRepository from "./kds.repository.js";
-import branchRepository from "../branches/branch.repository.js";
 import orderService from "../orders/order.service.js";
 import { NotFoundError } from "../../shared/errors/index.js";
 import { paginateResponse } from "../../shared/utils/pagination.js";
+import { assertBranchInTenant } from "../../shared/utils/assert-branch.js";
 
 export class KdsService {
   async verifyBranchOwnership(tenantContext, branchId) {
-    return branchRepository.requireBranch(tenantContext, branchId);
+    return assertBranchInTenant(tenantContext, branchId);
   }
 
   async getActiveKitchenOrders(tenantContext, branchId, { page = 1, limit = 20, status } = {}) {

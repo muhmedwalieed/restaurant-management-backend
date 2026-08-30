@@ -1,11 +1,9 @@
 import prisma from "../../lib/prisma.js";
-import { AuthenticationError } from "../../shared/errors/index.js";
+import { BaseRepository } from "../../shared/repositories/base.repository.js";
 
-export class PhoneOrderRepository {
+export class PhoneOrderRepository extends BaseRepository {
   async findRecentOrdersByCustomer(tenantContext, customerId, limit = 5) {
-    if (!tenantContext?.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    this.assertTenant(tenantContext);
 
     return prisma.order.findMany({
       where: { restaurantId: tenantContext.restaurantId, customerId },
@@ -23,9 +21,7 @@ export class PhoneOrderRepository {
   }
 
   async findDefaultAddress(tenantContext, customerId) {
-    if (!tenantContext?.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    this.assertTenant(tenantContext);
 
     return prisma.customerAddress.findFirst({
       where: { restaurantId: tenantContext.restaurantId, customerId, isDefault: true, deletedAt: null },

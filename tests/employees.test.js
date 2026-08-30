@@ -212,6 +212,50 @@ describe("Employees Module Integration & Security Tests", () => {
     assert.equal(body.error.code, "BUSINESS_RULE_ERROR");
   });
 
+  test("4b. Cannot assign system owner role via PATCH /employees/:id/role", async () => {
+    const ownerRole = await prisma.role.findFirst({
+      where: { restaurantId: restaurantA.id, name: "owner", isSystem: true },
+    });
+    assert.ok(ownerRole);
+
+    const managerRole = await prisma.role.findFirst({
+      where: { restaurantId: restaurantA.id, name: "manager" },
+    });
+    const mainBranch = await prisma.branch.findFirst({
+      where: { restaurantId: restaurantA.id, isMain: true },
+    });
+
+    const createRes = await fetch(`${baseUrl}/api/v1/employees`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${ownerAToken}`,
+      },
+      body: JSON.stringify({
+        name: "Role Target",
+        email: `roletarget-${Date.now()}@testa.com`,
+        password: "Password123!",
+        branchId: mainBranch.id,
+        roleId: managerRole.id,
+      }),
+    });
+    assert.equal(createRes.status, 201);
+    const target = (await createRes.json()).data;
+
+    const res = await fetch(`${baseUrl}/api/v1/employees/${target.id}/role`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${ownerAToken}`,
+      },
+      body: JSON.stringify({ roleId: ownerRole.id }),
+    });
+
+    assert.equal(res.status, 422);
+    const body = await res.json();
+    assert.equal(body.error.code, "BUSINESS_RULE_ERROR");
+  });
+
   test("5. Self Password Change requires currentPassword (401 AuthenticationError if omitted)", async () => {
     const res = await fetch(`${baseUrl}/api/v1/employees/${ownerA.id}/password`, {
       method: "PATCH",

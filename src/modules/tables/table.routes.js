@@ -10,6 +10,7 @@ import { publicTableRateLimiter } from "../../shared/middleware/rate-limiters.js
 import { authenticate } from "../auth/authenticate.middleware.js";
 import { authorize, authorizeAny } from "../auth/authorize.middleware.js";
 import { requireTenantContext } from "../../shared/middleware/tenant-context.js";
+import { requireBranchAccess } from "../../shared/middleware/require-branch-access.js";
 import { validate } from "../../shared/middleware/validate.js";
 
 const router = Router();
@@ -19,7 +20,7 @@ router.get("/menu/table/:qrToken", publicTableRateLimiter, validate(publicTableM
 });
 
 const branchTableRouter = Router({ mergeParams: true });
-branchTableRouter.use(authenticate, requireTenantContext);
+branchTableRouter.use(authenticate, requireTenantContext, requireBranchAccess());
 
 branchTableRouter.get("/", authorizeAny("tables.view", "tables.manage"), validate(tableQuerySchema), (req, res, next) => {
   tableController.listTables(req, res, next);

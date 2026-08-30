@@ -1,11 +1,10 @@
 import prisma from "../../lib/prisma.js";
-import { assertTenantContext } from "../../shared/middleware/tenant-context.js";
-import { getPaginationOffset } from "../../shared/utils/pagination.js";
+import { BaseRepository, assertTenantContext, getPaginationOffset, CUSTOMER_SUMMARY_SELECT, ACTOR_SUMMARY_SELECT } from "../../shared/repositories/base.repository.js";
 
-export class InboxRepository {
+export class InboxRepository extends BaseRepository {
   async findConversations(tenantContext, { page = 1, limit = 20, status, assignedToMe } = {}) {
-    assertTenantContext(tenantContext);
-    const { skip, take } = getPaginationOffset(page, limit);
+    this.assertTenant(tenantContext);
+    const { skip, take } = this.getPaginationOffset(page, limit);
 
     const where = {
       restaurantId: tenantContext.restaurantId,
@@ -20,8 +19,8 @@ export class InboxRepository {
         take,
         orderBy: { lastMessageAt: "desc" },
         include: {
-          customer: { select: { id: true, name: true, phone: true } },
-          assignedAgent: { select: { id: true, name: true, email: true } },
+          customer: { select: CUSTOMER_SUMMARY_SELECT },
+          assignedAgent: { select: ACTOR_SUMMARY_SELECT },
           _count: { select: { messages: true } },
         },
       }),
@@ -32,13 +31,13 @@ export class InboxRepository {
   }
 
   async findConversationById(tenantContext, id) {
-    assertTenantContext(tenantContext);
+    this.assertTenant(tenantContext);
 
     return prisma.inboxConversation.findFirst({
       where: { id, restaurantId: tenantContext.restaurantId },
       include: {
-        customer: { select: { id: true, name: true, phone: true } },
-        assignedAgent: { select: { id: true, name: true, email: true } },
+        customer: { select: CUSTOMER_SUMMARY_SELECT },
+        assignedAgent: { select: ACTOR_SUMMARY_SELECT },
         whatsappConversation: { select: { id: true, customerPhone: true, status: true } },
         messages: { orderBy: { createdAt: "asc" } },
       },

@@ -4,6 +4,7 @@ import { phoneLookupSchema, createPhoneOrderSchema } from "./phone-order.validat
 import { authenticate } from "../auth/authenticate.middleware.js";
 import { authorize } from "../auth/authorize.middleware.js";
 import { requireTenantContext } from "../../shared/middleware/tenant-context.js";
+import { requireBranchAccess } from "../../shared/middleware/require-branch-access.js";
 import { validate } from "../../shared/middleware/validate.js";
 
 const router = Router();
@@ -14,7 +15,7 @@ router.post("/lookup", authorize("orders.create"), validate(phoneLookupSchema), 
   phoneOrderController.lookup(req, res, next);
 });
 
-router.post("/branches/:branchId/orders", authorize("orders.create"), validate(createPhoneOrderSchema), (req, res, next) => {
+router.post("/branches/:branchId/orders", requireBranchAccess(), authorize("orders.create"), validate(createPhoneOrderSchema), (req, res, next) => {
   phoneOrderController.createPhoneOrder(req, res, next);
 });
 

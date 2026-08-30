@@ -3,13 +3,13 @@ import { broadcastToRestaurant } from "../../lib/socket.js";
 
 export function registerRealtimeSubscriptions() {
   onEvent(DomainEvent.ORDER_CREATED, (p) =>
-    broadcastToRestaurant(p.restaurantId, "order.created", p)
+    broadcastToRestaurant(p.restaurantId, "order.created", p, { branchId: p.branchId })
   );
   onEvent(DomainEvent.ORDER_STATUS_CHANGED, (p) =>
-    broadcastToRestaurant(p.restaurantId, "order.statusChanged", p)
+    broadcastToRestaurant(p.restaurantId, "order.statusChanged", p, { branchId: p.branchId })
   );
   onEvent(DomainEvent.ORDER_PAID, (p) =>
-    broadcastToRestaurant(p.restaurantId, "order.paid", p)
+    broadcastToRestaurant(p.restaurantId, "order.paid", p, { branchId: p.branchId })
   );
   onEvent(DomainEvent.CHAT_ASSIGNED, (p) =>
     broadcastToRestaurant(p.restaurantId, "conversation.assigned", p)
@@ -21,7 +21,7 @@ export function registerRealtimeSubscriptions() {
     broadcastToRestaurant(p.restaurantId, "customer.updated", p)
   );
   onEvent(DomainEvent.TABLE_SESSION_UPDATED, (p) =>
-    broadcastToRestaurant(p.restaurantId, "tableSession.updated", p)
+    broadcastToRestaurant(p.restaurantId, "tableSession.updated", p, { branchId: p.branchId })
   );
 }
 

@@ -1,14 +1,11 @@
 import prisma from "../../lib/prisma.js";
-import { AuthenticationError } from "../../shared/errors/index.js";
+import { BaseRepository } from "../../shared/repositories/base.repository.js";
 
-export class KdsRepository {
+export class KdsRepository extends BaseRepository {
 
   async findActiveKitchenOrders(tenantContext, branchId, { page = 1, limit = 20, status } = {}) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
-
-    const skip = (page - 1) * limit;
+    this.assertTenant(tenantContext);
+    const { skip, take } = this.getPaginationOffset(page, limit);
 
     const where = {
       restaurantId: tenantContext.restaurantId,
@@ -20,7 +17,7 @@ export class KdsRepository {
       prisma.order.findMany({
         where,
         skip,
-        take: limit,
+        take,
         include: {
           items: true,
           table: {

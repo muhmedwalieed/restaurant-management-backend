@@ -1,8 +1,7 @@
 import notificationRepository from "./notification.repository.js";
-import { getSocketIo } from "../../lib/socket.js";
+import { broadcastToEmployee } from "../../lib/socket.js";
 import { NotFoundError } from "../../shared/errors/index.js";
 import { paginateResponse } from "../../shared/utils/pagination.js";
-import logger from "../../config/logger.js";
 
 export class NotificationService {
 
@@ -66,7 +65,7 @@ export class NotificationService {
       referenceType,
       referenceId,
     });
-    this.broadcast(tenantContext.restaurantId, notification);
+    this.broadcast(notification);
     return notification;
   }
 
@@ -81,10 +80,9 @@ export class NotificationService {
     );
     const disabledByEmployee = new Map(prefs.map((p) => [p.employeeId, Array.isArray(p.disabledTypes) ? p.disabledTypes : []]));
 
-    let created = 0;
-    for (const emp of employees) {
-      if ((disabledByEmployee.get(emp.id) || []).includes(type)) continue;
-      const notification = await notificationRepository.createNotification(tenantContext, {
+    const rows = employees
+      .filter((emp) => !(disabledByEmployee.get(emp.id) || []).includes(type))
+      .map((emp) => ({
         targetEmployeeId: emp.id,
         branchId,
         type,
@@ -92,18 +90,30 @@ export class NotificationService {
         body,
         referenceType,
         referenceId,
+      }));
+
+    if (rows.length === 0) return 0;
+
+    await notificationRepository.createNotifications(tenantContext, rows);
+
+    for (const row of rows) {
+      this.broadcast({
+        restaurantId,
+        branchId: row.branchId,
+        targetEmployeeId: row.targetEmployeeId,
+        type: row.type,
+        title: row.title,
+        body: row.body,
+        referenceType: row.referenceType,
+        referenceId: row.referenceId,
       });
-      this.broadcast(restaurantId, notification);
-      created += 1;
     }
-    return created;
+    return rows.length;
   }
 
-  broadcast(restaurantId, notification) {
-    try {
-      getSocketIo()?.to(`restaurant:${restaurantId}`).emit("notification.created", notification);
-    } catch (err) {
-      logger.warn({ err: err.message }, "Socket broadcast failed for notification");
+  broadcast(notification) {
+    if (notification?.targetEmployeeId) {
+      broadcastToEmployee(notification.targetEmployeeId, "notification.created", notification);
     }
   }
 

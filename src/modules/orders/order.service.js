@@ -7,6 +7,7 @@ import prisma from "../../lib/prisma.js";
 import { BusinessRuleError, NotFoundError, AuthorizationError } from "../../shared/errors/index.js";
 import { getEmployeePermissions } from "../auth/authorize.middleware.js";
 import { paginateResponse } from "../../shared/utils/pagination.js";
+import { assertBranchInTenant } from "../../shared/utils/assert-branch.js";
 
 function validateStateTransition(currentStatus, newStatus, orderType) {
   if (currentStatus === newStatus) {
@@ -35,7 +36,7 @@ function validateStateTransition(currentStatus, newStatus, orderType) {
 
 export class OrderService {
   async verifyBranchOwnership(tenantContext, branchId) {
-    return branchRepository.requireBranch(tenantContext, branchId);
+    return assertBranchInTenant(tenantContext, branchId);
   }
 
   async listOrders(tenantContext, branchId, { page = 1, limit = 20, status, type, source, tableId } = {}) {
@@ -135,39 +136,52 @@ export class OrderService {
       if (!table) {
         throw new NotFoundError("Table not found in target branch");
       }
-
-      if (payload.source !== "QR") {
-        const activeOrderOnTable = await prisma.order.findFirst({
-          where: {
-            restaurantId,
-            branchId,
-            tableId: payload.tableId,
-            status: { in: ["PENDING", "CONFIRMED", "PREPARING", "READY"] },
-          },
-          select: { id: true, orderNumber: true },
-        });
-        if (activeOrderOnTable) {
-          throw new BusinessRuleError(
-            `Table already has an active order (#${activeOrderOnTable.orderNumber}). A table can only have one active order at a time`
-          );
-        }
-      }
     }
 
     let calculatedSubtotal = 0;
     const itemSnapshots = [];
 
-    for (const itemInput of payload.items) {
-      const product = await prisma.product.findFirst({
-        where: {
-          id: itemInput.productId,
-          restaurantId,
-          isAvailable: true,
-          status: "ACTIVE",
-          deletedAt: null,
-        },
-      });
+    const productIds = [...new Set(payload.items.map((i) => i.productId))];
+    const products = await prisma.product.findMany({
+      where: {
+        id: { in: productIds },
+        restaurantId,
+        isAvailable: true,
+        status: "ACTIVE",
+        deletedAt: null,
+      },
+    });
+    const productById = new Map(products.map((p) => [p.id, p]));
 
+    const allModifierIds = [
+      ...new Set(
+        payload.items.flatMap((itemInput) => {
+          const selection =
+            Array.isArray(itemInput.modifiers) && itemInput.modifiers.length > 0
+              ? itemInput.modifiers
+              : (itemInput.modifierIds || []).map((id) => ({ modifierId: id, quantity: 1 }));
+          return selection.map((m) => m.modifierId);
+        })
+      ),
+    ];
+    const allModifiers =
+      allModifierIds.length > 0
+        ? await prisma.productModifier.findMany({
+            where: {
+              id: { in: allModifierIds },
+              restaurantId,
+              deletedAt: null,
+            },
+          })
+        : [];
+    const modifiersByProduct = new Map();
+    for (const mod of allModifiers) {
+      if (!modifiersByProduct.has(mod.productId)) modifiersByProduct.set(mod.productId, []);
+      modifiersByProduct.get(mod.productId).push(mod);
+    }
+
+    for (const itemInput of payload.items) {
+      const product = productById.get(itemInput.productId);
       if (!product) {
         throw new NotFoundError(`Product '${itemInput.productId}' not found or unavailable`);
       }
@@ -182,15 +196,8 @@ export class OrderService {
           : (itemInput.modifierIds || []).map((id) => ({ modifierId: id, quantity: 1 }));
 
       if (modifierSelection.length > 0) {
-        const modifierIds = modifierSelection.map((m) => m.modifierId);
-        const modifiers = await prisma.productModifier.findMany({
-          where: {
-            id: { in: modifierIds },
-            productId: product.id,
-            restaurantId,
-            deletedAt: null,
-          },
-        });
+        const selectedIds = new Set(modifierSelection.map((m) => m.modifierId));
+        const modifiers = (modifiersByProduct.get(product.id) || []).filter((m) => selectedIds.has(m.id));
 
         for (const mod of modifiers) {
           const selection = modifierSelection.find((s) => s.modifierId === mod.id);
@@ -490,8 +497,10 @@ export class OrderService {
       throw new BusinessRuleError("Cannot process payment for refunded order");
     }
 
-    if (payload.amount !== undefined && Number(payload.amount) > Number(order.total)) {
-      throw new BusinessRuleError("Payment amount exceeds order total");
+    const amountCents = Math.round(Number(payload.amount) * 100);
+    const totalCents = Math.round(Number(order.total) * 100);
+    if (amountCents !== totalCents) {
+      throw new BusinessRuleError("Payment amount must equal the order total");
     }
 
     await orderRepository.updateOrderPaymentWithHistoryTransaction(

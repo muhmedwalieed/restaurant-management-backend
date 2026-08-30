@@ -1,12 +1,11 @@
 import prisma from "../../lib/prisma.js";
-import { AuthenticationError, NotFoundError } from "../../shared/errors/index.js";
+import { NotFoundError } from "../../shared/errors/index.js";
+import { BaseRepository } from "../../shared/repositories/base.repository.js";
 
-export class RestaurantRepository {
+export class RestaurantRepository extends BaseRepository {
 
   async findRestaurantById(tenantContext) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    this.assertTenant(tenantContext);
 
     const restaurant = await prisma.restaurant.findUnique({
       where: {
@@ -42,9 +41,7 @@ export class RestaurantRepository {
   }
 
   async updateRestaurantProfile(tenantContext, data) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    this.assertTenant(tenantContext);
 
     return prisma.restaurant.update({
       where: {
@@ -68,9 +65,7 @@ export class RestaurantRepository {
   }
 
   async updateRestaurantStatus(tenantContext, status) {
-    if (!tenantContext || !tenantContext.restaurantId) {
-      throw new AuthenticationError("TenantContext with restaurantId is required");
-    }
+    this.assertTenant(tenantContext);
 
     return prisma.restaurant.update({
       where: {

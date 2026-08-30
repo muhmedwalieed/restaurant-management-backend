@@ -5,7 +5,8 @@ import { Server } from "socket.io";
 import app from "./app/app.js";
 import env from "./config/env.js";
 import prisma from "./lib/prisma.js";
-import { disconnectRedis } from "./config/redis.js";
+import { createAdapter } from "@socket.io/redis-adapter";
+import { connectRedis, disconnectRedis, getRedisClient, getRedisSubscriber } from "./config/redis.js";
 import { setSocketIo } from "./lib/socket.js";
 import { verifyAccessToken } from "./utils/jwt.js";
 import { registerRealtimeSubscriptions } from "./shared/events/realtime.subscriptions.js";
@@ -58,6 +59,9 @@ io.on("connection", async (socket) => {
     };
     await socket.join(`restaurant:${payload.restaurantId}`);
     await socket.join(`employee:${payload.employeeId}`);
+    if (payload.branchId) {
+      await socket.join(`branch:${payload.branchId}`);
+    }
 
     logger.info({ socketId: socket.id, restaurantId: payload.restaurantId }, "Socket connected and joined tenant room");
     socket.emit("realtime.connected", {
@@ -96,8 +100,22 @@ process.on("SIGINT", () => shutdown("SIGINT"));
 const startServer = async () => {
   try {
     await prisma.$connect();
-
     logger.info("Database connected successfully.");
+
+    try {
+      const redisReady = await connectRedis();
+      if (redisReady) {
+        const pubClient = getRedisClient();
+        const subClient = getRedisSubscriber();
+        if (subClient.status === "wait") {
+          await subClient.connect();
+        }
+        io.adapter(createAdapter(pubClient, subClient));
+        logger.info("Socket.IO Redis adapter attached.");
+      }
+    } catch (adapterErr) {
+      logger.warn({ err: adapterErr.message }, "Socket.IO Redis adapter not attached; realtime is process-local");
+    }
 
     httpServer.listen(PORT, () => {
       logger.info(`API: http://localhost:${PORT}`);

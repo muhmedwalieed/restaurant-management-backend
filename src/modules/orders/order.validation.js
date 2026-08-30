@@ -1,9 +1,9 @@
 import { z } from "zod";
+import { paginationQuerySchema } from "../../shared/validation/common.schemas.js";
 
 export const orderQuerySchema = z.object({
   query: z.object({
-    page: z.coerce.number().int().min(1).default(1),
-    limit: z.coerce.number().int().min(1).max(100).default(20),
+    ...paginationQuerySchema,
     status: z.enum(["PENDING", "CONFIRMED", "PREPARING", "READY", "OUT_FOR_DELIVERY", "DELIVERED", "CANCELLED"]).optional(),
     type: z.enum(["DINE_IN", "DELIVERY", "PICKUP"]).optional(),
     source: z.enum(["WHATSAPP", "QR", "WEBSITE", "CASHIER", "PHONE"]).optional(),
@@ -145,7 +145,7 @@ export const posOrderSchema = z.object({
 export const paymentSchema = z.object({
   body: z.object({
     paymentMethod: z.enum(["CASH", "CARD", "ONLINE"]),
-    amount: z.coerce.number().positive().optional(),
+    amount: z.coerce.number().positive("Payment amount is required"),
     expectedVersion: z.coerce.number().int().min(1, "expectedVersion is required for optimistic locking"),
   }),
 });

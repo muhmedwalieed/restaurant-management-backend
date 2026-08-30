@@ -2,6 +2,7 @@ import multiBranchRepository from "./multi-branch.repository.js";
 import { AuditAction, auditLogService } from "../audit-logs/audit-log.service.js";
 import { BusinessRuleError, ConflictError, NotFoundError, AuthorizationError } from "../../shared/errors/index.js";
 import { getEmployeePermissions } from "../auth/authorize.middleware.js";
+import { assertBranchInTenant } from "../../shared/utils/assert-branch.js";
 
 export class MultiBranchService {
 
@@ -106,11 +107,7 @@ export class MultiBranchService {
   }
 
   async verifyBranch(tenantContext, branchId) {
-    const branch = await multiBranchRepository.findBranch(tenantContext, branchId);
-    if (!branch) {
-      throw new NotFoundError("Branch not found or access denied");
-    }
-    return branch;
+    return assertBranchInTenant(tenantContext, branchId);
   }
 }
 

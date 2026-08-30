@@ -1,7 +1,7 @@
 import prisma from "../../lib/prisma.js";
-import { assertTenantContext } from "../../shared/middleware/tenant-context.js";
+import { BaseRepository, assertTenantContext } from "../../shared/repositories/base.repository.js";
 
-export class RoleRepository {
+export class RoleRepository extends BaseRepository {
   async findRoles(tenantContext) {
     assertTenantContext(tenantContext);
     return prisma.role.findMany({
