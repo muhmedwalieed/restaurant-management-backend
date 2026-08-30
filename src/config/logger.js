@@ -26,6 +26,29 @@ const logger = pino(
     formatters: {
       level: (label) => ({ level: label }),
     },
+    redact: {
+      paths: [
+        "apiToken",
+        "webhookSecret",
+        "verifyToken",
+        "password",
+        "passwordHash",
+        "refreshToken",
+        "refreshTokenHash",
+        "*.apiToken",
+        "*.webhookSecret",
+        "*.verifyToken",
+        "*.password",
+        "*.passwordHash",
+        "req.headers.authorization",
+        "req.headers['x-hub-signature-256']",
+        "req.body.apiToken",
+        "req.body.webhookSecret",
+        "req.body.verifyToken",
+        "req.body.password",
+      ],
+      censor: "[REDACTED]",
+    },
   },
   destination
 );

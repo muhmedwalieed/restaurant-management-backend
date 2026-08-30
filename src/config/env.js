@@ -50,6 +50,10 @@ const envSchema = z.object({
     .string()
     .default("redis://localhost:6379"),
 
+  TRUST_PROXY: z
+    .string()
+    .default("1"),
+
   LOG_LEVEL: z
     .enum(["debug", "info", "warn", "error", "fatal"])
     .default("info"),
@@ -60,23 +64,17 @@ const envSchema = z.object({
     .positive()
     .default(10),
 
+  ENCRYPTION_KEY: z
+    .string()
+    .min(32)
+    .default("default_development_encryption_key_32bytes!!"),
+
   WHATSAPP_VERIFY_TOKEN: z
     .string()
-    .min(16),
+    .optional(),
 
   WHATSAPP_WEBHOOK_SECRET: z
     .string()
-    .min(16)
-    .optional(),
-
-  WHATSAPP_API_TOKEN: z
-    .string()
-    .min(1)
-    .optional(),
-
-  WHATSAPP_PHONE_NUMBER_ID: z
-    .string()
-    .min(1)
     .optional(),
 });
 
