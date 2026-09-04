@@ -64,7 +64,13 @@ export class PhoneOrderService {
       type,
       customerId: customer.id,
       address: orderAddress || null,
-      items: items.map((i) => ({ productId: i.productId, quantity: i.quantity, modifierIds: i.modifierIds, notes: i.notes })),
+      items: items.map((i) => ({
+        productId: i.productId,
+        quantity: i.quantity,
+        modifierIds: i.modifierIds,
+        modifiers: i.modifiers,
+        notes: i.notes,
+      })),
       notes: notes,
     });
 

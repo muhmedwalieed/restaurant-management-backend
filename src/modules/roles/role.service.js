@@ -2,23 +2,9 @@ import roleRepository from "./role.repository.js";
 import { GLOBAL_PERMISSIONS } from "../permissions/permission.catalog.js";
 import { BusinessRuleError, ConflictError, NotFoundError } from "../../shared/errors/index.js";
 import { AuditAction, auditLogService } from "../audit-logs/audit-log.service.js";
-import redis from "../../config/redis.js";
-import logger from "../../config/logger.js";
+import { invalidateEmployeePermissions } from "../auth/authorize.middleware.js";
 
 const RESERVED_ROLE_NAMES = new Set(["owner", "manager"]);
-
-async function invalidateEmployeesCache(employeeIds) {
-  if (!employeeIds || employeeIds.length === 0) return;
-  try {
-    const pipeline = redis.pipeline();
-    for (const empId of employeeIds) {
-      pipeline.del(`permissions:${empId}`);
-    }
-    await pipeline.exec();
-  } catch (err) {
-    logger.warn({ err: err.message }, "Failed to invalidate employees cache on role update");
-  }
-}
 
 export class RoleService {
   async listRoles(tenantContext) {
@@ -109,7 +95,7 @@ export class RoleService {
     });
 
     const assignedEmpIds = await roleRepository.findAssignedEmployeeIds(tenantContext, id);
-    await invalidateEmployeesCache(assignedEmpIds);
+    await invalidateEmployeePermissions(assignedEmpIds);
 
     return updatedRole;
   }
@@ -133,7 +119,7 @@ export class RoleService {
     const assignedEmpIds = await roleRepository.findAssignedEmployeeIds(tenantContext, id);
 
     await roleRepository.deleteRole(tenantContext, id);
-    await invalidateEmployeesCache(assignedEmpIds);
+    await invalidateEmployeePermissions(assignedEmpIds);
 
     await auditLogService.record(tenantContext, {
       actorEmployeeId: tenantContext.employeeId || null,

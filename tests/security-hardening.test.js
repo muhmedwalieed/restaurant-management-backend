@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import prisma from "../src/lib/prisma.js";
-import redis from "../src/config/redis.js";
+import redis, { disconnectRedis } from "../src/config/redis.js";
 import { sniffImage, UPLOADS_DIR } from "../src/lib/uploads.js";
 import employeeService from "../src/modules/employees/employee.service.js";
 import roleService from "../src/modules/roles/role.service.js";
@@ -84,6 +84,7 @@ test("Backend Security Hardening & Isolation Suite", async (t) => {
       await prisma.branch.deleteMany({ where: { restaurantId: restaurant.id } });
       await prisma.restaurant.deleteMany({ where: { id: restaurant.id } });
     } catch {}
+    await disconnectRedis();
   });
 
   await t.test("1. RBAC Cache Invalidation & Single/Pipeline Deletion", async () => {

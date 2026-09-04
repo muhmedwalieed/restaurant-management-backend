@@ -85,7 +85,7 @@ export const uploadRateLimiter = createRateLimiter({
  */
 export const webhookRateLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: 3000,
   message: "Too many webhook events, please try again later",
 });
 

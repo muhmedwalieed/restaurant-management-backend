@@ -76,7 +76,18 @@ const envSchema = z.object({
   WHATSAPP_WEBHOOK_SECRET: z
     .string()
     .optional(),
-});
+}).refine(
+  (data) => {
+    if (data.NODE_ENV === "production" && data.ENCRYPTION_KEY === "default_development_encryption_key_32bytes!!") {
+      return false;
+    }
+    return true;
+  },
+  {
+    message: "ENCRYPTION_KEY must be securely configured with a unique secret in production",
+    path: ["ENCRYPTION_KEY"],
+  }
+);
 
 const parsedEnv = envSchema.safeParse(process.env);
 

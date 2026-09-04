@@ -9,16 +9,7 @@ import {
 } from "../../shared/errors/index.js";
 import { paginateResponse } from "../../shared/utils/pagination.js";
 import prisma from "../../lib/prisma.js";
-import redis from "../../config/redis.js";
-import logger from "../../config/logger.js";
-
-async function invalidatePermissionCache(employeeId) {
-  try {
-    await redis.del(`permissions:${employeeId}`);
-  } catch (err) {
-    logger.warn({ err: err.message, employeeId }, "Failed to invalidate permission cache");
-  }
-}
+import { invalidateEmployeePermissions } from "../auth/authorize.middleware.js";
 
 export class EmployeeService {
   async listEmployees(tenantContext, { page = 1, limit = 20, branchId, search, status, roleId, sort }) {
@@ -115,7 +106,7 @@ export class EmployeeService {
     if (data.status && data.status !== "ACTIVE") {
       await authRepository.forceLogoutEmployee(tenantContext.restaurantId, id);
     }
-    await invalidatePermissionCache(id);
+    await invalidateEmployeePermissions(id);
     return updated;
   }
 
@@ -193,7 +184,7 @@ export class EmployeeService {
     }
 
     await authRepository.forceLogoutEmployee(tenantContext.restaurantId, id);
-    await invalidatePermissionCache(id);
+    await invalidateEmployeePermissions(id);
     return { message: "Employee soft-deleted successfully" };
   }
 }

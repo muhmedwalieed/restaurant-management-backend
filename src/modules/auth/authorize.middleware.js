@@ -82,9 +82,15 @@ export function authorize(permissionKey) {
   return authorizeAny(permissionKey);
 }
 
-export async function invalidateEmployeePermissions(employeeId) {
-  if (!employeeId) return;
-  await invalidateCacheKeys(`permissions:${employeeId}`);
+export async function invalidateEmployeePermissions(employeeIds) {
+  if (!employeeIds) return;
+  const ids = Array.isArray(employeeIds) ? employeeIds : [employeeIds];
+  if (ids.length === 0) return;
+  const keys = ids.filter(Boolean).map((id) => `permissions:${id}`);
+  if (keys.length > 0) {
+    await invalidateCacheKeys(...keys);
+  }
 }
 
 export default authorize;
+
