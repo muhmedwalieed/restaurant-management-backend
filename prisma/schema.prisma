@@ -106,6 +106,7 @@ model Restaurant {
   currency    String?
   timezone    String?
   status      RestaurantStatus @default(ACTIVE)
+  templates   Json?            @default("{}")
   createdAt   DateTime         @default(now()) @map("created_at")
   updatedAt   DateTime         @updatedAt @map("updated_at")
 
@@ -135,6 +136,7 @@ model Restaurant {
   whatsappConversations  WhatsAppConversation[]
   inboxConversations     InboxConversation[]
   inboxMessages          InboxMessage[]
+  inboxTicketLogs        InboxTicketLog[]
   coupons                Coupon[]
   notifications          Notification[]
   notificationPreferences NotificationPreference[]
@@ -456,6 +458,7 @@ model Order {
   coupon        Coupon?              @relation(fields: [couponId], references: [id], onDelete: SetNull)
   items         OrderItem[]
   statusHistory OrderStatusHistory[]
+  inboxConversations InboxConversation[]
 
   @@unique([branchId, orderDate, orderNumber])
   @@index([restaurantId])
@@ -591,9 +594,11 @@ model Employee {
   sessions       Session[]
   branchAccesses EmployeeBranchAccess[]
   assignedInboxConversations InboxConversation[] @relation("inbox_assigned_agent")
-  inboxMessages  InboxMessage[] @relation("inbox_message_agent")
-  lockedInboxConversations InboxConversation[] @relation("inbox_locked_by")
-  notifications  Notification[] @relation("notification_target")
+  closedInboxConversations   InboxConversation[] @relation("inbox_closed_by")
+  inboxMessages              InboxMessage[]      @relation("inbox_message_agent")
+  lockedInboxConversations   InboxConversation[] @relation("inbox_locked_by")
+  inboxLogs                  InboxTicketLog[]    @relation("inbox_log_actor")
+  notifications              Notification[]      @relation("notification_target")
   notificationPreference NotificationPreference? @relation("notification_pref")
   auditLogs      AuditLog[] @relation("audit_actor")
 
@@ -830,6 +835,8 @@ enum WhatsAppFlowState {
   TRACKING
   FAQ
   HUMAN_HANDOFF
+  SUPPORT_CATEGORY_SELECT
+  SUPPORT_DETAILS_PROMPT
 }
 
 enum WhatsAppConversationStatus {
@@ -856,7 +863,7 @@ model WhatsAppConversation {
   restaurant Restaurant         @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
   connection WhatsAppConnection @relation(fields: [connectionId], references: [id], onDelete: Restrict)
   customer   Customer?          @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  inboxConversation InboxConversation?
+  inboxConversations InboxConversation[]
 
   @@unique([restaurantId, connectionId, customerPhone])
   @@index([restaurantId])
@@ -873,6 +880,13 @@ enum InboxStatus {
   CLOSED
 }
 
+enum InboxTicketType {
+  ORDER
+  SUPPORT
+  COMPLAINT
+  INQUIRY
+}
+
 enum InboxSenderType {
   AGENT
   CUSTOMER
@@ -880,30 +894,55 @@ enum InboxSenderType {
 }
 
 model InboxConversation {
-  id                     String      @id @default(cuid())
-  restaurantId           String      @map("restaurant_id")
-  whatsappConversationId String?     @unique @map("whatsapp_conversation_id")
-  customerId             String?     @map("customer_id")
-  customerPhone          String      @map("customer_phone")
-  assignedAgentId        String?     @map("assigned_agent_id")
-  relatedOrderId         String?     @map("related_order_id")
-  lockedById             String?     @map("locked_by_id")
-  lockedAt               DateTime?   @map("locked_at")
-  status                 InboxStatus @default(WAITING)
-  lastMessageAt          DateTime    @default(now()) @map("last_message_at")
-  createdAt              DateTime    @default(now()) @map("created_at")
-  updatedAt              DateTime    @updatedAt @map("updated_at")
+  id                     String          @id @default(cuid())
+  restaurantId           String          @map("restaurant_id")
+  whatsappConversationId String?         @map("whatsapp_conversation_id")
+  customerId             String?         @map("customer_id")
+  customerPhone          String          @map("customer_phone")
+  assignedAgentId        String?         @map("assigned_agent_id")
+  relatedOrderId         String?         @map("related_order_id")
+  ticketType             InboxTicketType @default(SUPPORT) @map("ticket_type")
+  ticketNumber           Int?            @map("ticket_number")
+  subject                String?         @map("subject") @db.VarChar(255)
+  lockedById             String?         @map("locked_by_id")
+  lockedAt               DateTime?       @map("locked_at")
+  status                 InboxStatus     @default(WAITING)
+  lastMessageAt          DateTime        @default(now()) @map("last_message_at")
+
+  // Staff Resolution Fields
+  closedByEmployeeId     String?         @map("closed_by_employee_id")
+  closedAt               DateTime?       @map("closed_at")
+  resolutionStatus       String?         @map("resolution_status") // RESOLVED | UNRESOLVED | CANCELLED
+  resolutionCategory     String?         @map("resolution_category") // LATE_DELIVERY | FOOD_QUALITY | WRONG_ITEM | GENERAL_INQUIRY | OTHER
+  resolutionNotes        String?         @map("resolution_notes") @db.Text
+
+  // Customer WhatsApp Feedback Survey Fields
+  feedbackRating         Int?            @map("feedback_rating") // 1 to 5
+  feedbackResolved       Boolean?        @map("feedback_resolved")
+  feedbackNps            Int?            @map("feedback_nps")
+  feedbackComment        String?         @map("feedback_comment") @db.Text
+  feedbackSubmittedAt    DateTime?       @map("feedback_submitted_at")
+
+  createdAt              DateTime        @default(now()) @map("created_at")
+  updatedAt              DateTime        @updatedAt @map("updated_at")
 
   restaurant            Restaurant            @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
   whatsappConversation  WhatsAppConversation? @relation(fields: [whatsappConversationId], references: [id], onDelete: SetNull)
   customer              Customer?             @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  relatedOrder          Order?                @relation(fields: [relatedOrderId], references: [id], onDelete: SetNull)
   assignedAgent         Employee?             @relation("inbox_assigned_agent", fields: [assignedAgentId], references: [id], onDelete: SetNull)
+  closedBy              Employee?             @relation("inbox_closed_by", fields: [closedByEmployeeId], references: [id], onDelete: SetNull)
   lockedBy              Employee?             @relation("inbox_locked_by", fields: [lockedById], references: [id], onDelete: SetNull)
   messages              InboxMessage[]
+  logs                  InboxTicketLog[]
 
   @@index([restaurantId])
   @@index([restaurantId, status])
+  @@index([restaurantId, ticketType])
   @@index([restaurantId, assignedAgentId])
+  @@index([restaurantId, closedByEmployeeId])
+  @@index([restaurantId, customerPhone])
+  @@index([restaurantId, relatedOrderId])
   @@index([restaurantId, whatsappConversationId])
   @@map("inbox_conversations")
 }
@@ -918,13 +957,33 @@ model InboxMessage {
   agentId        String?         @map("agent_id")
   createdAt      DateTime        @default(now()) @map("created_at")
 
-  restaurant   Restaurant       @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  restaurant   Restaurant        @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
   conversation InboxConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  agent        Employee?        @relation("inbox_message_agent", fields: [agentId], references: [id], onDelete: SetNull)
+  agent        Employee?         @relation("inbox_message_agent", fields: [agentId], references: [id], onDelete: SetNull)
 
   @@index([restaurantId])
   @@index([conversationId])
   @@map("inbox_messages")
+}
+
+model InboxTicketLog {
+  id             String   @id @default(cuid())
+  restaurantId   String   @map("restaurant_id")
+  conversationId String   @map("conversation_id")
+  actorType      String   @default("AGENT") @map("actor_type") // SYSTEM | AGENT | CUSTOMER
+  actorId        String?  @map("actor_id")
+  actorName      String?  @map("actor_name")
+  action         String   @db.VarChar(50) // CREATED | ASSIGNED | REASSIGNED | TAKEOVER | RESOLVED | CLOSED | FEEDBACK_RECEIVED | NOTE_ADDED | REPLIED
+  details        Json?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  restaurant   Restaurant        @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  conversation InboxConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  actor        Employee?         @relation("inbox_log_actor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([restaurantId])
+  @@index([conversationId])
+  @@map("inbox_ticket_logs")
 }
 
 enum CouponType {

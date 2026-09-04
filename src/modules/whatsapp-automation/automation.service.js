@@ -2,20 +2,15 @@ import automationRepository from "./automation.repository.js";
 import menuRepository from "../menu/menu.repository.js";
 import branchRepository from "../branches/branch.repository.js";
 import whatsAppService from "../whatsapp/whatsapp.service.js";
+import orderService from "../orders/order.service.js";
 import prisma from "../../lib/prisma.js";
+import logger from "../../config/logger.js";
 import { NotFoundError, BusinessRuleError } from "../../shared/errors/index.js";
 import { emitEvent, DomainEvent } from "../../shared/events/event-bus.js";
 import { paginateResponse } from "../../shared/utils/pagination.js";
 
-const WELCOME_TEXT =
-  "👋 *أهلاً بك في مطعمنا!*\nكيف يمكننا خدمتك اليوم؟\n\n" +
-  "1. 📋 عرض المنيو والمنتجات\n" +
-  "2. 🛒 عرض سلة التسوق\n" +
-  "3. 📍 الدفع وتحديد العنوان\n" +
-  "4. 📦 تتبع أحدث طلب\n" +
-  "5. ❓ الأسئلة الشائعة ومواعيد العمل\n" +
-  "6. 👨‍💼 التحدث مع خدمة العملاء\n\n" +
-  "أرسل رقم الخيار أو الكلمة المطلوبة.";
+import templateService from "../templates/template.service.js";
+import { parseFeedbackRating, isExplicitFeedbackText } from "./feedback.parser.js";
 
 const RESET_KEYWORDS = new Set([
   "start",
@@ -29,7 +24,6 @@ const RESET_KEYWORDS = new Set([
 ]);
 
 export class WhatsAppAutomationService {
-
   async getOrCreateConversation(tenantContext, connection, customerPhone) {
     let conv = await automationRepository.findConversationByPhone(
       tenantContext,
@@ -63,89 +57,288 @@ export class WhatsAppAutomationService {
 
     if (RESET_KEYWORDS.has(normalized)) {
       await automationRepository.resetConversation(tenantContext, conv.id);
+      const welcomeText = await templateService.render("WHATSAPP_WELCOME", tenantContext);
       await whatsAppService.sendMessage(tenantContext, {
         to: customerPhone,
-        text: WELCOME_TEXT,
+        text: welcomeText,
       });
       return;
     }
 
-    if (conv.status === "WAITING_AGENT") {
+    // 1. Check if customer is rating (either explicit feedback text or single digit '5'/'٥' which is not in welcome menu 1-4)
+    const ratingValue = parseFeedbackRating(content);
+    const isExplicitRating = isExplicitFeedbackText(content);
+    const isFiveRating = ratingValue === 5 && (normalized === "5" || normalized === "٥");
 
+    if (ratingValue !== null && (isExplicitRating || isFiveRating)) {
+      try {
+        const { inboxRepository } = await import("../inbox/inbox.repository.js");
+        const lastClosed = await inboxRepository.findLastClosedTicketByPhone(tenantContext, customerPhone);
+        if (lastClosed && lastClosed.ticketType !== "ORDER" && !lastClosed.feedbackRating && lastClosed.closedAt) {
+          const hoursSinceClose = (Date.now() - new Date(lastClosed.closedAt).getTime()) / (1000 * 60 * 60);
+          if (hoursSinceClose <= 48) {
+            const { inboxService } = await import("../inbox/inbox.service.js");
+            await inboxService.submitCustomerFeedback(tenantContext, lastClosed.id, {
+              rating: ratingValue,
+              resolved: ratingValue >= 3,
+            });
+            await automationRepository.updateConversation(tenantContext, conv.id, {
+              state: "WELCOME",
+              status: "ACTIVE",
+              cart: [],
+              selectedCategoryId: null,
+              address: null,
+              lastInboundAt: new Date(),
+            });
+            return;
+          }
+        }
+
+        // Check if rating is for a recently delivered order
+        const { getPhoneVariants } = await import("../../shared/utils/phone.js");
+        const variants = getPhoneVariants(customerPhone);
+
+        const ratedLogs = await prisma.auditLog.findMany({
+          where: {
+            restaurantId: tenantContext.restaurantId,
+            action: "ORDER_RATED",
+            entityType: "Order",
+          },
+          select: { entityId: true },
+        });
+        const ratedOrderIds = ratedLogs.map((l) => l.entityId).filter(Boolean);
+
+        const lastDeliveredOrder = await prisma.order.findFirst({
+          where: {
+            restaurantId: tenantContext.restaurantId,
+            customer: { phone: { in: variants } },
+            status: "DELIVERED",
+            ...(ratedOrderIds.length > 0 ? { id: { notIn: ratedOrderIds } } : {}),
+          },
+          orderBy: { updatedAt: "desc" },
+        });
+
+        if (lastDeliveredOrder) {
+          const hoursSinceDelivery = (Date.now() - new Date(lastDeliveredOrder.updatedAt).getTime()) / (1000 * 60 * 60);
+          if (hoursSinceDelivery <= 48) {
+            await prisma.auditLog.create({
+              data: {
+                restaurantId: tenantContext.restaurantId,
+                action: "ORDER_RATED",
+                entityType: "Order",
+                entityId: lastDeliveredOrder.id,
+                metadata: {
+                  rating: ratingValue,
+                  customerPhone,
+                  orderNumber: lastDeliveredOrder.orderNumber,
+                },
+              },
+            });
+
+            const thankYou =
+              ratingValue >= 4
+                ? await templateService.render("WHATSAPP_FEEDBACK_POSITIVE", tenantContext, {
+                    rating: ratingValue,
+                    orderNumber: lastDeliveredOrder.orderNumber,
+                  })
+                : await templateService.render("WHATSAPP_FEEDBACK_CONSTRUCTIVE", tenantContext, {
+                    rating: ratingValue,
+                    orderNumber: lastDeliveredOrder.orderNumber,
+                  });
+
+            await whatsAppService.sendMessage(tenantContext, {
+              to: customerPhone,
+              text: thankYou,
+            });
+            await automationRepository.updateConversation(tenantContext, conv.id, {
+              state: "WELCOME",
+              status: "ACTIVE",
+              cart: [],
+              selectedCategoryId: null,
+              address: null,
+              lastInboundAt: new Date(),
+            });
+            return;
+          }
+        }
+      } catch (err) {
+        console.error("Error processing customer feedback rating:", err);
+      }
+    }
+
+    // 2. If conversation is currently assigned to a human agent, forward message directly to the ticket
+    if (conv.status === "WAITING_AGENT") {
       try {
         const { inboxService } = await import("../inbox/inbox.service.js");
-        await inboxService.recordCustomerMessage(tenantContext, conv.id, customerPhone, content);
-      } catch (err) {
-
+        await inboxService.recordCustomerMessage(
+          tenantContext,
+          conv.id,
+          customerPhone,
+          content
+        );
+      } catch (inboxErr) {
+        console.error("Error forwarding customer message to inbox:", inboxErr);
       }
       return;
     }
 
-    const currentCart = Array.isArray(conv.cart) ? conv.cart : [];
+    // 3. State: SUPPORT_CATEGORY_SELECT (هل بخصوص أوردر سابق أم موضوع آخر)
+    if (conv.state === "SUPPORT_CATEGORY_SELECT") {
+      if (content === "1" || normalized.includes("طلب") || normalized.includes("اوردر") || normalized.includes("أوردر") || normalized.includes("سابق")) {
+        return this.handleSupportForPreviousOrder(tenantContext, conv, customerPhone);
+      }
 
-    if (normalized.includes("menu") || normalized.includes("منيو") || normalized.includes("قائمة")) {
-      return this.sendCategoriesMenu(tenantContext, conv, customerPhone);
-    }
-
-    if (normalized.includes("cart") || normalized.includes("سلة") || normalized.includes("سله")) {
-      return this.sendCartSummary(tenantContext, conv, customerPhone, currentCart);
-    }
-
-    if (normalized.includes("checkout") || normalized.includes("دفع") || normalized.includes("عنوان")) {
-      return this.promptAddress(tenantContext, conv, customerPhone, currentCart);
-    }
-
-    if (normalized.includes("track") || normalized.includes("تتبع") || normalized.includes("طلب")) {
-      return this.trackOrder(tenantContext, customerPhone);
-    }
-
-    if (normalized.includes("help") || normalized.includes("faq") || normalized.includes("مساعدة")) {
-      return this.sendFaq(tenantContext, customerPhone);
-    }
-
-    if (normalized.includes("agent") || normalized.includes("human") || normalized.includes("خدمة العملاء") || normalized.includes("موظف")) {
-      return this.triggerHandoff(tenantContext, conv, customerPhone);
-    }
-
-    if (conv.state === "MAIN_MENU" || conv.state === "MENU_CATEGORY") {
-      const selectedIndex = parseInt(content, 10) - 1;
-      const { items: categories } = await menuRepository.findCategories(tenantContext, { limit: 20 });
-
-      if (!isNaN(selectedIndex) && categories && categories[selectedIndex]) {
-        const targetCategory = categories[selectedIndex];
-        const { items: products } = await menuRepository.findProducts(tenantContext, {
-          categoryId: targetCategory.id,
-          limit: 20,
-        });
-
-        if (!products || products.length === 0) {
-          await whatsAppService.sendMessage(tenantContext, {
-            to: customerPhone,
-            text: `🍕 لا توجد منتجات متوفرة حالياً في فئة *${targetCategory.name}*.\nأرسل *1* للعودة إلى الفئات.`,
-          });
-          return;
-        }
-
-        let text = `🍕 *منتجات فئة ${targetCategory.name}:*\n\n`;
-        products.forEach((prod, idx) => {
-          text += `${idx + 1}. ${prod.name} (${Number(prod.price).toFixed(2)} ج.م)\n`;
-        });
-        text += "\nأرسل رقم المنتج لإضافته إلى السلة.";
-
+      if (content === "2" || normalized.includes("اخر") || normalized.includes("أخر") || normalized.includes("تاني") || normalized.includes("تانية") || normalized.includes("موضوع")) {
         await automationRepository.updateConversation(tenantContext, conv.id, {
-          state: "PRODUCT_SELECT",
-          selectedCategoryId: targetCategory.id,
+          state: "SUPPORT_DETAILS_PROMPT",
           lastInboundAt: new Date(),
         });
 
+        const promptText = await templateService.render("WHATSAPP_SUPPORT_DETAILS_PROMPT", tenantContext);
         await whatsAppService.sendMessage(tenantContext, {
           to: customerPhone,
-          text,
+          text: promptText,
         });
         return;
       }
+
+      // Invalid input in support category
+      const invalidCatText = await templateService.render("WHATSAPP_SUPPORT_CATEGORY_INVALID", tenantContext);
+      await whatsAppService.sendMessage(tenantContext, {
+        to: customerPhone,
+        text: invalidCatText,
+      });
+      return;
     }
 
+    // 4. State: SUPPORT_DETAILS_PROMPT (كتابة الاسم والسبب وفتح تذكرة شكوى)
+    if (conv.state === "SUPPORT_DETAILS_PROMPT") {
+      return this.handleSupportDetailsSubmit(tenantContext, conv, customerPhone, content);
+    }
+
+    const currentCart = Array.isArray(conv.cart) ? conv.cart : [];
+
+    // 5. State: CONFIRM_ORDER
+    if (conv.state === "CONFIRM_ORDER" && (normalized === "confirm" || normalized === "نعم" || normalized === "تاكيد" || normalized === "تأكيد")) {
+      if (currentCart.length === 0) {
+        const emptyCartText = await templateService.render("WHATSAPP_CART_EMPTY", tenantContext);
+        await whatsAppService.sendMessage(tenantContext, {
+          to: customerPhone,
+          text: emptyCartText,
+        });
+        return;
+      }
+
+      const { items: branches } = await branchRepository.findBranches(
+        tenantContext,
+        { limit: 20 }
+      ).catch(() => ({ items: [] }));
+
+      const mainBranch = branches.find((b) => b.isMain) || branches[0];
+      if (!mainBranch) {
+        const noBranchText = await templateService.render("WHATSAPP_NO_BRANCH_AVAILABLE", tenantContext);
+        await whatsAppService.sendMessage(tenantContext, {
+          to: customerPhone,
+          text: noBranchText,
+        });
+        return;
+      }
+
+      let subtotal = 0;
+      const orderItemsData = currentCart.map((item) => {
+        const itemTotal = Number(item.unitPrice) * item.quantity;
+        subtotal += itemTotal;
+        return {
+          restaurantId: tenantContext.restaurantId,
+          productId: item.productId,
+          productName: item.productName,
+          unitPrice: Number(item.unitPrice),
+          quantity: item.quantity,
+          subtotal: itemTotal,
+        };
+      });
+
+      let customer = await prisma.customer.findFirst({
+        where: { restaurantId: tenantContext.restaurantId, phone: customerPhone },
+      });
+
+      if (!customer) {
+        customer = await prisma.customer.create({
+          data: {
+            restaurantId: tenantContext.restaurantId,
+            name: `عميل واتساب (${customerPhone.slice(-4)})`,
+            phone: customerPhone,
+          },
+        });
+      }
+
+      const orderResult = await orderService.createOrder(tenantContext, mainBranch.id, {
+        source: "WHATSAPP",
+        type: "DELIVERY",
+        customerId: customer.id,
+        customerPhone,
+        customerName: customer.name,
+        address: conv.address || "العنوان عبر الواتساب",
+        items: currentCart.map((item) => ({
+          productId: item.productId,
+          quantity: item.quantity,
+        })),
+      });
+
+      const createdOrder = orderResult.data;
+
+      await automationRepository.updateConversation(tenantContext, conv.id, {
+        state: "WELCOME",
+        status: "ACTIVE",
+        cart: [],
+        address: null,
+      });
+
+      const totalFormatted = Number(createdOrder.total).toFixed(2);
+      const confirmText = await templateService.render("WHATSAPP_ORDER_CONFIRMED", tenantContext, {
+        orderNumber: createdOrder.orderNumber,
+        total: totalFormatted,
+        address: createdOrder.address || "العنوان عبر الواتساب",
+        customerName: customer?.name || customerPhone,
+      });
+      await whatsAppService.sendMessage(tenantContext, {
+        to: customerPhone,
+        text: confirmText,
+      });
+
+      return;
+    }
+
+    // 6. State: ADDRESS
+    if (conv.state === "ADDRESS") {
+      await automationRepository.updateConversation(tenantContext, conv.id, {
+        state: "CONFIRM_ORDER",
+        address: content,
+        lastInboundAt: new Date(),
+      });
+
+      let total = 0;
+      let cartSummary = "";
+      currentCart.forEach((item, idx) => {
+        const itemTotal = Number(item.unitPrice) * item.quantity;
+        total += itemTotal;
+        cartSummary += `${idx + 1}. ${item.quantity}x ${item.productName} (${itemTotal.toFixed(2)} ج.م)\n`;
+      });
+
+      const summaryText = await templateService.render("WHATSAPP_CART_SUMMARY", tenantContext, {
+        address: content,
+        cartSummary: cartSummary.trimEnd(),
+        total: total.toFixed(2),
+      });
+
+      await whatsAppService.sendMessage(tenantContext, {
+        to: customerPhone,
+        text: summaryText,
+      });
+      return;
+    }
+
+    // 7. State: PRODUCT_SELECT
     if (conv.state === "PRODUCT_SELECT" && conv.selectedCategoryId) {
       const selectedIndex = parseInt(content, 10) - 1;
       const { items: products } = await menuRepository.findProducts(tenantContext, {
@@ -175,139 +368,275 @@ export class WhatsAppAutomationService {
           lastInboundAt: new Date(),
         });
 
+        const addedText = await templateService.render("WHATSAPP_ITEM_ADDED", tenantContext, {
+          productName: targetProduct.name,
+        });
         await whatsAppService.sendMessage(tenantContext, {
           to: customerPhone,
-          text: `✅ تم إضافة *${targetProduct.name}* إلى السلة!\n\nأرسل *2* لعرض السلة، *3* لإدخال العنوان والدفع، أو *1* لمواصلة التسوق.`,
+          text: addedText,
         });
         return;
       }
     }
 
-    if (conv.state === "ADDRESS") {
-      await automationRepository.updateConversation(tenantContext, conv.id, {
-        state: "CONFIRM_ORDER",
-        address: content,
-        lastInboundAt: new Date(),
-      });
+    // 8. State: MAIN_MENU / MENU_CATEGORY
+    if (conv.state === "MAIN_MENU" || conv.state === "MENU_CATEGORY") {
+      const selectedIndex = parseInt(content, 10) - 1;
+      const { items: categories } = await menuRepository.findCategories(tenantContext, { limit: 20 });
 
-      let total = 0;
-      let cartSummary = "";
-      currentCart.forEach((item, idx) => {
-        const itemTotal = Number(item.unitPrice) * item.quantity;
-        total += itemTotal;
-        cartSummary += `${idx + 1}. ${item.quantity}x ${item.productName} (${itemTotal.toFixed(2)} ج.م)\n`;
-      });
-
-      await whatsAppService.sendMessage(tenantContext, {
-        to: customerPhone,
-        text: `📍 تم تسجيل العنوان: *${content}*\n\n🛒 *ملخص الطلب:*\n${cartSummary}\n*الإجمالي النهائي:* ${total.toFixed(2)} ج.م\n\nأرسل *نعم* أو *confirm* لتأكيد الطلب نهائياً.`,
-      });
-      return;
-    }
-
-    if (conv.state === "CONFIRM_ORDER" && (normalized === "confirm" || normalized === "نعم" || normalized === "تاكيد" || normalized === "تأكيد")) {
-      if (currentCart.length === 0) {
-        await whatsAppService.sendMessage(tenantContext, {
-          to: customerPhone,
-          text: "🛒 سلتك فارغة! أرسل *1* لاختيار منتجات أولاً.",
+      if (!isNaN(selectedIndex) && categories && categories[selectedIndex]) {
+        const targetCategory = categories[selectedIndex];
+        const { items: products } = await menuRepository.findProducts(tenantContext, {
+          categoryId: targetCategory.id,
+          limit: 20,
         });
-        return;
-      }
 
-      const { items: branches } = await branchRepository.findBranches(
-        tenantContext,
-        { limit: 20 }
-      ).catch(() => ({ items: [] }));
+        if (!products || products.length === 0) {
+          const emptyMenuText = await templateService.render("WHATSAPP_MENU_EMPTY", tenantContext, {
+            categoryName: targetCategory.name,
+          });
+          await whatsAppService.sendMessage(tenantContext, {
+            to: customerPhone,
+            text: emptyMenuText,
+          });
+          return;
+        }
 
-      const mainBranch = branches.find((b) => b.isMain) || branches[0];
-      if (!mainBranch) {
-        await whatsAppService.sendMessage(tenantContext, {
-          to: customerPhone,
-          text: "⚠️ تعذر العثور على فرع نشط للمطعم. يرجى التواصل معنا مباشرة.",
+        let text = `*منتجات فئة ${targetCategory.name}:*\n\n`;
+        products.forEach((prod, idx) => {
+          text += `${idx + 1}. ${prod.name} (${Number(prod.price).toFixed(2)} ج.م)\n`;
         });
-        return;
-      }
-
-      const orderService = (await import("../orders/order.service.js")).default;
-
-      const orderPayload = {
-        source: "WHATSAPP",
-        type: "DELIVERY",
-        customerPhone,
-        customerName: "عميل واتساب",
-        notes: conv.address ? `توصيل واتساب - العنوان: ${conv.address}` : "توصيل واتساب",
-        items: currentCart.map((i) => ({
-          productId: i.productId,
-          quantity: i.quantity,
-        })),
-      };
-
-      try {
-        const orderResult = await orderService.createOrder(tenantContext, mainBranch.id, orderPayload);
-        const orderData = orderResult.data || orderResult;
+        text += "\nأرسل رقم المنتج لإضافته إلى السلة.";
 
         await automationRepository.updateConversation(tenantContext, conv.id, {
-          state: "WELCOME",
-          cart: [],
-          address: null,
-          selectedCategoryId: null,
+          state: "PRODUCT_SELECT",
+          selectedCategoryId: targetCategory.id,
           lastInboundAt: new Date(),
         });
 
         await whatsAppService.sendMessage(tenantContext, {
           to: customerPhone,
-          text: `🎉 *تم تسجيل طلبك بنجاح!*\n\nرقم الطلب: *#${orderData.orderNumber || orderData.id}*\nالإجمالي: *${Number(orderData.total || 0).toFixed(2)} ج.م*\n\nسنقوم بمتابعة طلبك وإبلاغك بالتحديثات. شكراً لك!`,
-        });
-        return;
-      } catch (err) {
-        await whatsAppService.sendMessage(tenantContext, {
-          to: customerPhone,
-          text: "⚠️ حدث خطأ أثناء إنشاء الطلب. يرجى المحاولة لاحقاً أو التواصل معنا مباشرة.",
+          text,
         });
         return;
       }
     }
 
-    if (normalized === "1") {
-      return this.sendCategoriesMenu(tenantContext, conv, customerPhone);
-    }
-    if (normalized === "2") {
-      return this.sendCartSummary(tenantContext, conv, customerPhone, currentCart);
-    }
-    if (normalized === "3") {
-      return this.promptAddress(tenantContext, conv, customerPhone, currentCart);
-    }
-    if (normalized === "4") {
-      return this.trackOrder(tenantContext, customerPhone);
-    }
-    if (normalized === "5") {
-      return this.sendFaq(tenantContext, customerPhone);
-    }
-    if (normalized === "6") {
-      return this.triggerHandoff(tenantContext, conv, customerPhone);
+    // 9. State: CART specific actions
+    if (conv.state === "CART") {
+      if (normalized === "2" || normalized.includes("سلة") || normalized.includes("cart")) {
+        return this.sendCartSummary(tenantContext, conv, customerPhone, currentCart);
+      }
+      if (normalized === "3" || normalized.includes("دفع") || normalized.includes("checkout") || normalized.includes("عنوان")) {
+        return this.promptAddress(tenantContext, conv, customerPhone, currentCart);
+      }
+      if (normalized === "1" || normalized.includes("منيو") || normalized.includes("menu")) {
+        return this.sendCategoriesMenu(tenantContext, conv, customerPhone);
+      }
     }
 
+    // 10. Main Menu / General Intents
+    if (normalized === "6" || normalized.includes("human") || normalized.includes("موظف")) {
+      try {
+        const res = await this.triggerHandoff(tenantContext, conv, customerPhone);
+        return res;
+      } catch (err) {
+        logger.error({ err: err.message }, "Error calling triggerHandoff");
+      }
+    }
+
+    if (normalized === "2" || normalized.includes("دعم") || normalized.includes("support") || normalized.includes("خدمة العملاء") || normalized.includes("agent")) {
+      return this.promptSupportCategory(tenantContext, conv, customerPhone);
+    }
+
+    if (normalized === "3" || normalized.includes("شكوى") || normalized.includes("شكوي") || normalized.includes("complaint") || normalized === "7") {
+      return this.handleComplaintRequest(tenantContext, conv, customerPhone);
+    }
+
+    if (normalized === "4" || normalized.includes("track") || normalized.includes("تتبع") || normalized.includes("طلباتي")) {
+      return this.trackOrder(tenantContext, customerPhone);
+    }
+
+    if (normalized === "1" || normalized.includes("menu") || normalized.includes("منيو") || normalized.includes("قائمة") || normalized.includes("طلب طعام")) {
+      return this.sendCategoriesMenu(tenantContext, conv, customerPhone);
+    }
+
+    if (normalized.includes("help") || normalized.includes("faq") || normalized.includes("مساعدة")) {
+      return this.sendFaq(tenantContext, customerPhone);
+    }
+
+    // Default Fallback
+    const welcomeText = await templateService.render("WHATSAPP_WELCOME", tenantContext);
     await whatsAppService.sendMessage(tenantContext, {
       to: customerPhone,
-      text: WELCOME_TEXT,
+      text: welcomeText,
     });
+  }
+
+  async triggerHandoff(tenantContext, conv, customerPhone) {
+    await automationRepository.updateConversationStatus(tenantContext, conv.id, "WAITING_AGENT");
+    const handoffText = await templateService.render("WHATSAPP_HANDOFF", tenantContext);
+    await whatsAppService.sendMessage(tenantContext, {
+      to: customerPhone,
+      text: handoffText,
+    });
+
+    try {
+      const { inboxService } = await import("../inbox/inbox.service.js");
+      await inboxService.createFromWhatsApp(tenantContext, conv, customerPhone, {
+        ticketType: "SUPPORT",
+        subject: "طلب دعم فني من العميل",
+      });
+    } catch (inboxErr) {
+      logger.warn({ err: inboxErr.message }, "Inbox handoff error in WhatsApp automation");
+    }
+  }
+
+  async promptSupportCategory(tenantContext, conv, customerPhone) {
+    await automationRepository.updateConversation(tenantContext, conv.id, {
+      state: "SUPPORT_CATEGORY_SELECT",
+      lastInboundAt: new Date(),
+    });
+
+    const supportCatText = await templateService.render("WHATSAPP_SUPPORT_CATEGORY", tenantContext);
+    await whatsAppService.sendMessage(tenantContext, {
+      to: customerPhone,
+      text: supportCatText,
+    });
+  }
+
+  async handleSupportForPreviousOrder(tenantContext, conv, customerPhone) {
+    let lastOrder = null;
+    try {
+      lastOrder = await prisma.order.findFirst({
+        where: {
+          restaurantId: tenantContext.restaurantId,
+          customer: { phone: customerPhone },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+    } catch (_) {}
+
+    if (!lastOrder) {
+      await automationRepository.updateConversation(tenantContext, conv.id, {
+        state: "SUPPORT_DETAILS_PROMPT",
+        lastInboundAt: new Date(),
+      });
+
+      const detailsPrompt = await templateService.render("WHATSAPP_SUPPORT_DETAILS_PROMPT", tenantContext);
+      await whatsAppService.sendMessage(tenantContext, {
+        to: customerPhone,
+        text: detailsPrompt,
+      });
+      return;
+    }
+
+    await automationRepository.updateConversationStatus(tenantContext, conv.id, "WAITING_AGENT");
+
+    try {
+      const { inboxService } = await import("../inbox/inbox.service.js");
+      const ticket = await inboxService.createFromWhatsApp(tenantContext, conv, customerPhone, {
+        ticketType: "SUPPORT",
+        subject: `استفسار دعم بخصوص أوردر #${lastOrder.orderNumber}`,
+        relatedOrderId: lastOrder.id,
+      });
+
+      const ticketNum = ticket.ticketNumber ? `${ticket.ticketNumber}` : `${ticket.id.slice(-4)}`;
+      const linkedOrderText = await templateService.render("WHATSAPP_SUPPORT_LINKED_ORDER", tenantContext, {
+        orderNumber: lastOrder.orderNumber,
+        total: Number(lastOrder.total).toFixed(2),
+        status: lastOrder.status,
+        ticketNumber: ticketNum,
+      });
+      await whatsAppService.sendMessage(tenantContext, {
+        to: customerPhone,
+        text: linkedOrderText,
+      });
+    } catch (_) {
+      await whatsAppService.sendMessage(tenantContext, {
+        to: customerPhone,
+        text: "تم تحويل استفسارك بخصوص الطلب إلى أحد ممثلي الدعم وسيتواصل معك فوراً.",
+      });
+    }
+  }
+
+  async handleSupportDetailsSubmit(tenantContext, conv, customerPhone, content) {
+    let customerName = "";
+    let reason = content;
+
+    if (content.includes("-") || content.includes(":") || content.includes("–")) {
+      const parts = content.split(/[-:–]/);
+      customerName = parts[0].trim();
+      reason = parts.slice(1).join("-").trim();
+    } else if (content.split(" ").length >= 2) {
+      const words = content.split(" ");
+      customerName = `${words[0]} ${words[1]}`;
+      reason = content;
+    }
+
+    // Update or create Customer name in DB
+    try {
+      if (customerName) {
+        await prisma.customer.upsert({
+          where: {
+            restaurantId_phone: {
+              restaurantId: tenantContext.restaurantId,
+              phone: customerPhone,
+            },
+          },
+          update: { name: customerName },
+          create: {
+            restaurantId: tenantContext.restaurantId,
+            phone: customerPhone,
+            name: customerName,
+          },
+        });
+      }
+    } catch (_) {}
+
+    await automationRepository.updateConversationStatus(tenantContext, conv.id, "WAITING_AGENT");
+
+    try {
+      const { inboxService } = await import("../inbox/inbox.service.js");
+      const ticket = await inboxService.createFromWhatsApp(tenantContext, conv, customerPhone, {
+        ticketType: "COMPLAINT",
+        subject: reason || `شكوى واستفسار من ${customerName || customerPhone}`,
+      });
+
+      const ticketNum = ticket.ticketNumber ? `${ticket.ticketNumber}` : `${ticket.id.slice(-4)}`;
+      const complaintCreatedText = await templateService.render("WHATSAPP_COMPLAINT_CREATED", tenantContext, {
+        customerSalutation: customerName ? ` يا *${customerName}*` : "",
+        ticketNumber: ticketNum,
+        reason: reason || content,
+      });
+      await whatsAppService.sendMessage(tenantContext, {
+        to: customerPhone,
+        text: complaintCreatedText,
+      });
+    } catch (_) {
+      await whatsAppService.sendMessage(tenantContext, {
+        to: customerPhone,
+        text: `شكراً لك! تم تسجيل استفسارك وتم تحويل المحادثة للموظف المختص وسيتواصل معك فوراً.`,
+      });
+    }
   }
 
   async sendCategoriesMenu(tenantContext, conv, customerPhone) {
     const { items: categories } = await menuRepository.findCategories(tenantContext, { limit: 20 });
     if (!categories || categories.length === 0) {
+      const menuUnavailableText = await templateService.render("WHATSAPP_MENU_UNAVAILABLE", tenantContext);
       await whatsAppService.sendMessage(tenantContext, {
         to: customerPhone,
-        text: "📋 المنيو غير متوفر حالياً. يرجى المحاولة لاحقاً.",
+        text: menuUnavailableText,
       });
       return;
     }
 
-    let text = "📋 *قائمة الطعام:*\n\n";
+    let text = "*قائمة الطعام (الأقسام):*\n\n";
     categories.forEach((cat, idx) => {
       text += `${idx + 1}. ${cat.name}\n`;
     });
-    text += "\nأرسل رقم الفئة لعرض منتجاتها (مثال: 1).";
+    text += "\nأرسل رقم القسم لعرض الأصناف والأسعار.";
 
     await automationRepository.updateConversation(tenantContext, conv.id, {
       state: "MAIN_MENU",
@@ -322,15 +651,16 @@ export class WhatsAppAutomationService {
 
   async sendCartSummary(tenantContext, conv, customerPhone, currentCart) {
     if (currentCart.length === 0) {
+      const emptyCartText = await templateService.render("WHATSAPP_CART_EMPTY", tenantContext);
       await whatsAppService.sendMessage(tenantContext, {
         to: customerPhone,
-        text: "🛒 سلة التسوق فارغة حالياً.\nأرسل *1* لمشاهدة المنيو وإضافة منتجات.",
+        text: emptyCartText,
       });
       return;
     }
 
     let total = 0;
-    let text = "🛒 *سلة التسوق الحالية:*\n\n";
+    let text = "*سلة التسوق الحالية:*\n\n";
     currentCart.forEach((item, idx) => {
       const itemTotal = Number(item.unitPrice) * item.quantity;
       total += itemTotal;
@@ -351,9 +681,10 @@ export class WhatsAppAutomationService {
 
   async promptAddress(tenantContext, conv, customerPhone, currentCart) {
     if (currentCart.length === 0) {
+      const emptyCartText = await templateService.render("WHATSAPP_CART_EMPTY", tenantContext);
       await whatsAppService.sendMessage(tenantContext, {
         to: customerPhone,
-        text: "🛒 سلتك فارغة! يرجى أرسل *1* لاختيار منتجات أولاً.",
+        text: emptyCartText,
       });
       return;
     }
@@ -363,9 +694,10 @@ export class WhatsAppAutomationService {
       lastInboundAt: new Date(),
     });
 
+    const addressPromptText = await templateService.render("WHATSAPP_ADDRESS_PROMPT", tenantContext);
     await whatsAppService.sendMessage(tenantContext, {
       to: customerPhone,
-      text: "📍 *إدخال العنوان:*\nبرجاء كتابة عنوان التوصيل الخاص بك بالتفصيل (مثال: شارع النصر، المعادي، شقة 4).",
+      text: addressPromptText,
     });
   }
 
@@ -379,39 +711,67 @@ export class WhatsAppAutomationService {
     });
 
     if (!lastOrder) {
+      const notFoundText = await templateService.render("WHATSAPP_ORDER_NOT_FOUND", tenantContext);
       await whatsAppService.sendMessage(tenantContext, {
         to: customerPhone,
-        text: "📦 لم نجد أوردرات سابقة مسجلة بهذا الرقم.",
+        text: notFoundText,
       });
       return;
     }
 
+    const trackingText = await templateService.render("WHATSAPP_ORDER_TRACKING", tenantContext, {
+      orderNumber: lastOrder.orderNumber,
+      status: lastOrder.status,
+      total: lastOrder.total,
+      time: new Date(lastOrder.createdAt).toLocaleTimeString("ar-EG"),
+    });
+
     await whatsAppService.sendMessage(tenantContext, {
       to: customerPhone,
-      text: `📦 *حالة طلبك الأخير (#${lastOrder.orderNumber}):*\nالحالة: *${lastOrder.status}*\nالإجمالي: *${lastOrder.total} ج.م*\nالتاريخ: ${new Date(lastOrder.createdAt).toLocaleTimeString("ar-EG")}`,
+      text: trackingText,
     });
   }
 
   async sendFaq(tenantContext, customerPhone) {
+    const faqText = await templateService.render("WHATSAPP_FAQ", tenantContext);
     await whatsAppService.sendMessage(tenantContext, {
       to: customerPhone,
-      text: "❓ *مواعيد العمل والدعم:*\nنعمل يومياً من الساعة 10 صباحاً وحتى 12 منتصف الليل.\nللتواصل المباشر مع موظف الدعم أرسل *6* أو *agent*.",
+      text: faqText,
     });
   }
 
-  async triggerHandoff(tenantContext, conv, customerPhone) {
+  async handleComplaintRequest(tenantContext, conv, customerPhone) {
+    let lastOrder = null;
+    try {
+      lastOrder = await prisma.order.findFirst({
+        where: {
+          restaurantId: tenantContext.restaurantId,
+          customer: { phone: customerPhone },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+    } catch (_) {}
+
+    const subject = lastOrder ? `شكوى بخصوص أوردر #${lastOrder.orderNumber}` : "شكوى من العميل";
+
     await automationRepository.updateConversationStatus(tenantContext, conv.id, "WAITING_AGENT");
+    const orderRef = lastOrder ? ` بخصوص طلبك الأخير (#${lastOrder.orderNumber})` : "";
+    const complaintText = await templateService.render("WHATSAPP_COMPLAINT_REGISTERED", tenantContext, {
+      orderReference: orderRef,
+    });
     await whatsAppService.sendMessage(tenantContext, {
       to: customerPhone,
-      text: "👨‍💼 *تم تحويل المحادثة إلى أحد ممثلي خدمة العملاء.*\nسيتواصل معك أحد موظفينا في أقرب وقت.",
+      text: complaintText,
     });
 
     try {
       const { inboxService } = await import("../inbox/inbox.service.js");
-      await inboxService.createFromWhatsApp(tenantContext, conv, customerPhone);
-    } catch (err) {
-
-    }
+      await inboxService.createFromWhatsApp(tenantContext, conv, customerPhone, {
+        ticketType: "COMPLAINT",
+        subject,
+        relatedOrderId: lastOrder?.id || null,
+      });
+    } catch (_) {}
   }
 
   async listConversations(tenantContext, query = {}) {
@@ -436,27 +796,18 @@ export class WhatsAppAutomationService {
   }
 
   async handoffConversation(tenantContext, id) {
-    await this.getConversationById(tenantContext, id);
-    await automationRepository.updateConversationStatus(tenantContext, id, "WAITING_AGENT");
-    emitEvent(DomainEvent.CONVERSATION_UPDATED, {
-      restaurantId: tenantContext.restaurantId,
-      conversationId: id,
-      action: "handoff",
-    });
-    return this.getConversationById(tenantContext, id);
+    const conv = await this.getConversationById(tenantContext, id);
+    await automationRepository.updateConversationStatus(tenantContext, conv.id, "WAITING_AGENT");
+    return automationRepository.findConversationById(tenantContext, conv.id);
   }
 
   async closeConversation(tenantContext, id) {
-    await this.getConversationById(tenantContext, id);
-    await automationRepository.updateConversationStatus(tenantContext, id, "CLOSED");
-    emitEvent(DomainEvent.CONVERSATION_UPDATED, {
-      restaurantId: tenantContext.restaurantId,
-      conversationId: id,
-      action: "closed",
-    });
-    return this.getConversationById(tenantContext, id);
+    const conv = await this.getConversationById(tenantContext, id);
+    await automationRepository.updateConversationStatus(tenantContext, conv.id, "CLOSED");
+    return automationRepository.findConversationById(tenantContext, conv.id);
   }
 }
 
-export const whatsAppAutomationService = new WhatsAppAutomationService();
-export default whatsAppAutomationService;
+export const automationService = new WhatsAppAutomationService();
+export const whatsAppAutomationService = automationService;
+export default automationService;
