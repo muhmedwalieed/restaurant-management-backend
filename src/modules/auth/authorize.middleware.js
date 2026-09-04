@@ -51,6 +51,7 @@ export async function getEmployeePermissions(employeeId, restaurantId) {
 }
 
 export function authorizeAny(...permissionKeys) {
+  const flatKeys = permissionKeys.flat();
   return asyncHandler(async (req, res, next) => {
     if (!req.tenantContext || !req.tenantContext.employeeId || !req.tenantContext.restaurantId) {
       throw new AuthorizationError("Tenant context required for authorization check");
@@ -63,14 +64,14 @@ export function authorizeAny(...permissionKeys) {
       return next();
     }
 
-    const allowed = permissionKeys.some((key) => permissions.includes(key));
+    const allowed = flatKeys.some((key) => permissions.includes(key));
     if (!allowed) {
       logger.warn(
-        { employeeId, requiredPermissions: permissionKeys, roleName },
+        { employeeId, requiredPermissions: flatKeys, roleName },
         "Authorization failure: insufficient permissions"
       );
       throw new AuthorizationError(
-        `One of '${permissionKeys.join("', '")}' permissions is required to perform this action`
+        `One of '${flatKeys.join("', '")}' permissions is required to perform this action`
       );
     }
 

@@ -263,4 +263,77 @@ describe("Templates & Softcoding Engine Integration Tests", () => {
     const res = await fetch(`${baseUrl}/api/v1/restaurant/templates`);
     assert.equal(res.status, 401);
   });
+
+  // 10. POST /api/v1/restaurant/templates creates a new custom template
+  let createdCustomKey;
+  test("10. POST /api/v1/restaurant/templates creates a custom template", async () => {
+    const payload = {
+      title: "قالب تأخير تحضير الطلب",
+      key: "DELAY_NOTICE",
+      category: "INBOX_SUPPORT",
+      description: "إشعار العميل عند وجود ضغط في المطبخ",
+      text: "نعتذر منك يا {{customerName}}، طلبك رقم #{{orderNumber}} سيستغرق بضع دقائق إضافية.",
+      allowedVariables: ["customerName", "orderNumber"],
+    };
+
+    const res = await fetch(`${baseUrl}/api/v1/restaurant/templates`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${tokenA}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.equal(body.success, true);
+    assert.ok(body.data.key.startsWith("CUSTOM_"));
+    createdCustomKey = body.data.key;
+    assert.equal(body.data.title, payload.title);
+    assert.equal(body.data.isCustom, true);
+    assert.equal(body.data.isUserCreated, true);
+
+    // Verify it appears in GET /api/v1/restaurant/templates
+    const getRes = await fetch(`${baseUrl}/api/v1/restaurant/templates`, {
+      headers: { Authorization: `Bearer ${tokenA}` },
+    });
+    const getBody = await getRes.json();
+    const found = getBody.data.find((t) => t.key === createdCustomKey);
+    assert.ok(found);
+    assert.equal(found.title, payload.title);
+  });
+
+  // 11. Custom Template Rendering
+  test("11. Template Engine renders custom template with variables", async () => {
+    assert.ok(createdCustomKey);
+    const rendered = await templateService.render(createdCustomKey, {
+      restaurantId: restaurantA.id,
+    }, {
+      customerName: "كريم",
+      orderNumber: 777,
+    });
+
+    assert.equal(rendered, "نعتذر منك يا كريم، طلبك رقم #777 سيستغرق بضع دقائق إضافية.");
+  });
+
+  // 12. DELETE /api/v1/restaurant/templates/:key deletes the custom template
+  test("12. DELETE /api/v1/restaurant/templates/:key removes the custom template", async () => {
+    assert.ok(createdCustomKey);
+    const res = await fetch(`${baseUrl}/api/v1/restaurant/templates/${createdCustomKey}`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${tokenA}`,
+      },
+    });
+
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.success, true);
+
+    // Verify it is no longer in GET list
+    const found = body.data.find((t) => t.key === createdCustomKey);
+    assert.equal(found, undefined);
+  });
 });
+

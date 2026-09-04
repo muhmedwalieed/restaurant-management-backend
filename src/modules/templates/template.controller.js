@@ -21,6 +21,25 @@ export class TemplateController {
     });
   });
 
+  createTemplate = asyncHandler(async (req, res) => {
+    const created = await templateService.createTemplate(req.tenantContext, req.body);
+    res.status(201).json({
+      success: true,
+      message: "تم إنشاء القالب بنجاح",
+      data: created,
+    });
+  });
+
+  deleteTemplate = asyncHandler(async (req, res) => {
+    const { key } = req.params;
+    const templates = await templateService.deleteTemplate(req.tenantContext, key);
+    res.json({
+      success: true,
+      message: "تم حذف القالب بنجاح",
+      data: templates,
+    });
+  });
+
   resetTemplates = asyncHandler(async (req, res) => {
     const templateKey = req.body.templateKey || null;
     const templates = await templateService.resetTemplates(req.tenantContext, templateKey);
