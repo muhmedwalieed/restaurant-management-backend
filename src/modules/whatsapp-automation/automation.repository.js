@@ -1,17 +1,20 @@
 import prisma from "../../lib/prisma.js";
 import { BaseRepository, CUSTOMER_SUMMARY_SELECT } from "../../shared/repositories/base.repository.js";
+import { getPhoneVariants } from "../../shared/utils/phone.js";
 
 export class AutomationRepository extends BaseRepository {
 
   async findConversationByPhone(tenantContext, connectionId, customerPhone) {
     this.assertTenant(tenantContext);
+    const variants = getPhoneVariants(customerPhone);
 
     return prisma.whatsAppConversation.findFirst({
       where: {
         restaurantId: tenantContext.restaurantId,
         connectionId,
-        customerPhone,
+        customerPhone: { in: variants },
       },
+      orderBy: { lastInboundAt: "desc" },
     });
   }
 

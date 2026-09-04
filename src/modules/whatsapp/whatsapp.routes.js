@@ -17,18 +17,25 @@ import { validate } from "../../shared/middleware/validate.js";
 
 const router = Router();
 
-router.post(
-  "/webhooks/whatsapp",
+const webhookPostHandler = [
   webhookRateLimiter,
   verifyWhatsAppSignature,
   (req, res, next) => {
     whatsAppController.handleWebhook(req, res, next);
-  }
-);
+  },
+];
 
-router.get("/webhooks/whatsapp", webhookRateLimiter, (req, res, next) => {
-  whatsAppController.handleVerification(req, res, next);
-});
+const webhookGetHandler = [
+  webhookRateLimiter,
+  (req, res, next) => {
+    whatsAppController.handleVerification(req, res, next);
+  },
+];
+
+router.post("/webhooks/whatsapp", ...webhookPostHandler);
+router.get("/webhooks/whatsapp", ...webhookGetHandler);
+router.post("/v1/webhooks/whatsapp", ...webhookPostHandler);
+router.get("/v1/webhooks/whatsapp", ...webhookGetHandler);
 
 const adminRouter = Router();
 adminRouter.use(authenticate, requireTenantContext);

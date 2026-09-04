@@ -13,7 +13,7 @@ export function getSocketIo() {
 export function broadcastToRestaurant(restaurantId, event, payload, { branchId } = {}) {
   try {
     if (branchId) {
-      io?.to(`branch:${branchId}`).emit(event, payload);
+      io?.to(`branch:${branchId}`).to(`restaurant:${restaurantId}`).emit(event, payload);
       return;
     }
     io?.to(`restaurant:${restaurantId}`).emit(event, payload);

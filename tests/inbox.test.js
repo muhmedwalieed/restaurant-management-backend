@@ -217,7 +217,15 @@ describe("Module 11 — Unified Inbox / Support Integration Tests", () => {
   });
 
   test("9. POST /:id/close marks CLOSED", async () => {
-    const res = await fetch(`${baseUrl}/api/v1/inbox/conversations/${inboxConv.id}/close`, { method: "POST", headers: { Authorization: `Bearer ${agentToken}` } });
+    const tempTicket = await inboxService.createTicket({ restaurantId: tenantA.id }, {
+      customerPhone: "+201099990000",
+      subject: "تذكرة تجريبية للإغلاق",
+    });
+    const res = await fetch(`${baseUrl}/api/v1/inbox/conversations/${tempTicket.id}/close`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${agentToken}` },
+      body: JSON.stringify({ resolutionStatus: "RESOLVED" }),
+    });
     assert.equal(res.status, 200);
     const body = await res.json();
     assert.equal(body.data.status, "CLOSED");
@@ -332,5 +340,179 @@ describe("Module 11 — Unified Inbox / Support Integration Tests", () => {
       body: JSON.stringify({}),
     });
     assert.equal(res.status, 404);
+  });
+
+  test("21. Ticket System: Create COMPLAINT ticket linked to an order", async () => {
+    const res = await fetch(`${baseUrl}/api/v1/inbox/conversations`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${agentToken}` },
+      body: JSON.stringify({
+        customerPhone: "+201099998888",
+        ticketType: "COMPLAINT",
+        subject: "شكوى بخصوص الأوردر المتأخر",
+        initialMessage: "الأوردر اتأخر أكثر من ساعة",
+      }),
+    });
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.equal(body.data.ticketType, "COMPLAINT");
+    assert.equal(body.data.subject, "شكوى بخصوص الأوردر المتأخر");
+    assert.equal(body.data.messages.length, 1);
+    assert.equal(body.data.messages[0].content, "الأوردر اتأخر أكثر من ساعة");
+  });
+
+  test("22. Ticket Scoping & Isolation: Messages in Ticket 1 do not leak to Ticket 2 for same customer", async () => {
+    // Ticket 1:
+    const t1Res = await fetch(`${baseUrl}/api/v1/inbox/conversations`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${agentToken}` },
+      body: JSON.stringify({
+        customerPhone: "+201077776666",
+        ticketType: "SUPPORT",
+        subject: "تذكرة رقم 1",
+        initialMessage: "رسالة التذكرة الأولى السرية",
+      }),
+    });
+    const t1 = (await t1Res.json()).data;
+
+    // Agent replies in Ticket 1:
+    await fetch(`${baseUrl}/api/v1/inbox/conversations/${t1.id}/reply`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${agentToken}` },
+      body: JSON.stringify({ content: "رد الدعم على تذكرة 1" }),
+    });
+
+    // Close Ticket 1:
+    await fetch(`${baseUrl}/api/v1/inbox/conversations/${t1.id}/close`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${agentToken}` },
+    });
+
+    // Ticket 2 (Same customer phone):
+    const t2Res = await fetch(`${baseUrl}/api/v1/inbox/conversations`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${agentToken}` },
+      body: JSON.stringify({
+        customerPhone: "+201077776666",
+        ticketType: "COMPLAINT",
+        subject: "تذكرة رقم 2 جديدة",
+        initialMessage: "رسالة التذكرة الثانية",
+      }),
+    });
+    const t2 = (await t2Res.json()).data;
+
+    // Verify Ticket 2 contains ONLY its own message, not Ticket 1 messages:
+    const getT2Res = await fetch(`${baseUrl}/api/v1/inbox/conversations/${t2.id}`, {
+      headers: { Authorization: `Bearer ${agentToken}` },
+    });
+    const t2Details = (await getT2Res.json()).data;
+    assert.equal(t2Details.messages.length, 1);
+    assert.equal(t2Details.messages[0].content, "رسالة التذكرة الثانية");
+    assert.ok(!t2Details.messages.some((m) => m.content.includes("تذكرة 1")));
+  });
+
+  test("23. Filter tickets by ticketType and search query", async () => {
+    const res = await fetch(`${baseUrl}/api/v1/inbox/conversations?ticketType=COMPLAINT`, {
+      headers: { Authorization: `Bearer ${agentToken}` },
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.ok(body.data.length > 0);
+    assert.ok(body.data.every((t) => t.ticketType === "COMPLAINT"));
+  });
+
+  test("24. Close Ticket with Staff Resolution Form & Logs", async () => {
+    const createRes = await fetch(`${baseUrl}/api/v1/inbox/conversations`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${agentToken}` },
+      body: JSON.stringify({
+        customerPhone: "+201011119999",
+        ticketType: "SUPPORT",
+        subject: "طلب استفسار عن الفرع",
+      }),
+    });
+    const ticket = (await createRes.json()).data;
+
+    const closeRes = await fetch(`${baseUrl}/api/v1/inbox/conversations/${ticket.id}/close`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${agentToken}` },
+      body: JSON.stringify({
+        resolutionStatus: "RESOLVED",
+        resolutionCategory: "GENERAL_INQUIRY",
+        resolutionNotes: "تم توضيح عنوان الفرع ومواعيد العمل للعميل",
+      }),
+    });
+    assert.equal(closeRes.status, 200);
+    const body = await closeRes.json();
+    assert.equal(body.data.status, "CLOSED");
+    assert.equal(body.data.resolutionStatus, "RESOLVED");
+    assert.equal(body.data.resolutionCategory, "GENERAL_INQUIRY");
+    assert.equal(body.data.resolutionNotes, "تم توضيح عنوان الفرع ومواعيد العمل للعميل");
+    assert.ok(body.data.closedAt);
+    assert.ok(body.data.logs.some((l) => l.action === "CLOSED"));
+  });
+
+  test("25. Customer Feedback submission on closed ticket", async () => {
+    const createRes = await fetch(`${baseUrl}/api/v1/inbox/conversations`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${agentToken}` },
+      body: JSON.stringify({
+        customerPhone: "+201088887777",
+        ticketType: "SUPPORT",
+        subject: "استفسار دليفري",
+      }),
+    });
+    const ticket = (await createRes.json()).data;
+
+    await fetch(`${baseUrl}/api/v1/inbox/conversations/${ticket.id}/close`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${agentToken}` },
+      body: JSON.stringify({ resolutionStatus: "RESOLVED" }),
+    });
+
+    const feedbackRes = await fetch(`${baseUrl}/api/v1/inbox/conversations/${ticket.id}/feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${agentToken}` },
+      body: JSON.stringify({
+        rating: 5,
+        resolved: true,
+        nps: 10,
+        comment: "خدمة ممتازة وموظف محترم وسريع",
+      }),
+    });
+    assert.equal(feedbackRes.status, 200);
+    const body = await feedbackRes.json();
+    assert.equal(body.data.feedbackRating, 5);
+    assert.equal(body.data.feedbackResolved, true);
+    assert.equal(body.data.feedbackNps, 10);
+    assert.equal(body.data.feedbackComment, "خدمة ممتازة وموظف محترم وسريع");
+  });
+
+  test("26. Permanent Closure: Replying to closed ticket is rejected with 422", async () => {
+    const createRes = await fetch(`${baseUrl}/api/v1/inbox/conversations`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${agentToken}` },
+      body: JSON.stringify({
+        customerPhone: "+201033332222",
+        ticketType: "SUPPORT",
+        subject: "تذكرة ستغلق نهائياً",
+      }),
+    });
+    const ticket = (await createRes.json()).data;
+
+    await fetch(`${baseUrl}/api/v1/inbox/conversations/${ticket.id}/close`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${agentToken}` },
+      body: JSON.stringify({ resolutionStatus: "RESOLVED" }),
+    });
+
+    const replyRes = await fetch(`${baseUrl}/api/v1/inbox/conversations/${ticket.id}/reply`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${agentToken}` },
+      body: JSON.stringify({ content: "محاولة رد بعد الإغلاق" }),
+    });
+    assert.equal(replyRes.status, 422);
+    const body = await replyRes.json();
+    assert.equal(body.error.code, "BUSINESS_RULE_ERROR");
   });
 });

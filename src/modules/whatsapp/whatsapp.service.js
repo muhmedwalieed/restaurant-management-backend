@@ -1,6 +1,7 @@
 import whatsAppRepository from "./whatsapp.repository.js";
 import getWhatsAppProvider from "./providers/provider_factory.js";
 import { decrypt } from "../../shared/utils/crypto.js";
+import logger from "../../config/logger.js";
 import {
   NotFoundError,
   ConflictError,
@@ -164,10 +165,23 @@ export class WhatsAppService {
 
     try {
 
-      if (change?.messages?.[0]) {
-        const msg = change.messages[0];
+      const messagesList = Array.isArray(change?.messages)
+        ? change.messages
+        : change?.messages
+        ? [change.messages]
+        : [];
+
+      for (const msg of messagesList) {
         const fromPhone = msg.from;
-        const content = msg.text?.body || msg.body || null;
+        const content =
+          msg.text?.body ||
+          msg.button?.text ||
+          msg.interactive?.button_reply?.title ||
+          msg.interactive?.button_reply?.id ||
+          msg.interactive?.list_reply?.title ||
+          msg.interactive?.list_reply?.id ||
+          msg.body ||
+          null;
         const providerMessageId = msg.id;
 
         const existingMsg = await whatsAppRepository.findMessageByProviderId(
@@ -179,7 +193,7 @@ export class WhatsAppService {
           await whatsAppRepository.createMessage(tenantContext, {
             connectionId: connection.id,
             direction: "INBOUND",
-            type: "TEXT",
+            type: msg.type?.toUpperCase() || "TEXT",
             fromPhone,
             toPhone: connection.providerPhoneNumberId,
             content,
@@ -188,20 +202,28 @@ export class WhatsAppService {
           });
 
           try {
-            const { whatsAppAutomationService } = await import("../whatsapp-automation/automation.service.js");
-            await whatsAppAutomationService.handleInboundMessage(tenantContext, connection, {
-              fromPhone,
-              content,
-              providerMessageId,
-            });
+            const { automationService, whatsAppAutomationService } = await import("../whatsapp-automation/automation.service.js");
+            const service = automationService || whatsAppAutomationService;
+            if (service) {
+              await service.handleInboundMessage(tenantContext, connection, {
+                fromPhone,
+                content,
+                providerMessageId,
+              });
+            }
           } catch (autoErr) {
-
+            logger.error({ err: autoErr.message }, "WhatsApp automation inbound message error");
           }
         }
       }
 
-      if (change?.statuses?.[0]) {
-        const st = change.statuses[0];
+      const statusesList = Array.isArray(change?.statuses)
+        ? change.statuses
+        : change?.statuses
+        ? [change.statuses]
+        : [];
+
+      for (const st of statusesList) {
         const providerMessageId = st.id;
         const statusMap = {
           sent: "SENT",

@@ -1,15 +1,26 @@
 import prisma from "../../lib/prisma.js";
-import { BaseRepository, assertTenantContext, getPaginationOffset, CUSTOMER_SUMMARY_SELECT, ACTOR_SUMMARY_SELECT } from "../../shared/repositories/base.repository.js";
+import { BaseRepository, assertTenantContext, CUSTOMER_SUMMARY_SELECT, ACTOR_SUMMARY_SELECT } from "../../shared/repositories/base.repository.js";
+import { getPhoneVariants } from "../../shared/utils/phone.js";
 
 export class InboxRepository extends BaseRepository {
-  async findConversations(tenantContext, { page = 1, limit = 20, status, assignedToMe } = {}) {
+  async findConversations(tenantContext, { page = 1, limit = 20, status, ticketType, assignedToMe, q } = {}) {
     this.assertTenant(tenantContext);
     const { skip, take } = this.getPaginationOffset(page, limit);
 
     const where = {
       restaurantId: tenantContext.restaurantId,
       ...(status ? { status } : {}),
+      ...(ticketType ? { ticketType } : {}),
       ...(assignedToMe ? { assignedAgentId: tenantContext.employeeId } : {}),
+      ...(q
+        ? {
+            OR: [
+              { customerPhone: { contains: q, mode: "insensitive" } },
+              { subject: { contains: q, mode: "insensitive" } },
+              { customer: { name: { contains: q, mode: "insensitive" } } },
+            ],
+          }
+        : {}),
     };
 
     const [items, total] = await Promise.all([
@@ -21,6 +32,15 @@ export class InboxRepository extends BaseRepository {
         include: {
           customer: { select: CUSTOMER_SUMMARY_SELECT },
           assignedAgent: { select: ACTOR_SUMMARY_SELECT },
+          relatedOrder: {
+            select: {
+              id: true,
+              orderNumber: true,
+              status: true,
+              total: true,
+              createdAt: true,
+            },
+          },
           _count: { select: { messages: true } },
         },
       }),
@@ -38,9 +58,45 @@ export class InboxRepository extends BaseRepository {
       include: {
         customer: { select: CUSTOMER_SUMMARY_SELECT },
         assignedAgent: { select: ACTOR_SUMMARY_SELECT },
+        closedBy: { select: ACTOR_SUMMARY_SELECT },
         whatsappConversation: { select: { id: true, customerPhone: true, status: true } },
-        messages: { orderBy: { createdAt: "asc" } },
+        relatedOrder: {
+          select: {
+            id: true,
+            orderNumber: true,
+            status: true,
+            total: true,
+            createdAt: true,
+            notes: true,
+          },
+        },
+        messages: {
+          orderBy: { createdAt: "asc" },
+          include: {
+            agent: { select: ACTOR_SUMMARY_SELECT },
+          },
+        },
+        logs: {
+          orderBy: { createdAt: "desc" },
+          include: {
+            actor: { select: ACTOR_SUMMARY_SELECT },
+          },
+        },
       },
+    });
+  }
+
+  async findActiveConversationByPhone(tenantContext, customerPhone) {
+    this.assertTenant(tenantContext);
+    const variants = getPhoneVariants(customerPhone);
+
+    return prisma.inboxConversation.findFirst({
+      where: {
+        restaurantId: tenantContext.restaurantId,
+        customerPhone: { in: variants },
+        status: { in: ["WAITING", "ACTIVE", "PENDING"] },
+      },
+      orderBy: { createdAt: "desc" },
     });
   }
 
@@ -48,12 +104,22 @@ export class InboxRepository extends BaseRepository {
     assertTenantContext(tenantContext);
 
     return prisma.inboxConversation.findFirst({
-      where: { restaurantId: tenantContext.restaurantId, whatsappConversationId },
+      where: {
+        restaurantId: tenantContext.restaurantId,
+        whatsappConversationId,
+        status: { in: ["WAITING", "ACTIVE", "PENDING"] },
+      },
+      orderBy: { createdAt: "desc" },
     });
   }
 
   async createConversation(tenantContext, data) {
     assertTenantContext(tenantContext);
+
+    const count = await prisma.inboxConversation.count({
+      where: { restaurantId: tenantContext.restaurantId },
+    });
+    const ticketNumber = count + 1;
 
     return prisma.inboxConversation.create({
       data: {
@@ -63,7 +129,14 @@ export class InboxRepository extends BaseRepository {
         customerPhone: data.customerPhone,
         assignedAgentId: data.assignedAgentId || null,
         relatedOrderId: data.relatedOrderId || null,
+        ticketType: data.ticketType || "SUPPORT",
+        ticketNumber,
+        subject: data.subject || (data.ticketType === "COMPLAINT" ? "شكوى بخصوص أوردر" : data.ticketType === "ORDER" ? "طلب عبر الواتساب" : "محادثة دعم فني"),
         status: data.status || "WAITING",
+      },
+      include: {
+        customer: { select: CUSTOMER_SUMMARY_SELECT },
+        assignedAgent: { select: ACTOR_SUMMARY_SELECT },
       },
     });
   }
@@ -119,6 +192,71 @@ export class InboxRepository extends BaseRepository {
     return prisma.inboxConversation.updateMany({
       where: { id, restaurantId: tenantContext.restaurantId },
       data: { lastMessageAt: new Date(), updatedAt: new Date() },
+    });
+  }
+
+  async closeConversation(tenantContext, id, { resolutionStatus, resolutionCategory, resolutionNotes, closedByEmployeeId } = {}) {
+    assertTenantContext(tenantContext);
+
+    return prisma.inboxConversation.updateMany({
+      where: { id, restaurantId: tenantContext.restaurantId },
+      data: {
+        status: "CLOSED",
+        resolutionStatus: resolutionStatus || "RESOLVED",
+        resolutionCategory: resolutionCategory || "GENERAL_INQUIRY",
+        resolutionNotes: resolutionNotes || "",
+        closedByEmployeeId: closedByEmployeeId || null,
+        closedAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+  }
+
+  async submitFeedback(tenantContext, id, { rating, resolved, nps, comment } = {}) {
+    assertTenantContext(tenantContext);
+
+    return prisma.inboxConversation.updateMany({
+      where: { id, restaurantId: tenantContext.restaurantId },
+      data: {
+        feedbackRating: rating,
+        feedbackResolved: resolved ?? null,
+        feedbackNps: nps ?? null,
+        feedbackComment: comment ?? null,
+        feedbackSubmittedAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+  }
+
+  async findLastClosedTicketByPhone(tenantContext, customerPhone) {
+    assertTenantContext(tenantContext);
+    const variants = getPhoneVariants(customerPhone);
+
+    return prisma.inboxConversation.findFirst({
+      where: {
+        restaurantId: tenantContext.restaurantId,
+        customerPhone: { in: variants },
+        status: "CLOSED",
+        closedAt: { not: null },
+        feedbackRating: null,
+      },
+      orderBy: { closedAt: "desc" },
+    });
+  }
+
+  async createTicketLog(tenantContext, { conversationId, actorType, actorId, actorName, action, details }) {
+    assertTenantContext(tenantContext);
+
+    return prisma.inboxTicketLog.create({
+      data: {
+        restaurantId: tenantContext.restaurantId,
+        conversationId,
+        actorType: actorType || "AGENT",
+        actorId: actorId || null,
+        actorName: actorName || null,
+        action,
+        details: details || null,
+      },
     });
   }
 

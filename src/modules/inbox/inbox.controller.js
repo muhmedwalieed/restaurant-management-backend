@@ -13,6 +13,11 @@ export class InboxController {
     return sendSuccess(res, { data: conv });
   });
 
+  createTicket = asyncHandler(async (req, res) => {
+    const ticket = await inboxService.createTicket(req.tenantContext, req.body);
+    return sendSuccess(res, { message: "Ticket created successfully", data: ticket, statusCode: 201 });
+  });
+
   assignConversation = asyncHandler(async (req, res) => {
     const conv = await inboxService.assignConversation(req.tenantContext, req.params.id, req.body.agentId);
     return sendSuccess(res, { message: "Conversation assigned successfully", data: conv });
@@ -34,8 +39,13 @@ export class InboxController {
   });
 
   closeConversation = asyncHandler(async (req, res) => {
-    const conv = await inboxService.closeConversation(req.tenantContext, req.params.id);
-    return sendSuccess(res, { message: "Conversation closed", data: conv });
+    const conv = await inboxService.closeConversation(req.tenantContext, req.params.id, req.body);
+    return sendSuccess(res, { message: "Conversation closed with resolution", data: conv });
+  });
+
+  submitFeedback = asyncHandler(async (req, res) => {
+    const conv = await inboxService.submitCustomerFeedback(req.tenantContext, req.params.id, req.body);
+    return sendSuccess(res, { message: "Feedback submitted successfully", data: conv });
   });
 
   takeover = asyncHandler(async (req, res) => {
