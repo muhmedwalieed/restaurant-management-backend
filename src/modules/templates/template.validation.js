@@ -7,16 +7,24 @@ const isValidTemplateKey = (val) => {
   return false;
 };
 
+const templateUpdateValueSchema = z.union([
+  z.string().max(2000, "Template text cannot exceed 2000 characters").nullable().optional(),
+  z.object({
+    title: z.string().trim().min(1, "العنوان مطلوب").max(100, "العنوان لا يتجاوز 100 حرف").optional(),
+    category: z.string().trim().optional(),
+    description: z.string().trim().max(255).optional().nullable(),
+    text: z.string().trim().max(2000, "نص القالب لا يتجاوز 2000 حرف").optional(),
+    activeText: z.string().trim().max(2000, "نص القالب لا يتجاوز 2000 حرف").optional(),
+    allowedVariables: z.array(z.string().trim()).optional(),
+  }),
+]);
+
 const templatesMapSchema = z
   .record(
     z.string().refine(isValidTemplateKey, {
       message: "Invalid template key",
     }),
-    z
-      .string()
-      .max(2000, "Template text cannot exceed 2000 characters")
-      .nullable()
-      .optional()
+    templateUpdateValueSchema
   )
   .refine((data) => Object.keys(data).length > 0, {
     message: "At least one template must be provided for update",

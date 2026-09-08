@@ -121,6 +121,11 @@ export class InboxService {
 
   async assignConversation(tenantContext, id, agentId) {
     const conv = await this.getConversation(tenantContext, id);
+
+    if (conv.status === "CLOSED") {
+      throw new BusinessRuleError("لا يمكن تعيين موظف لتذكرة مغلقة.");
+    }
+
     const targetAgentId = agentId || tenantContext.employeeId;
     if (!targetAgentId) {
       throw new BusinessRuleError("No agent to assign the conversation to");
@@ -432,6 +437,11 @@ export class InboxService {
 
   async takeover(tenantContext, id) {
     const conv = await this.getConversation(tenantContext, id);
+
+    if (conv.status === "CLOSED") {
+      throw new BusinessRuleError("لا يمكن سحب تذكرة مغلقة.");
+    }
+
     await inboxRepository.lockConversation(tenantContext, id, tenantContext.employeeId);
 
     await inboxRepository.createTicketLog(tenantContext, {
