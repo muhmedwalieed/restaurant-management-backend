@@ -135,7 +135,21 @@ export class AuthRepository {
       },
       include: {
         restaurant: true,
-        role: true,
+        branch: true,
+        role: {
+          include: {
+            permissions: {
+              include: {
+                permission: true,
+              },
+            },
+          },
+        },
+        branchAccesses: {
+          include: {
+            branch: true,
+          },
+        },
       },
     });
   }

@@ -1,5 +1,5 @@
 import roleRepository from "./role.repository.js";
-import { GLOBAL_PERMISSIONS } from "../permissions/permission.catalog.js";
+import { GLOBAL_PERMISSIONS, MODULE_METADATA } from "../permissions/permission.catalog.js";
 import { BusinessRuleError, ConflictError, NotFoundError } from "../../shared/errors/index.js";
 import { AuditAction, auditLogService } from "../audit-logs/audit-log.service.js";
 import { invalidateEmployeePermissions } from "../auth/authorize.middleware.js";
@@ -14,14 +14,35 @@ export class RoleService {
   getPermissionsCatalog() {
     const grouped = [];
     for (const perm of GLOBAL_PERMISSIONS) {
-      const module = perm.key.split(".")[0];
-      const entry = grouped.find((g) => g.module === module);
-      const item = { key: perm.key, name: perm.description };
-      if (entry) {
-        entry.permissions.push(item);
-      } else {
-        grouped.push({ module, permissions: [item] });
+      const moduleKey = perm.module || perm.key.split(".")[0];
+      const meta = MODULE_METADATA[moduleKey] || {
+        key: moduleKey,
+        title: moduleKey,
+        titleAr: moduleKey,
+      };
+
+      let entry = grouped.find((g) => g.module === moduleKey);
+      if (!entry) {
+        entry = {
+          module: moduleKey,
+          title: meta.titleAr,
+          titleEn: meta.title,
+          localizedModule: meta.titleAr,
+          permissions: [],
+        };
+        grouped.push(entry);
       }
+
+      const item = {
+        key: perm.key,
+        name: perm.nameAr || perm.description,
+        nameEn: perm.name || perm.description,
+        description: perm.descriptionAr || perm.description,
+        descriptionEn: perm.description,
+        module: moduleKey,
+      };
+
+      entry.permissions.push(item);
     }
     return grouped;
   }

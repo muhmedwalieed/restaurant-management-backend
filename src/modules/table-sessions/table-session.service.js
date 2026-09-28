@@ -90,7 +90,7 @@ export class TableSessionService {
         table.branchId,
         table.id,
         pinHash,
-        null,
+        pin,
         tenantContext.employeeId
       );
       await tableSessionRepository.setTableStatus(table.id, tenantContext.restaurantId, "OCCUPIED");
@@ -103,7 +103,7 @@ export class TableSessionService {
         action: "started",
       });
 
-      return { sessionId: session.id, pin };
+      return { sessionId: session.id, pin, qrToken: table.qrToken, tableId: table.id };
     })();
     sessionStartLocks.set(lockKey, attempt);
     try {
@@ -118,7 +118,7 @@ export class TableSessionService {
     if (!table) throw new NotFoundError("Table not found");
 
     const session = await tableSessionRepository.findActiveSessionByTable(restaurantId, table.id);
-    if (!session) throw new NotFoundError("No active session for this table. Ask a waiter to start one.");
+    if (!session) throw new BusinessRuleError("لا توجد جلسة مفتوحة لهذه الطاولة حالياً. يرجى من الويتر فتح الجلسة أولاً وإعطائك رمز الـ PIN.");
 
     const now = Date.now();
     if (session.lockoutUntil && new Date(session.lockoutUntil).getTime() > now) {
@@ -144,24 +144,35 @@ export class TableSessionService {
 
     await tableSessionRepository.lockout(session.id, restaurantId, 0, 0, null);
 
-    const member = await tableSessionRepository.addMember(restaurantId, session.id, name);
+    const trimmedName = (name || '').trim();
+    let member = await prisma.tableSessionMember.findFirst({
+      where: {
+        sessionId: session.id,
+        name: { equals: trimmedName, mode: 'insensitive' },
+      },
+    });
+
+    if (!member) {
+      member = await tableSessionRepository.addMember(restaurantId, session.id, trimmedName);
+      emitEvent(DomainEvent.TABLE_SESSION_UPDATED, {
+        restaurantId,
+        branchId: session.branchId,
+        sessionId: session.id,
+        tableId: table.id,
+        action: 'member_joined',
+        memberName: trimmedName,
+      });
+    }
+
     const memberToken = signAccessToken(
       {
-        type: "table-member",
+        type: 'table-member',
         restaurantId,
         sessionId: session.id,
         memberId: member.id,
       },
       { expiresIn: env.JWT_TABLE_MEMBER_EXPIRES_IN }
     );
-    emitEvent(DomainEvent.TABLE_SESSION_UPDATED, {
-      restaurantId,
-      branchId: session.branchId,
-      sessionId: session.id,
-      tableId: table.id,
-      action: "member_joined",
-      memberName: name,
-    });
 
     return { ...(await this.publicSession(restaurantId, session.id)), memberToken };
   }
@@ -169,7 +180,10 @@ export class TableSessionService {
   async addItem(restaurantId, sessionId, memberId, { productId, quantity }) {
     const session = await tableSessionRepository.findSessionById(restaurantId, sessionId);
     if (!session) throw new NotFoundError("Session not found");
-    if (session.status !== "ACTIVE") throw new BusinessRuleError("Session is no longer open for adding items");
+    if (session.status === "CLOSED") throw new BusinessRuleError("Session is closed");
+    if (session.status === "AWAITING_CONFIRMATION") {
+      throw new BusinessRuleError("Cannot add items while an order is awaiting confirmation");
+    }
 
     const member = await prisma.tableSessionMember.findFirst({
       where: { id: memberId, sessionId },
@@ -203,16 +217,31 @@ export class TableSessionService {
     return this.publicSession(restaurantId, sessionId);
   }
 
-  async updateItem(restaurantId, sessionId, itemId, { quantity }) {
+  async updateItem(restaurantId, sessionId, itemId, { quantity, memberId } = {}) {
     const session = await tableSessionRepository.findSessionById(restaurantId, sessionId);
     if (!session) throw new NotFoundError("Session not found");
     if (session.status === "CLOSED") throw new BusinessRuleError("Session is closed");
 
     const item = (session.items || []).find((i) => i.id === itemId);
     if (!item) throw new NotFoundError("Item not found");
-    this.assertItemEditable(session, item);
+    await this.assertItemEditable(session, item, memberId);
 
     await tableSessionRepository.updateItemQuantity(sessionId, itemId, quantity);
+
+    if (item.sessionOrderId) {
+      const remaining = await prisma.tableSessionItem.findMany({
+        where: { sessionId, sessionOrderId: item.sessionOrderId },
+      });
+      const newTotal = remaining.reduce(
+        (s, it) => s + (it.id === itemId ? Number(it.unitPrice) * quantity : Number(it.unitPrice) * it.quantity),
+        0
+      );
+      await prisma.tableSessionOrder.updateMany({
+        where: { id: item.sessionOrderId, sessionId },
+        data: { total: newTotal },
+      });
+    }
+
     emitEvent(DomainEvent.TABLE_SESSION_UPDATED, {
       restaurantId,
       branchId: session.branchId,
@@ -224,16 +253,28 @@ export class TableSessionService {
     return this.publicSession(restaurantId, sessionId);
   }
 
-  async removeItem(restaurantId, sessionId, itemId) {
+  async removeItem(restaurantId, sessionId, itemId, { memberId } = {}) {
     const session = await tableSessionRepository.findSessionById(restaurantId, sessionId);
     if (!session) throw new NotFoundError("Session not found");
     if (session.status === "CLOSED") throw new BusinessRuleError("Session is closed");
 
     const item = (session.items || []).find((i) => i.id === itemId);
     if (!item) throw new NotFoundError("Item not found");
-    this.assertItemEditable(session, item);
+    await this.assertItemEditable(session, item, memberId);
 
     await tableSessionRepository.deleteItem(sessionId, itemId);
+
+    if (item.sessionOrderId) {
+      const remaining = await prisma.tableSessionItem.findMany({
+        where: { sessionId, sessionOrderId: item.sessionOrderId },
+      });
+      const newTotal = remaining.reduce((s, it) => s + Number(it.unitPrice) * it.quantity, 0);
+      await prisma.tableSessionOrder.updateMany({
+        where: { id: item.sessionOrderId, sessionId },
+        data: { total: newTotal },
+      });
+    }
+
     emitEvent(DomainEvent.TABLE_SESSION_UPDATED, {
       restaurantId,
       branchId: session.branchId,
@@ -245,11 +286,77 @@ export class TableSessionService {
     return this.publicSession(restaurantId, sessionId);
   }
 
-  assertItemEditable(session, item) {
-    if (!item.sessionOrderId) return;
-    const order = (session.orders || []).find((o) => o.id === item.sessionOrderId);
-    if (order && order.status !== "AWAITING_CONFIRMATION") {
-      throw new BusinessRuleError("Cannot modify an item of a confirmed order");
+  async addItemStaff(tenantContext, sessionId, payload) {
+    const restaurantId = tenantContext.restaurantId;
+    const session = await tableSessionRepository.findSessionById(restaurantId, sessionId);
+    if (!session) throw new NotFoundError("Session not found");
+    if (session.status === "CLOSED") throw new BusinessRuleError("Session is closed");
+
+    const rawItems = Array.isArray(payload.items) ? payload.items : [payload];
+    const items = rawItems.filter((it) => it && (it.productId || it.id));
+    if (items.length === 0) throw new ValidationError("No valid items to add");
+
+    const pendingOrder = await tableSessionRepository.findPendingOrder(sessionId);
+
+    for (const it of items) {
+      const productId = it.productId || it.id;
+      const quantity = Math.max(1, parseInt(it.quantity || it.qty || 1, 10));
+      const product = await prisma.product.findFirst({
+        where: { id: productId, restaurantId, deletedAt: null },
+      });
+      if (!product) throw new NotFoundError(`Product ${productId} not found`);
+
+      const unitPrice = Number(product.price);
+      await prisma.tableSessionItem.create({
+        data: {
+          sessionId,
+          productId: product.id,
+          productName: product.name,
+          unitPrice,
+          quantity,
+          addedByName: tenantContext.name || "الويتر",
+          sessionOrderId: pendingOrder ? pendingOrder.id : null,
+        },
+      });
+    }
+
+    if (pendingOrder) {
+      const allPendingItems = await prisma.tableSessionItem.findMany({
+        where: { sessionId, sessionOrderId: pendingOrder.id },
+      });
+      const newTotal = allPendingItems.reduce((acc, i) => acc + Number(i.unitPrice) * i.quantity, 0);
+      await prisma.tableSessionOrder.updateMany({
+        where: { id: pendingOrder.id, sessionId },
+        data: { total: newTotal },
+      });
+    }
+
+    emitEvent(DomainEvent.TABLE_SESSION_UPDATED, {
+      restaurantId,
+      branchId: session.branchId,
+      sessionId,
+      tableId: session.tableId,
+      action: "items_added_staff",
+    });
+
+    return this.publicSession(restaurantId, sessionId);
+  }
+
+  async assertItemEditable(session, item, memberId = null) {
+    if (item.sessionOrderId) {
+      const order = (session.orders || []).find((o) => o.id === item.sessionOrderId);
+      if (order && order.status !== "AWAITING_CONFIRMATION") {
+        throw new BusinessRuleError("Cannot modify an item of a confirmed order");
+      }
+    }
+
+    if (memberId && item.addedByName) {
+      const member = await prisma.tableSessionMember.findFirst({
+        where: { id: memberId, sessionId: session.id },
+      });
+      if (member && member.name && item.addedByName !== member.name) {
+        throw new BusinessRuleError(`لا يمكنك تعديل أو حذف هذا الصنف لأنه أُضيف بواسطة «${item.addedByName}»`);
+      }
     }
   }
 
@@ -282,9 +389,15 @@ export class TableSessionService {
       validMemberId = createdMember.id;
     }
 
-    const callType = ["HELP", "BILL", "OTHER"].includes(type) ? type : "HELP";
+    const callType = ["HELP", "BILL", "CONFIRM_ORDER", "OTHER"].includes(type) ? type : "HELP";
     const name = requesterName || session.members?.find((m) => m.id === validMemberId)?.name || "عميل";
-    const finalNote = note || (callType === "BILL" ? "طلب الفاتورة والحساب" : null);
+    const finalNote =
+      note ||
+      (callType === "BILL"
+        ? "طلب الفاتورة والحساب"
+        : callType === "CONFIRM_ORDER"
+        ? "طلب مراجعة وتأكيد الطلب مع الويتر"
+        : "طلب مساعدة الويتر");
 
     const call = await tableSessionRepository.createWaiterCall({
       restaurantId,
@@ -342,7 +455,10 @@ export class TableSessionService {
     const session = await tableSessionRepository.findSessionById(tenantContext.restaurantId, sessionId);
     if (!session) throw new NotFoundError("Session not found");
     const call = await tableSessionRepository.findActiveWaiterCall(sessionId, tenantContext.restaurantId);
-    if (!call) throw new NotFoundError("No active waiter call for this session");
+    if (!call) {
+      // Idempotent: If no active call is found, return the session gracefully without 404
+      return this.publicSession(tenantContext.restaurantId, sessionId);
+    }
 
     await tableSessionRepository.dismissWaiterCall(call.id, tenantContext.restaurantId);
     emitEvent(DomainEvent.TABLE_SESSION_UPDATED, {
@@ -515,17 +631,68 @@ export class TableSessionService {
     return this.publicSession(restaurantId, sessionId);
   }
 
-  async closeSession(tenantContext, sessionId) {
+  async closeSession(tenantContext, sessionId, options = {}) {
     const session = await tableSessionRepository.findSessionById(tenantContext.restaurantId, sessionId);
     if (!session) throw new NotFoundError("Session not found");
     if (session.status === "CLOSED") throw new BusinessRuleError("Session is closed");
 
-    if (session.confirmedOrderId) {
-      const order = await prisma.order.findFirst({
-        where: { id: session.confirmedOrderId, restaurantId: tenantContext.restaurantId },
+    // Collect all order IDs linked to this session
+    const sessionOrderIds = new Set();
+    if (session.confirmedOrderId) sessionOrderIds.add(session.confirmedOrderId);
+    if (Array.isArray(session.orders)) {
+      for (const o of session.orders) {
+        if (o.orderId) sessionOrderIds.add(o.orderId);
+      }
+    }
+
+    if (sessionOrderIds.size > 0) {
+      const unpaidOrders = await prisma.order.findMany({
+        where: {
+          id: { in: Array.from(sessionOrderIds) },
+          restaurantId: tenantContext.restaurantId,
+          paymentStatus: "PENDING",
+          status: { not: "CANCELLED" },
+        },
       });
-      if (order && order.paymentStatus === "PENDING" && order.status !== "CANCELLED") {
-        throw new BusinessRuleError("Cannot close session while linked confirmed order is unpaid");
+
+      if (unpaidOrders.length > 0) {
+        if (options?.settlePayment || options?.autoSettle) {
+          const method = options.paymentMethod || "CASH";
+          for (const uOrder of unpaidOrders) {
+            await prisma.order.updateMany({
+              where: { id: uOrder.id, restaurantId: tenantContext.restaurantId },
+              data: {
+                paymentStatus: "PAID",
+                paymentMethod: method,
+                paidAt: new Date(),
+                paidByEmployeeId: tenantContext.employeeId || null,
+                version: { increment: 1 },
+                updatedAt: new Date(),
+              },
+            });
+            await prisma.orderStatusHistory.create({
+              data: {
+                restaurantId: tenantContext.restaurantId,
+                orderId: uOrder.id,
+                fromStatus: uOrder.status,
+                toStatus: uOrder.status,
+                changedById: tenantContext.employeeId || null,
+                reason: `Payment settled on table session close (${method})`,
+              },
+            });
+            emitEvent(DomainEvent.ORDER_PAID, {
+              restaurantId: tenantContext.restaurantId,
+              branchId: session.branchId,
+              orderId: uOrder.id,
+              orderNumber: uOrder.orderNumber,
+              total: Number(uOrder.total),
+              tableId: uOrder.tableId || session.tableId,
+              actorEmployeeId: tenantContext.employeeId || null,
+            });
+          }
+        } else {
+          throw new BusinessRuleError("Cannot close session while linked confirmed order is unpaid");
+        }
       }
     }
 
@@ -549,7 +716,7 @@ export class TableSessionService {
 
     const pin = String(randomInt(0, 10000)).padStart(PIN_LENGTH, "0");
     const pinHash = await bcrypt.hash(pin, 10);
-    await tableSessionRepository.updatePin(sessionId, tenantContext.restaurantId, null, pinHash);
+    await tableSessionRepository.updatePin(sessionId, tenantContext.restaurantId, pin, pinHash);
 
     emitEvent(DomainEvent.TABLE_SESSION_UPDATED, {
       restaurantId: tenantContext.restaurantId,
@@ -569,9 +736,10 @@ export class TableSessionService {
     const pendingOrder = await tableSessionRepository.findPendingOrder(sessionId);
     if (!pendingOrder) throw new BusinessRuleError("No order is awaiting confirmation");
 
-    // Returning the order to the customer removes the round entirely — a round only
-    // counts as an order once the waiter confirms it. So no "cancelled" order is left.
-    await tableSessionRepository.unlinkOrderItems(sessionId, pendingOrder.id);
+    // Delete the items belonging to this rejected order so it is completely cancelled
+    await prisma.tableSessionItem.deleteMany({
+      where: { sessionId, sessionOrderId: pendingOrder.id },
+    });
     await prisma.tableSessionOrder.deleteMany({
       where: { id: pendingOrder.id, sessionId },
     });
@@ -611,20 +779,33 @@ export class TableSessionService {
     return sessions.map((s) => {
       const currentItems = (s.items || []).filter((i) => !i.sessionOrderId);
       const ordersProjection = (s.orders || []).map((o) => this.orderProjection(o));
-      const currentTotal = currentItems.reduce((acc, i) => acc + Number(i.unitPrice) * i.quantity, 0);
+      const confirmedOrdersTotal = ordersProjection
+        .filter((o) => o.status === "CONFIRMED")
+        .reduce((acc, o) => acc + Number(o.total || 0), 0);
+      const pendingOrdersTotal = ordersProjection
+        .filter((o) => o.status === "AWAITING_CONFIRMATION")
+        .reduce((acc, o) => acc + Number(o.total || 0), 0);
+      const draftTotal = currentItems.reduce((acc, i) => acc + Number(i.unitPrice) * i.quantity, 0);
+
       return {
         id: s.id,
         status: s.status,
         tableId: s.tableId,
         tableLabel: s.table?.label || null,
+        tableNumber: s.table?.label || null,
+        pin: s.pin || String(Math.abs((s.id.split('').reduce((acc, c) => acc * 31 + c.charCodeAt(0), 0)) % 9000) + 1000),
+        qrToken: s.table?.qrToken || null,
         members: s.members || [],
         itemCount: currentItems.length,
-        total: currentTotal,
-        grandTotal: currentTotal + ordersProjection
-        .filter((o) => o.status === "CONFIRMED")
-        .reduce((acc, o) => acc + Number(o.total || 0), 0),
+        total: confirmedOrdersTotal,
+        confirmedTotal: confirmedOrdersTotal,
+        pendingTotal: pendingOrdersTotal,
+        draftTotal,
+        grandTotal: confirmedOrdersTotal,
         confirmedOrderId: s.confirmedOrderId,
         orders: ordersProjection,
+        waiterCalls: (s.waiterCalls || []).map((c) => this.waiterCallProjection(c)),
+        activeWaiterCall: this.waiterCallProjection((s.waiterCalls || [])[0] || null),
       };
     });
   }
@@ -697,6 +878,8 @@ export class TableSessionService {
       status: session.status,
       tableId: session.tableId,
       tableLabel: session.table?.label || null,
+      tableNumber: session.table?.label || null,
+      qrToken: session.table?.qrToken || null,
       members: session.members || [],
       items: currentItems.map((i) => ({
         id: i.id,
@@ -712,6 +895,7 @@ export class TableSessionService {
       orders: ordersProjection,
       confirmedOrderId: session.confirmedOrderId,
       waiterCall: this.waiterCallProjection((session.waiterCalls || [])[0] || null),
+      waiterCalls: (session.waiterCalls || []).map((c) => this.waiterCallProjection(c)),
     };
   }
 }

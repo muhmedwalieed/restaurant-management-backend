@@ -69,6 +69,9 @@ staffRouter.patch("/:id/items/:itemId", authorize("orders.create"), (req, res, n
 staffRouter.delete("/:id/items/:itemId", authorize("orders.create"), (req, res, next) =>
   tableSessionController.removeItemStaff(req, res, next)
 );
+staffRouter.post("/:id/items", authorize("orders.create"), (req, res, next) =>
+  tableSessionController.addItemStaff(req, res, next)
+);
 staffRouter.get("/:id", authorize("orders.view"), (req, res, next) => tableSessionController.getSessionStaff(req, res, next));
 
 router.use("/tables", staffRouter);

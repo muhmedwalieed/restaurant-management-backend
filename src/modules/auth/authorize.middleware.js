@@ -79,8 +79,8 @@ export function authorizeAny(...permissionKeys) {
   });
 }
 
-export function authorize(permissionKey) {
-  return authorizeAny(permissionKey);
+export function authorize(...permissionKeys) {
+  return authorizeAny(...permissionKeys);
 }
 
 export async function invalidateEmployeePermissions(employeeIds) {

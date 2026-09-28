@@ -10,7 +10,7 @@ const router = Router();
 
 router.use(authenticate, requireTenantContext);
 
-router.get("/", authorize("coupons.manage"), validate(couponQuerySchema), (req, res, next) => {
+router.get("/", authorize("coupons.view", "coupons.manage"), validate(couponQuerySchema), (req, res, next) => {
   couponController.list(req, res, next);
 });
 
@@ -18,7 +18,7 @@ router.post("/", authorize("coupons.manage"), validate(createCouponSchema), (req
   couponController.create(req, res, next);
 });
 
-router.get("/:id", authorize("coupons.manage"), (req, res, next) => {
+router.get("/:id", authorize("coupons.view", "coupons.manage"), (req, res, next) => {
   couponController.getById(req, res, next);
 });
 

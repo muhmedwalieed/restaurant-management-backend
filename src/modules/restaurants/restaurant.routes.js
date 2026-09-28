@@ -10,9 +10,13 @@ const router = Router();
 
 router.use(authenticate, requireTenantContext);
 
-router.get("/", authorize("restaurants.manage"), (req, res, next) => {
-  restaurantController.getProfile(req, res, next);
-});
+router.get(
+  "/",
+  authorize("restaurants.view", "restaurants.manage", "orders.view", "menu.view", "dashboard.view"),
+  (req, res, next) => {
+    restaurantController.getProfile(req, res, next);
+  }
+);
 
 router.patch(
   "/",

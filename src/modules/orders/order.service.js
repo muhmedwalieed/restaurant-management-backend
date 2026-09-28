@@ -14,16 +14,17 @@ function validateStateTransition(currentStatus, newStatus, orderType) {
     return;
   }
 
-  if (currentStatus === "DELIVERED" || currentStatus === "CANCELLED") {
+  if (currentStatus === "CANCELLED") {
     throw new BusinessRuleError(`Order is in terminal state '${currentStatus}' and cannot be updated`);
   }
 
   const validMap = {
     PENDING: ["CONFIRMED"],
     CONFIRMED: ["PREPARING"],
-    PREPARING: ["READY"],
-    READY: orderType === "DELIVERY" ? ["OUT_FOR_DELIVERY"] : ["DELIVERED"],
-    OUT_FOR_DELIVERY: ["DELIVERED"],
+    PREPARING: ["READY", "CONFIRMED"],
+    READY: orderType === "DELIVERY" ? ["OUT_FOR_DELIVERY", "PREPARING"] : ["DELIVERED", "PREPARING"],
+    OUT_FOR_DELIVERY: ["DELIVERED", "READY"],
+    DELIVERED: ["READY"],
   };
 
   const allowedNextStates = validMap[currentStatus] || [];
@@ -109,11 +110,12 @@ export class OrderService {
 
     await this.verifyBranchOwnership(tenantContext, branchId);
 
-    if (!payload.customerId && payload.customerPhone) {
+    if (!payload.customerId && (payload.customerPhone || payload.customerName)) {
       const customerService = (await import("../customers/customer.service.js")).default;
+      const phone = payload.customerPhone?.trim() || `guest_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
       const customer = await customerService.findOrCreateCustomerByPhone(tenantContext, {
-        phone: payload.customerPhone,
-        name: payload.customerName,
+        phone,
+        name: payload.customerName?.trim() || undefined,
       });
       if (customer) {
         payload.customerId = customer.id;
@@ -248,19 +250,44 @@ export class OrderService {
       }
     }
 
+    const total = calculatedSubtotal - discountAmount;
+
+    let initialPaymentStatus = payload.paymentStatus === "PAID" ? "PAID" : "PENDING";
+    let paidAt = null;
+    let paidByEmployeeId = null;
+
+    const amountPaid = Number(payload.amountPaid ?? 0);
+    if (amountPaid >= total && total > 0) {
+      initialPaymentStatus = "PAID";
+      paidAt = new Date();
+      paidByEmployeeId = tenantContext.employeeId || null;
+    } else if (payload.paymentStatus === "PAID") {
+      initialPaymentStatus = "PAID";
+      paidAt = new Date();
+      paidByEmployeeId = tenantContext.employeeId || null;
+    }
+
+    const isWaiter = tenantContext?.role === "ويتر" || tenantContext?.role?.toLowerCase() === "waiter";
+    if (isWaiter && (payload.type !== "DINE_IN" || !payload.tableId)) {
+      throw new BusinessRuleError("صلاحيات الويتر مقتصرة على طلبات الطاولات داخل الصالة فقط");
+    }
+
     const orderPayload = {
       source: payload.source || "CASHIER",
       type: payload.type || "DINE_IN",
-      status: payload.status || "PENDING",
+      status: payload.status || (isWaiter ? "CONFIRMED" : "PENDING"),
       tableId: payload.tableId || null,
       customerId: payload.customerId || null,
       couponId: payload.couponId || null,
       subtotal: calculatedSubtotal,
       discountAmount,
+      total,
       notes: payload.notes || null,
       address: payload.address || null,
-      paymentStatus: payload.paymentStatus || "PENDING",
+      paymentStatus: initialPaymentStatus,
       paymentMethod: payload.paymentMethod || null,
+      paidAt,
+      paidByEmployeeId,
     };
 
     const order = await orderRepository.createOrderTransaction(
@@ -297,6 +324,11 @@ export class OrderService {
 
     const order = await this.getOrderById(tenantContext, branchId, orderId);
 
+    const isWaiter = tenantContext?.role === "ويتر" || tenantContext?.role?.toLowerCase() === "waiter";
+    if (isWaiter && (order.type !== "DINE_IN" || !order.tableId)) {
+      throw new BusinessRuleError("صلاحيات الويتر مقتصرة على طلبات الطاولات داخل الصالة فقط");
+    }
+
     validateStateTransition(order.status, newStatus, order.type);
 
     await orderRepository.updateOrderStatusWithHistoryTransaction(
@@ -330,6 +362,11 @@ export class OrderService {
     }
 
     const order = await this.getOrderById(tenantContext, branchId, orderId);
+
+    const isWaiter = tenantContext?.role === "ويتر" || tenantContext?.role?.toLowerCase() === "waiter";
+    if (isWaiter && (order.type !== "DINE_IN" || !order.tableId)) {
+      throw new BusinessRuleError("صلاحيات الويتر مقتصرة على طلبات الطاولات داخل الصالة فقط");
+    }
 
     if (order.status === "DELIVERED" || order.status === "CANCELLED") {
       throw new BusinessRuleError(`Order is in terminal state '${order.status}' and cannot be cancelled`);
@@ -477,6 +514,7 @@ export class OrderService {
         ...payload,
         source: payload.source || "CASHIER",
         type,
+        status: payload.status || "CONFIRMED",
       },
       idempotencyKey
     );
@@ -484,6 +522,11 @@ export class OrderService {
 
   async processOrderPayment(tenantContext, branchId, orderId, payload) {
     const order = await this.getOrderById(tenantContext, branchId, orderId);
+
+    const isWaiter = tenantContext?.role === "ويتر" || tenantContext?.role?.toLowerCase() === "waiter";
+    if (isWaiter && (order.type !== "DINE_IN" || !order.tableId)) {
+      throw new BusinessRuleError("صلاحيات الويتر مقتصرة على طلبات الطاولات داخل الصالة فقط");
+    }
 
     if (order.status === "CANCELLED") {
       throw new BusinessRuleError("Cannot process payment for cancelled order");
@@ -497,18 +540,24 @@ export class OrderService {
       throw new BusinessRuleError("Cannot process payment for refunded order");
     }
 
-    const amountCents = Math.round(Number(payload.amount) * 100);
-    const totalCents = Math.round(Number(order.total) * 100);
+    const orderTotal = Number(order.total);
+    const paymentAmount = payload.amount !== undefined && payload.amount !== null ? Number(payload.amount) : orderTotal;
+    const amountCents = Math.round(paymentAmount * 100);
+    const totalCents = Math.round(orderTotal * 100);
     if (amountCents !== totalCents) {
       throw new BusinessRuleError("Payment amount must equal the order total");
     }
+
+    const expectedVersion = payload.expectedVersion !== undefined && payload.expectedVersion !== null
+      ? payload.expectedVersion
+      : order.version;
 
     await orderRepository.updateOrderPaymentWithHistoryTransaction(
       tenantContext,
       branchId,
       orderId,
-      payload.expectedVersion,
-      payload
+      expectedVersion,
+      { ...payload, amount: paymentAmount, expectedVersion }
     );
 
     emitEvent(DomainEvent.ORDER_PAID, {

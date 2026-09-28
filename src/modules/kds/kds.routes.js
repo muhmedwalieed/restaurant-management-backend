@@ -11,11 +11,11 @@ const router = Router({ mergeParams: true });
 
 router.use(authenticate, requireTenantContext, requireBranchAccess());
 
-router.get("/", authorize("orders.view"), validate(kdsQuerySchema), (req, res, next) => {
+router.get("/", authorize("kds.view", "orders.view"), validate(kdsQuerySchema), (req, res, next) => {
   kdsController.getActiveKitchenOrders(req, res, next);
 });
 
-router.patch("/:id/status", authorize("orders.update"), validate(kdsStatusUpdateSchema), (req, res, next) => {
+router.patch("/:id/status", authorize("kds.manage", "orders.update"), validate(kdsStatusUpdateSchema), (req, res, next) => {
   kdsController.updateKitchenOrderStatus(req, res, next);
 });
 

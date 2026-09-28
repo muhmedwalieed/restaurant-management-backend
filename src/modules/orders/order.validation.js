@@ -145,8 +145,8 @@ export const posOrderSchema = z.object({
 export const paymentSchema = z.object({
   body: z.object({
     paymentMethod: z.enum(["CASH", "CARD", "ONLINE"]),
-    amount: z.coerce.number().positive("Payment amount is required"),
-    expectedVersion: z.coerce.number().int().min(1, "expectedVersion is required for optimistic locking"),
+    amount: z.coerce.number().positive("Payment amount is required").optional(),
+    expectedVersion: z.coerce.number().int().min(1, "expectedVersion is required for optimistic locking").optional(),
   }),
 });
 

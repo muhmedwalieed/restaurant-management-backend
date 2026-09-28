@@ -41,9 +41,12 @@ export const authenticate = asyncHandler(async (req, res, next) => {
     throw new AuthenticationError("Session expired or force logged out");
   }
 
+  const requestedBranchId = req.headers["x-branch-id"] || req.headers["x-branchid"] || null;
+  const activeBranchId = requestedBranchId || payload.branchId || null;
+
   req.tenantContext = {
     restaurantId: payload.restaurantId,
-    branchId: payload.branchId || null,
+    branchId: activeBranchId,
     employeeId: payload.employeeId,
     role: payload.role || null,
     sessionId: payload.sessionId,
@@ -52,7 +55,7 @@ export const authenticate = asyncHandler(async (req, res, next) => {
   req.user = {
     id: payload.employeeId,
     restaurantId: payload.restaurantId,
-    branchId: payload.branchId,
+    branchId: activeBranchId,
     role: payload.role,
   };
 

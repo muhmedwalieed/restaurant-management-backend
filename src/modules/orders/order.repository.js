@@ -174,7 +174,7 @@ export class OrderRepository extends BaseRepository {
   async createOrderInClient(tx, tenantContext, branchId, orderPayload, itemsPayload, idempotencyKey = null, { startNumber, dateKey } = {}) {
     const restaurantId = tenantContext.restaurantId;
 
-    if (orderPayload.tableId && orderPayload.source !== "QR") {
+    if (orderPayload.tableId && !["QR", "CASHIER", "POS", "PHONE", "WHATSAPP"].includes(orderPayload.source)) {
       const activeOrderOnTable = await tx.order.findFirst({
         where: {
           restaurantId,
@@ -216,6 +216,8 @@ export class OrderRepository extends BaseRepository {
         status: orderPayload.status || "PENDING",
         paymentStatus: orderPayload.paymentStatus || "PENDING",
         paymentMethod: orderPayload.paymentMethod || null,
+        paidAt: orderPayload.paidAt || null,
+        paidByEmployeeId: orderPayload.paidByEmployeeId || null,
         tableId: orderPayload.tableId || null,
         customerId: orderPayload.customerId || null,
         couponId: orderPayload.couponId || null,

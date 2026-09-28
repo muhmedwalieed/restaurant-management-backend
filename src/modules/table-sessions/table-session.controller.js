@@ -48,17 +48,18 @@ export class TableSessionController {
   updateItem = asyncHandler(async (req, res) => {
     const { itemId } = req.params;
     const body = req.body ?? {};
-    const { restaurantId, sessionId } = req.memberContext;
+    const { restaurantId, sessionId, memberId } = req.memberContext;
     const result = await tableSessionService.updateItem(restaurantId, sessionId, itemId, {
       quantity: body.quantity,
+      memberId,
     });
     return sendSuccess(res, { data: result });
   });
 
   removeItem = asyncHandler(async (req, res) => {
     const { itemId } = req.params;
-    const { restaurantId, sessionId } = req.memberContext;
-    const result = await tableSessionService.removeItem(restaurantId, sessionId, itemId);
+    const { restaurantId, sessionId, memberId } = req.memberContext;
+    const result = await tableSessionService.removeItem(restaurantId, sessionId, itemId, { memberId });
     return sendSuccess(res, { data: result });
   });
 
@@ -74,6 +75,12 @@ export class TableSessionController {
   removeItemStaff = asyncHandler(async (req, res) => {
     const { id, itemId } = req.params;
     const result = await tableSessionService.removeItem(req.tenantContext.restaurantId, id, itemId);
+    return sendSuccess(res, { data: result });
+  });
+
+  addItemStaff = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const result = await tableSessionService.addItemStaff(req.tenantContext, id, req.body ?? {});
     return sendSuccess(res, { data: result });
   });
 
@@ -103,7 +110,7 @@ export class TableSessionController {
 
   closeSession = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const result = await tableSessionService.closeSession(req.tenantContext, id);
+    const result = await tableSessionService.closeSession(req.tenantContext, id, req.body);
     return sendSuccess(res, { message: "Session closed", data: result });
   });
 
@@ -132,7 +139,7 @@ export class TableSessionController {
   });
 
   listBranchSessions = asyncHandler(async (req, res) => {
-    const branchId = req.tenantContext.branchId;
+    const branchId = req.query.branchId || req.headers["x-branch-id"] || req.tenantContext.branchId;
     const result = await tableSessionService.listBranchSessions(req.tenantContext, branchId);
     return sendSuccess(res, { data: result });
   });

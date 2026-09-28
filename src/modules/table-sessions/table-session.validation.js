@@ -25,7 +25,7 @@ export const callWaiterSchema = z.object({
     requesterName: z.string().max(60).optional(),
     note: z.string().max(200).optional(),
     tableId: z.string().optional(),
-    type: z.enum(["HELP", "BILL", "OTHER"]).optional(),
+    type: z.enum(["HELP", "BILL", "CONFIRM_ORDER", "OTHER"]).optional(),
   }),
 });
 

@@ -130,7 +130,11 @@ describe("Templates & Softcoding Engine Integration Tests", () => {
   });
 
   // 3. Permission Cache Invalidation Unit Test
-  test("3. Permission Invalidation: Handles single ID and array of IDs", async () => {
+  test("3. Permission Invalidation: Handles single ID and array of IDs", async (t) => {
+    if (redis.status !== "ready") {
+      t.skip("Redis not connected, skipping redis direct cache test");
+      return;
+    }
     await redis.set("permissions:emp_test_1", "cache_val");
     await redis.set("permissions:emp_test_2", "cache_val");
 

@@ -295,7 +295,7 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
     assert.equal(table.status, "OCCUPIED");
   });
 
-  test("3. Single Active Order Per Table: Creating a second order on an OCCUPIED table returns 422 BusinessRuleError", async () => {
+  test("3. Multiple Orders Per Table for Cashier: Creating a second order on an OCCUPIED table succeeds for Cashier (201)", async () => {
     const res = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/pos/orders`, {
       method: "POST",
       headers: {
@@ -309,10 +309,9 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
       }),
     });
 
-    assert.equal(res.status, 422);
+    assert.equal(res.status, 201);
     const body = await res.json();
-    assert.equal(body.error.code, "BUSINESS_RULE_ERROR");
-    assert.ok(body.error.message.includes("active order"));
+    assert.equal(body.success, true);
   });
 
   test("3a. New order on a table AFTER its active order is cancelled succeeds (201)", async () => {

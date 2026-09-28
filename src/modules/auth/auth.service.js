@@ -117,6 +117,42 @@ export class AuthService {
 
     logger.info({ employeeId: employee.id, restaurantId, ipAddress }, "Login successful");
 
+    const formattedPermissions = (employee.role.isSystem && employee.role.name === "owner")
+      ? GLOBAL_PERMISSIONS.map((p) => ({
+          id: p.key,
+          key: p.key,
+          name: p.nameAr || p.description,
+          description: p.descriptionAr || p.description,
+          module: p.module || p.key.split(".")[0],
+        }))
+      : (employee.role.permissions || []).map((rp) => ({
+          id: rp.permission.id,
+          key: rp.permission.key,
+          name: rp.permission.description,
+          description: rp.permission.description,
+          module: rp.permission.key.split(".")[0],
+        }));
+
+    const accessibleBranches = [];
+    if (employee.branch) {
+      accessibleBranches.push({
+        id: employee.branch.id,
+        name: employee.branch.name,
+        code: employee.branch.code,
+        isMain: employee.branch.isMain,
+      });
+    }
+    for (const ba of (employee.branchAccesses || [])) {
+      if (ba.branch && !accessibleBranches.some((b) => b.id === ba.branch.id)) {
+        accessibleBranches.push({
+          id: ba.branch.id,
+          name: ba.branch.name,
+          code: ba.branch.code,
+          isMain: ba.branch.isMain,
+        });
+      }
+    }
+
     return {
       accessToken,
       refreshToken,
@@ -125,8 +161,25 @@ export class AuthService {
         name: employee.name,
         email: employee.email,
         role: employee.role.name,
+        roleDetails: {
+          id: employee.role.id,
+          name: employee.role.name,
+          isSystem: employee.role.isSystem,
+          permissions: formattedPermissions,
+        },
+        permissions: formattedPermissions,
         branchId: employee.branchId,
+        branch: employee.branch,
+        accessibleBranches,
         restaurantId: employee.restaurantId,
+        restaurant: employee.restaurant ? {
+          id: employee.restaurant.id,
+          name: employee.restaurant.name,
+          slug: employee.restaurant.slug,
+          logoUrl: employee.restaurant.logoUrl,
+          currency: employee.restaurant.currency,
+          timezone: employee.restaurant.timezone,
+        } : null,
       },
     };
   }
@@ -149,7 +202,15 @@ export class AuthService {
         status: true,
         branchId: true,
         branch: {
-          select: { id: true, name: true, code: true },
+          select: { id: true, name: true, code: true, isMain: true },
+        },
+        branchAccesses: {
+          include: {
+            branch: { select: { id: true, name: true, code: true, isMain: true } },
+          },
+        },
+        restaurant: {
+          select: { id: true, name: true, slug: true, logoUrl: true, currency: true, timezone: true },
         },
         role: {
           select: {
@@ -170,31 +231,39 @@ export class AuthService {
       throw new NotFoundError("Employee not found");
     }
 
-    if (employee.role.isSystem && employee.role.name === "owner") {
-      return {
-        ...employee,
-        role: {
-          ...employee.role,
-          permissions: GLOBAL_PERMISSIONS.map((p) => ({
-            id: p.key,
-            key: p.key,
-            name: p.description,
-            module: p.key.split(".")[0],
-          })),
-        },
-      };
+    const accessibleBranches = [];
+    if (employee.branch) {
+      accessibleBranches.push(employee.branch);
+    }
+    for (const ba of (employee.branchAccesses || [])) {
+      if (ba.branch && !accessibleBranches.some((b) => b.id === ba.branch.id)) {
+        accessibleBranches.push(ba.branch);
+      }
     }
 
-    return {
-      ...employee,
-      role: {
-        ...employee.role,
-        permissions: (employee.role.permissions || []).map((rp) => ({
+    const permissions = (employee.role.isSystem && employee.role.name === "owner")
+      ? GLOBAL_PERMISSIONS.map((p) => ({
+          id: p.key,
+          key: p.key,
+          name: p.nameAr || p.description,
+          description: p.descriptionAr || p.description,
+          module: p.module || p.key.split(".")[0],
+        }))
+      : (employee.role.permissions || []).map((rp) => ({
           id: rp.permission.id,
           key: rp.permission.key,
           name: rp.permission.description,
+          description: rp.permission.description,
           module: rp.permission.key.split(".")[0],
-        })),
+        }));
+
+    return {
+      ...employee,
+      permissions,
+      accessibleBranches,
+      role: {
+        ...employee.role,
+        permissions,
       },
     };
   }

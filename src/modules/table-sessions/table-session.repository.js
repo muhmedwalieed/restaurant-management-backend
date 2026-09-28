@@ -34,7 +34,7 @@ export class TableSessionRepository {
           where: { status: { in: ["PENDING", "ACCEPTED"] } },
           orderBy: { createdAt: "asc" },
         },
-        table: { select: { id: true, label: true } },
+        table: { select: { id: true, label: true, capacity: true, qrToken: true } },
       },
     });
   }
@@ -183,7 +183,7 @@ export class TableSessionRepository {
           where: { status: { in: ["PENDING", "ACCEPTED"] } },
           orderBy: { createdAt: "asc" },
         },
-        table: { select: { id: true, label: true } },
+        table: { select: { id: true, label: true, capacity: true, qrToken: true } },
       },
       orderBy: { updatedAt: "desc" },
     });

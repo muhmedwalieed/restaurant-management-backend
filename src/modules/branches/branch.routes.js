@@ -16,11 +16,11 @@ const router = Router();
 
 router.use(authenticate, requireTenantContext);
 
-router.get("/", authorize("branches.manage"), validate(branchQuerySchema), (req, res, next) => {
+router.get("/", authorize("branches.view", "branches.manage"), validate(branchQuerySchema), (req, res, next) => {
   branchController.listBranches(req, res, next);
 });
 
-router.get("/:id", authorize("branches.manage"), (req, res, next) => {
+router.get("/:id", authorize("branches.view", "branches.manage"), (req, res, next) => {
   branchController.getBranchById(req, res, next);
 });
 

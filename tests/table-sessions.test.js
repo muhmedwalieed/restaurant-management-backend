@@ -390,7 +390,7 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
     });
     const started = (await start.json()).data;
 
-    await prisma.tableSession.update({ where: { id: started.sessionId, restaurantId: tenant.id }, data: { pin: null } });
+    await prisma.tableSession.updateMany({ where: { id: started.sessionId, restaurantId: tenant.id }, data: { pin: null } });
 
     const regen = await fetch(`${baseUrl}/api/v1/tables/${started.sessionId}/regenerate-pin`, {
       method: "POST",
@@ -504,14 +504,13 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
     const rejected = (await reject.json()).data;
     assert.equal(rejected.status, "ACTIVE");
 
-    assert.equal(rejected.items.length, 1);
-    assert.equal(rejected.orders.length, 0); // returned round is removed, not counted as an order
+    assert.equal(rejected.items.length, 0);
+    assert.equal(rejected.orders.length, 0); // rejected round is cancelled completely
 
-    const itemId = rejected.items[0].id;
-    await fetch(`${baseUrl}/api/v1/sessions/${sessionId}/items/${itemId}`, {
-      method: "PATCH",
+    await fetch(`${baseUrl}/api/v1/sessions/${sessionId}/items`, {
+      method: "POST",
       headers: auth,
-      body: JSON.stringify({ quantity: 1 }),
+      body: JSON.stringify({ productId: product1.id, quantity: 1 }),
     });
     const resub = await fetch(`${baseUrl}/api/v1/sessions/${sessionId}/submit`, {
       method: "POST",
