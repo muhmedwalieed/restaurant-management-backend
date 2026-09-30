@@ -84,6 +84,7 @@ enum OrderType {
 
 enum PaymentStatus {
   PENDING
+  PARTIAL
   PAID
   FAILED
   REFUNDED
@@ -92,7 +93,13 @@ enum PaymentStatus {
 enum PaymentMethod {
   CASH
   CARD
-  ONLINE
+  INSTAPAY
+  WALLET
+}
+
+enum OrderPaymentType {
+  PAYMENT
+  REFUND
 }
 
 model Restaurant {
@@ -123,6 +130,7 @@ model Restaurant {
   productModifiers       ProductModifier[]
   tables                 RestaurantTable[]
   orders                 Order[]
+  orderPayments          OrderPayment[]
   orderItems             OrderItem[]
   orderStatusHistories   OrderStatusHistory[]
   idempotencyKeys        IdempotencyKey[]
@@ -438,6 +446,7 @@ model Order {
   couponId       String?       @map("coupon_id")
   subtotal       Decimal       @db.Decimal(10, 2)
   discountAmount Decimal       @default(0.00) @map("discount_amount") @db.Decimal(10, 2)
+  amountPaid     Decimal       @default(0.00) @map("amount_paid") @db.Decimal(10, 2)
   total          Decimal       @db.Decimal(10, 2)
   notes          String?
   address        String?       @map("address")
@@ -457,6 +466,7 @@ model Order {
   customer      Customer?            @relation(fields: [customerId], references: [id], onDelete: SetNull)
   coupon        Coupon?              @relation(fields: [couponId], references: [id], onDelete: SetNull)
   items         OrderItem[]
+  payments      OrderPayment[]
   statusHistory OrderStatusHistory[]
   inboxConversations InboxConversation[]
 
@@ -468,6 +478,28 @@ model Order {
   @@index([restaurantId, createdAt])
   @@index([customerId])
   @@map("orders")
+}
+
+model OrderPayment {
+  id             String           @id @default(cuid())
+  restaurantId   String           @map("restaurant_id")
+  orderId        String           @map("order_id")
+  type           OrderPaymentType @default(PAYMENT) @map("type")
+  amount         Decimal          @map("amount") @db.Decimal(10, 2)
+  paymentMethod  PaymentMethod?   @map("payment_method")
+  status         PaymentStatus    @default(PAID) @map("status")
+  idempotencyKey String?          @map("idempotency_key")
+  paidAt         DateTime         @default(now()) @map("paid_at")
+  employeeId     String?          @map("employee_id")
+  createdAt      DateTime         @default(now()) @map("created_at")
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  order      Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([restaurantId, idempotencyKey])
+  @@index([restaurantId])
+  @@index([orderId])
+  @@map("order_payments")
 }
 
 model OrderItem {

@@ -12,6 +12,7 @@ const TENANT_SCOPED_MODELS = new Set([
   "ProductModifier",
   "RestaurantTable",
   "Order",
+  "OrderPayment",
   "OrderItem",
   "OrderStatusHistory",
   "IdempotencyKey",

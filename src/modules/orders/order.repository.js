@@ -47,9 +47,35 @@ export class OrderRepository extends BaseRepository {
     return lastOrder ? lastOrder.orderNumber + 1 : startNumber;
   }
 
-  async findOrdersByBranch(tenantContext, branchId, { page = 1, limit = 20, status, type, source, tableId } = {}) {
+  async findOrdersByBranch(tenantContext, branchId, { page = 1, limit = 20, status, type, source, tableId, date, q } = {}) {
     assertTenantContext(tenantContext);
     const { skip, take } = getPaginationOffset(page, limit);
+
+    const andConditions = [];
+    if (date) {
+      andConditions.push({
+        OR: [
+          { orderDate: date },
+          {
+            createdAt: {
+              gte: new Date(`${date}T00:00:00.000Z`),
+              lte: new Date(`${date}T23:59:59.999Z`),
+            },
+          },
+        ],
+      });
+    }
+    if (q && q.trim()) {
+      const trimmed = q.trim();
+      andConditions.push({
+        OR: [
+          ...(Number.isInteger(Number(trimmed)) ? [{ orderNumber: Number(trimmed) }] : []),
+          { id: { contains: trimmed, mode: "insensitive" } },
+          { customer: { name: { contains: trimmed, mode: "insensitive" } } },
+          { customer: { phone: { contains: trimmed, mode: "insensitive" } } },
+        ],
+      });
+    }
 
     const where = {
       restaurantId: tenantContext.restaurantId,
@@ -58,6 +84,7 @@ export class OrderRepository extends BaseRepository {
       ...(type ? { type } : {}),
       ...(source ? { source } : {}),
       ...(tableId ? { tableId } : {}),
+      ...(andConditions.length ? { AND: andConditions } : {}),
     };
 
     const [items, total] = await Promise.all([
@@ -67,6 +94,9 @@ export class OrderRepository extends BaseRepository {
         take,
         include: {
           items: true,
+          payments: {
+            orderBy: { createdAt: "asc" },
+          },
           table: {
             select: {
               id: true,
@@ -163,6 +193,9 @@ export class OrderRepository extends BaseRepository {
             name: true,
             code: true,
           },
+        },
+        payments: {
+          orderBy: { createdAt: "asc" },
         },
         statusHistory: {
           orderBy: { createdAt: "asc" },
@@ -512,27 +545,100 @@ export class OrderRepository extends BaseRepository {
     payload
   ) {
     const restaurantId = tenantContext.restaurantId;
+    const paymentAmount = Number(payload.amount);
+    const idempotencyKey = payload.idempotencyKey || null;
 
     return prisma.$transaction(async (tx) => {
+      // 1. If idempotency key provided, check if payment was already recorded
+      if (idempotencyKey) {
+        const existingPayment = await tx.orderPayment.findFirst({
+          where: {
+            restaurantId,
+            idempotencyKey,
+          },
+        });
+        if (existingPayment) {
+          return true;
+        }
+      }
+
+      // 2. Lock & verify current order state
       const orderBefore = await tx.order.findFirst({
         where: { id: orderId, branchId, restaurantId },
-        select: { status: true, tableId: true },
+        select: {
+          id: true,
+          status: true,
+          tableId: true,
+          total: true,
+          amountPaid: true,
+          paymentStatus: true,
+          version: true,
+        },
       });
 
+      if (!orderBefore) {
+        throw new NotFoundError("Order not found");
+      }
+
+      if (orderBefore.status === "CANCELLED") {
+        throw new BusinessRuleError("Cannot process payment for cancelled order");
+      }
+
+      if (orderBefore.paymentStatus === "PAID") {
+        throw new BusinessRuleError("Order is already paid");
+      }
+
+      if (orderBefore.paymentStatus === "REFUNDED") {
+        throw new BusinessRuleError("Cannot process payment for refunded order");
+      }
+
+      if (paymentAmount <= 0) {
+        throw new BusinessRuleError("Payment amount must be greater than 0");
+      }
+
+      const total = Number(orderBefore.total);
+      const currentAmountPaid = Number(orderBefore.amountPaid || 0);
+      const remaining = Math.max(0, total - currentAmountPaid);
+
+      if (paymentAmount > remaining + 0.001) {
+        throw new BusinessRuleError(`Payment amount (${paymentAmount}) exceeds remaining balance of ${remaining.toFixed(2)}`);
+      }
+
+      const newAmountPaid = Number((currentAmountPaid + paymentAmount).toFixed(2));
+      const isFullPayment = newAmountPaid >= total - 0.001;
+      const newPaymentStatus = isFullPayment ? "PAID" : "PARTIAL";
+
+      // 3. Create OrderPayment record
+      await tx.orderPayment.create({
+        data: {
+          restaurantId,
+          orderId,
+          type: "PAYMENT",
+          amount: paymentAmount,
+          paymentMethod: payload.paymentMethod,
+          status: isFullPayment ? "PAID" : "PARTIAL",
+          idempotencyKey,
+          employeeId: tenantContext.employeeId || null,
+        },
+      });
+
+      // 4. Update Order with version check
+      const currentVersion = expectedVersion !== undefined && expectedVersion !== null ? expectedVersion : orderBefore.version;
       const updateResult = await tx.order.updateMany({
         where: {
           id: orderId,
           branchId,
           restaurantId,
-          version: expectedVersion,
-          paymentStatus: "PENDING",
+          version: currentVersion,
+          paymentStatus: { in: ["PENDING", "PARTIAL"] },
         },
         data: {
-          paymentStatus: "PAID",
+          amountPaid: newAmountPaid,
+          paymentStatus: newPaymentStatus,
           paymentMethod: payload.paymentMethod,
           paidAt: new Date(),
           paidByEmployeeId: tenantContext.employeeId || null,
-          version: expectedVersion + 1,
+          version: currentVersion + 1,
           updatedAt: new Date(),
         },
       });
@@ -541,18 +647,19 @@ export class OrderRepository extends BaseRepository {
         throw new ConflictError("Order was modified by another request. Please refresh and retry.");
       }
 
+      // 5. Audit history
       await tx.orderStatusHistory.create({
         data: {
           restaurantId,
           orderId,
-          fromStatus: orderBefore?.status || null,
-          toStatus: orderBefore?.status || "PENDING",
+          fromStatus: orderBefore.status,
+          toStatus: orderBefore.status,
           changedById: tenantContext.employeeId || null,
-          reason: `Payment processed (${payload.paymentMethod})`,
+          reason: `Payment processed: ${paymentAmount.toFixed(2)} via ${payload.paymentMethod} (${newPaymentStatus})`,
         },
       });
 
-      if (orderBefore?.tableId && orderBefore.status === "DELIVERED") {
+      if (orderBefore.tableId && orderBefore.status === "DELIVERED" && newPaymentStatus === "PAID") {
         const activeCount = await tx.order.count({
           where: {
             restaurantId,
@@ -595,22 +702,47 @@ export class OrderRepository extends BaseRepository {
     return prisma.$transaction(async (tx) => {
       const orderBefore = await tx.order.findFirst({
         where: { id: orderId, branchId, restaurantId },
-        select: { status: true },
+        select: { status: true, amountPaid: true, total: true, paymentMethod: true, paymentStatus: true, version: true },
       });
 
+      if (!orderBefore) {
+        throw new NotFoundError("Order not found");
+      }
+
+      if (orderBefore.paymentStatus !== "PAID" && orderBefore.paymentStatus !== "PARTIAL") {
+        throw new BusinessRuleError("Only paid or partially paid orders can be refunded");
+      }
+
+      const refundAmount = Number(orderBefore.amountPaid || orderBefore.total);
+
+      // Create REFUND OrderPayment record
+      await tx.orderPayment.create({
+        data: {
+          restaurantId,
+          orderId,
+          type: "REFUND",
+          amount: refundAmount,
+          paymentMethod: orderBefore.paymentMethod || "CASH",
+          status: "REFUNDED",
+          employeeId: tenantContext.employeeId || null,
+        },
+      });
+
+      const currentVersion = expectedVersion !== undefined && expectedVersion !== null ? expectedVersion : orderBefore.version;
       const updateResult = await tx.order.updateMany({
         where: {
           id: orderId,
           branchId,
           restaurantId,
-          version: expectedVersion,
+          version: currentVersion,
         },
         data: {
+          amountPaid: 0.00,
           paymentStatus: "REFUNDED",
           refundedAt: new Date(),
           refundReason: payload.reason,
           refundedByEmployeeId: tenantContext.employeeId || null,
-          version: expectedVersion + 1,
+          version: currentVersion + 1,
           updatedAt: new Date(),
         },
       });
@@ -623,8 +755,8 @@ export class OrderRepository extends BaseRepository {
         data: {
           restaurantId,
           orderId,
-          fromStatus: orderBefore?.status || null,
-          toStatus: orderBefore?.status || "PENDING",
+          fromStatus: orderBefore.status,
+          toStatus: orderBefore.status,
           changedById: tenantContext.employeeId || null,
           reason: `Payment refunded: ${payload.reason}`,
         },

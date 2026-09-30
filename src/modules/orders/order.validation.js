@@ -9,6 +9,8 @@ export const orderQuerySchema = z.object({
     source: z.enum(["WHATSAPP", "QR", "WEBSITE", "CASHIER", "PHONE"]).optional(),
     branchId: z.string().optional(),
     tableId: z.string().optional(),
+    date: z.string().optional(),
+    q: z.string().optional(),
   }),
 });
 
@@ -43,6 +45,11 @@ export const createOrderSchema = z.object({
       items: z.array(orderItemInputSchema).min(1, "Order must contain at least one item"),
     })
     .superRefine((data, ctx) => {
+      if (data.type === "DINE_IN") {
+        if (!data.tableId?.trim()) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["tableId"], message: "Table is required for dine-in orders" });
+        }
+      }
       if (data.type === "DELIVERY") {
         if (!data.customerName?.trim()) {
           ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["customerName"], message: "Customer name is required for delivery orders" });
@@ -87,6 +94,11 @@ export const publicOrderSchema = z.object({
       notes: z.string().optional(),
     })
     .superRefine((data, ctx) => {
+      if (data.type === "DINE_IN") {
+        if (!data.tableId?.trim()) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["tableId"], message: "Table is required for dine-in orders" });
+        }
+      }
       if (data.type === "DELIVERY") {
         if (!data.customerName?.trim()) {
           ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["customerName"], message: "Customer name is required for delivery orders" });
@@ -97,9 +109,6 @@ export const publicOrderSchema = z.object({
         if (!data.address?.trim()) {
           ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["address"], message: "Delivery address is required for delivery orders" });
         }
-      }
-      if (data.type === "PICKUP" && !data.customerName?.trim()) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["customerName"], message: "Customer name is required for pickup orders" });
       }
     }),
 });
@@ -128,6 +137,11 @@ export const posOrderSchema = z.object({
       items: z.array(orderItemInputSchema).min(1, "Order must contain at least one item"),
     })
     .superRefine((data, ctx) => {
+      if (data.type === "DINE_IN") {
+        if (!data.tableId?.trim()) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["tableId"], message: "Table is required for dine-in orders" });
+        }
+      }
       if (data.type === "DELIVERY") {
         if (!data.customerName?.trim()) {
           ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["customerName"], message: "Customer name is required for delivery orders" });
@@ -144,9 +158,10 @@ export const posOrderSchema = z.object({
 
 export const paymentSchema = z.object({
   body: z.object({
-    paymentMethod: z.enum(["CASH", "CARD", "ONLINE"]),
-    amount: z.coerce.number().positive("Payment amount is required").optional(),
+    paymentMethod: z.enum(["CASH", "CARD", "INSTAPAY", "WALLET"]),
+    amount: z.coerce.number().positive("Payment amount must be greater than 0"),
     expectedVersion: z.coerce.number().int().min(1, "expectedVersion is required for optimistic locking").optional(),
+    idempotencyKey: z.string().optional(),
   }),
 });
 

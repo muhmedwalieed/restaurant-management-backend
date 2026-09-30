@@ -793,7 +793,6 @@ export class TableSessionService {
         tableId: s.tableId,
         tableLabel: s.table?.label || null,
         tableNumber: s.table?.label || null,
-        pin: s.pin || String(Math.abs((s.id.split('').reduce((acc, c) => acc * 31 + c.charCodeAt(0), 0)) % 9000) + 1000),
         qrToken: s.table?.qrToken || null,
         members: s.members || [],
         itemCount: currentItems.length,

@@ -40,7 +40,7 @@ export class OrderService {
     return assertBranchInTenant(tenantContext, branchId);
   }
 
-  async listOrders(tenantContext, branchId, { page = 1, limit = 20, status, type, source, tableId } = {}) {
+  async listOrders(tenantContext, branchId, { page = 1, limit = 20, status, type, source, tableId, date, q } = {}) {
     await this.verifyBranchOwnership(tenantContext, branchId);
     const { items, total } = await orderRepository.findOrdersByBranch(tenantContext, branchId, {
       page,
@@ -49,6 +49,8 @@ export class OrderService {
       type,
       source,
       tableId,
+      date,
+      q,
     });
     return paginateResponse(items, total, page, limit);
   }
@@ -110,6 +112,11 @@ export class OrderService {
 
     await this.verifyBranchOwnership(tenantContext, branchId);
 
+    if (payload.type === "DINE_IN") {
+      delete payload.customerPhone;
+      delete payload.customerName;
+    }
+
     if (!payload.customerId && (payload.customerPhone || payload.customerName)) {
       const customerService = (await import("../customers/customer.service.js")).default;
       const phone = payload.customerPhone?.trim() || `guest_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
@@ -134,6 +141,16 @@ export class OrderService {
     }
 
     if (payload.tableId) {
+      if (tenantContext?.employeeId) {
+        const { isSystem, permissions } = await getEmployeePermissions(
+          tenantContext.employeeId,
+          tenantContext.restaurantId
+        );
+        if (!isSystem && !permissions.includes("tables.view") && !permissions.includes("tables.manage")) {
+          throw new AuthorizationError("Permission 'tables.view' is required for dine-in table orders");
+        }
+      }
+
       const table = await tableRepository.findTableById(tenantContext, branchId, payload.tableId);
       if (!table) {
         throw new NotFoundError("Table not found in target branch");
@@ -490,6 +507,13 @@ export class OrderService {
 
   async createPosOrder(tenantContext, branchId, payload, idempotencyKey = null) {
     const type = payload.type || "DINE_IN";
+    const address = payload.address || payload.deliveryAddress;
+
+    if (type === "DINE_IN") {
+      delete payload.customerId;
+      delete payload.customerPhone;
+      delete payload.customerName;
+    }
 
     if (type === "DINE_IN" && !payload.tableId) {
       throw new BusinessRuleError("tableId is required for DINE_IN POS orders");
@@ -499,12 +523,12 @@ export class OrderService {
       throw new BusinessRuleError("Customer name is required for DELIVERY orders");
     }
 
-    if (type === "DELIVERY" && !payload.address?.trim()) {
+    if (type === "DELIVERY" && !address?.trim()) {
       throw new BusinessRuleError("Delivery address is required for DELIVERY orders");
     }
 
-    if ((type === "DELIVERY" || type === "PICKUP") && !payload.customerId && !payload.customerPhone) {
-      throw new BusinessRuleError("Customer profile or customer phone number is required for DELIVERY and PICKUP orders");
+    if (type === "DELIVERY" && !payload.customerId && !payload.customerPhone) {
+      throw new BusinessRuleError("Customer profile or customer phone number is required for DELIVERY orders");
     }
 
     return this.createOrder(
@@ -512,6 +536,7 @@ export class OrderService {
       branchId,
       {
         ...payload,
+        address: address?.trim() || undefined,
         source: payload.source || "CASHIER",
         type,
         status: payload.status || "CONFIRMED",
@@ -520,7 +545,22 @@ export class OrderService {
     );
   }
 
-  async processOrderPayment(tenantContext, branchId, orderId, payload) {
+  async processOrderPayment(tenantContext, branchId, orderId, payload, idempotencyKey = null) {
+    const finalIdempotencyKey = payload.idempotencyKey || idempotencyKey || null;
+
+    if (finalIdempotencyKey) {
+      const existingPayment = await prisma.orderPayment.findFirst({
+        where: {
+          restaurantId: tenantContext.restaurantId,
+          orderId,
+          idempotencyKey: finalIdempotencyKey,
+        },
+      });
+      if (existingPayment) {
+        return this.getOrderById(tenantContext, branchId, orderId);
+      }
+    }
+
     const order = await this.getOrderById(tenantContext, branchId, orderId);
 
     const isWaiter = tenantContext?.role === "ويتر" || tenantContext?.role?.toLowerCase() === "waiter";
@@ -541,11 +581,16 @@ export class OrderService {
     }
 
     const orderTotal = Number(order.total);
-    const paymentAmount = payload.amount !== undefined && payload.amount !== null ? Number(payload.amount) : orderTotal;
-    const amountCents = Math.round(paymentAmount * 100);
-    const totalCents = Math.round(orderTotal * 100);
-    if (amountCents !== totalCents) {
-      throw new BusinessRuleError("Payment amount must equal the order total");
+    const currentAmountPaid = Number(order.amountPaid || 0);
+    const remainingBalance = Math.max(0, orderTotal - currentAmountPaid);
+
+    const paymentAmount = payload.amount !== undefined && payload.amount !== null ? Number(payload.amount) : remainingBalance;
+    if (paymentAmount <= 0) {
+      throw new BusinessRuleError("Payment amount must be greater than 0");
+    }
+
+    if (paymentAmount > remainingBalance + 0.001) {
+      throw new BusinessRuleError(`Payment amount (${paymentAmount}) exceeds remaining balance of ${remainingBalance.toFixed(2)}`);
     }
 
     const expectedVersion = payload.expectedVersion !== undefined && payload.expectedVersion !== null
@@ -557,7 +602,7 @@ export class OrderService {
       branchId,
       orderId,
       expectedVersion,
-      { ...payload, amount: paymentAmount, expectedVersion }
+      { ...payload, amount: paymentAmount, idempotencyKey: finalIdempotencyKey, expectedVersion }
     );
 
     emitEvent(DomainEvent.ORDER_PAID, {
@@ -566,6 +611,7 @@ export class OrderService {
       orderId,
       orderNumber: order.orderNumber,
       total: Number(order.total),
+      amount: paymentAmount,
       tableId: order.tableId || null,
       actorEmployeeId: tenantContext.employeeId || null,
     });
@@ -576,8 +622,8 @@ export class OrderService {
   async processOrderRefund(tenantContext, branchId, orderId, payload) {
     const order = await this.getOrderById(tenantContext, branchId, orderId);
 
-    if (order.paymentStatus !== "PAID") {
-      throw new BusinessRuleError("Only paid orders can be refunded");
+    if (order.paymentStatus !== "PAID" && order.paymentStatus !== "PARTIAL") {
+      throw new BusinessRuleError("Only paid or partially paid orders can be refunded");
     }
 
     await orderRepository.updateOrderRefundWithHistoryTransaction(

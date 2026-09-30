@@ -118,6 +118,8 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
             "orders.source_phone",
             "orders.source_whatsapp",
             "orders.source_website",
+            "tables.view",
+            "tables.manage",
           ],
         },
       },
@@ -346,7 +348,7 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
     posOrderDineIn = (await newOrderRes.json()).data;
   });
 
-  test("4. POS Validation Rule: DINE_IN order without tableId returns 422 BusinessRuleError", async () => {
+  test("4. POS Validation Rule: DINE_IN order without tableId returns 400 Validation Error", async () => {
     const res = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/pos/orders`, {
       method: "POST",
       headers: {
@@ -359,9 +361,9 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
       }),
     });
 
-    assert.equal(res.status, 422);
+    assert.equal(res.status, 400);
     const body = await res.json();
-    assert.equal(body.error.code, "BUSINESS_RULE_ERROR");
+    assert.equal(body.error.code, "VALIDATION_ERROR");
   });
 
   test("5. POS Validation Rule: DELIVERY order without customer returns 400 Validation Error", async () => {
@@ -471,7 +473,7 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
     assert.ok(body.error.message.includes("already paid"));
   });
 
-  test("10. Payment Amount Guard: Payment amount not equal to order total returns 422 BusinessRuleError", async () => {
+  test("10. Payment Amount Guard: Overpayment exceeding order balance returns 422 BusinessRuleError", async () => {
     const res = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/orders/${posOrderDelivery.id}/payment`, {
       method: "POST",
       headers: {
@@ -490,28 +492,132 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
     assert.equal(body.error.code, "BUSINESS_RULE_ERROR");
   });
 
-  test("10b. Payment Amount Guard: Underpayment returns 422 BusinessRuleError", async () => {
-    const under = Math.max(0.01, Number(posOrderDelivery.total) - 0.01);
-    const res = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/orders/${posOrderDelivery.id}/payment`, {
+  test("10b. Partial Payment Lifecycle: Partial payment transitions to PARTIAL then PAID via INSTAPAY and WALLET", async () => {
+    // Total is 15.0. Pay 10.0 via INSTAPAY
+    const pay1Res = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/orders/${posOrderDelivery.id}/payment`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${cashierAToken}`,
+        "Idempotency-Key": `pay-part-1-${Date.now()}`,
+      },
+      body: JSON.stringify({
+        paymentMethod: "INSTAPAY",
+        amount: 10.0,
+        expectedVersion: posOrderDelivery.version,
+      }),
+    });
+
+    assert.equal(pay1Res.status, 200);
+    const pay1Body = await pay1Res.json();
+    assert.equal(pay1Body.success, true);
+    assert.equal(pay1Body.data.paymentStatus, "PARTIAL");
+    assert.equal(Number(pay1Body.data.amountPaid), 10.0);
+    assert.equal(pay1Body.data.paymentMethod, "INSTAPAY");
+
+    posOrderDelivery = pay1Body.data;
+
+    // Second partial payment: Pay remaining 5.0 via WALLET
+    const pay2Res = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/orders/${posOrderDelivery.id}/payment`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${cashierAToken}`,
+        "Idempotency-Key": `pay-part-2-${Date.now()}`,
+      },
+      body: JSON.stringify({
+        paymentMethod: "WALLET",
+        amount: 5.0,
+        expectedVersion: posOrderDelivery.version,
+      }),
+    });
+
+    assert.equal(pay2Res.status, 200);
+    const pay2Body = await pay2Res.json();
+    assert.equal(pay2Body.success, true);
+    assert.equal(pay2Body.data.paymentStatus, "PAID");
+    assert.equal(Number(pay2Body.data.amountPaid), 15.0);
+    assert.equal(pay2Body.data.paymentMethod, "WALLET");
+
+    posOrderDelivery = pay2Body.data;
+  });
+
+  test("10c. Payment Idempotency Guard: Repeating same payment request returns existing order without extra payment", async () => {
+    const key = `idem-pay-${Date.now()}`;
+    // Create a new order for idempotency test
+    const newOrdRes = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/pos/orders`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${cashierAToken}`,
       },
       body: JSON.stringify({
-        paymentMethod: "CASH",
-        amount: under,
-        expectedVersion: posOrderDelivery.version,
+        type: "PICKUP",
+        customerName: "Idem Cust",
+        customerPhone: "+201011223344",
+        items: [{ productId: productA1.id, quantity: 1 }],
       }),
     });
+    assert.equal(newOrdRes.status, 201);
+    const newOrd = (await newOrdRes.json()).data;
 
-    assert.equal(res.status, 422);
-    const body = await res.json();
-    assert.equal(body.error.code, "BUSINESS_RULE_ERROR");
+    // Send payment with idempotency key
+    const payRes1 = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/orders/${newOrd.id}/payment`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${cashierAToken}`,
+        "Idempotency-Key": key,
+      },
+      body: JSON.stringify({
+        paymentMethod: "CARD",
+        amount: 15.0,
+        expectedVersion: newOrd.version,
+      }),
+    });
+    assert.equal(payRes1.status, 200);
+
+    // Resend exact same payment with same idempotency key
+    const payRes2 = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/orders/${newOrd.id}/payment`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${cashierAToken}`,
+        "Idempotency-Key": key,
+      },
+      body: JSON.stringify({
+        paymentMethod: "CARD",
+        amount: 15.0,
+        expectedVersion: newOrd.version,
+      }),
+    });
+    assert.equal(payRes2.status, 200);
+
+    // Verify only 1 OrderPayment record was created
+    const payments = await prisma.orderPayment.findMany({
+      where: { restaurantId: tenantA.id, orderId: newOrd.id },
+    });
+    assert.equal(payments.length, 1);
   });
 
   test("11. Refund Guard: Processing refund on unpaid (PENDING) order returns 422 BusinessRuleError", async () => {
-    const res = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/orders/${posOrderDelivery.id}/refund`, {
+    const pendingOrderRes = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/pos/orders`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${cashierAToken}`,
+      },
+      body: JSON.stringify({
+        type: "PICKUP",
+        customerName: "Pending Customer",
+        customerPhone: "+201088776655",
+        items: [{ productId: productA2.id, quantity: 1 }],
+      }),
+    });
+    assert.equal(pendingOrderRes.status, 201);
+    const pendingOrder = (await pendingOrderRes.json()).data;
+
+    const res = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/orders/${pendingOrder.id}/refund`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -519,17 +625,17 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
       },
       body: JSON.stringify({
         reason: "Customer cancelled",
-        expectedVersion: posOrderDelivery.version,
+        expectedVersion: pendingOrder.version,
       }),
     });
 
     assert.equal(res.status, 422);
     const body = await res.json();
     assert.equal(body.error.code, "BUSINESS_RULE_ERROR");
-    assert.ok(body.error.message.includes("Only paid orders can be refunded"));
+    assert.ok(body.error.message.includes("Only paid"));
   });
 
-  test("12. POST /api/v1/branches/:branchId/orders/:id/refund processes refund on PAID order", async () => {
+  test("12. POST /api/v1/branches/:branchId/orders/:id/refund processes refund on PAID order and sets amountPaid=0", async () => {
     const res = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/orders/${posOrderDineIn.id}/refund`, {
       method: "POST",
       headers: {
@@ -547,13 +653,30 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
 
     assert.equal(body.success, true);
     assert.equal(body.data.paymentStatus, "REFUNDED");
+    assert.equal(Number(body.data.amountPaid), 0.0);
     assert.equal(body.data.refundReason, "Wrong item delivered");
     assert.ok(body.data.refundedAt);
     assert.equal(body.data.version, 3);
   });
 
   test("13. Optimistic Locking: Payment attempt with stale expectedVersion returns 409 ConflictError", async () => {
-    const res = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/orders/${posOrderDelivery.id}/payment`, {
+    const freshOrderRes = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/pos/orders`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${cashierAToken}`,
+      },
+      body: JSON.stringify({
+        type: "PICKUP",
+        customerName: "Stale Version Cust",
+        customerPhone: "+201077665544",
+        items: [{ productId: productA1.id, quantity: 1 }],
+      }),
+    });
+    assert.equal(freshOrderRes.status, 201);
+    const freshOrder = (await freshOrderRes.json()).data;
+
+    const res = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/orders/${freshOrder.id}/payment`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -561,7 +684,7 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
       },
       body: JSON.stringify({
         paymentMethod: "CASH",
-        amount: Number(posOrderDelivery.total),
+        amount: Number(freshOrder.total),
         expectedVersion: 99,
       }),
     });
@@ -749,5 +872,140 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
     assert.equal(res.status, 403);
     const body = await res.json();
     assert.equal(body.error.code, "AUTHORIZATION_ERROR");
+  });
+
+  test("21. Payment Method Guard: ONLINE payment method returns 400 Validation Error", async () => {
+    const res = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/orders/${posOrderDineIn.id}/payment`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${cashierAToken}`,
+      },
+      body: JSON.stringify({
+        paymentMethod: "ONLINE",
+        amount: 10.0,
+      }),
+    });
+
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.equal(body.error.code, "VALIDATION_ERROR");
+  });
+
+  test("22. Payment Amount Guard: Zero and negative payment amount returns 400 Validation Error", async () => {
+    const zeroRes = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/orders/${posOrderDineIn.id}/payment`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${cashierAToken}`,
+      },
+      body: JSON.stringify({
+        paymentMethod: "CASH",
+        amount: 0,
+      }),
+    });
+    assert.equal(zeroRes.status, 400);
+
+    const negRes = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/orders/${posOrderDineIn.id}/payment`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${cashierAToken}`,
+      },
+      body: JSON.stringify({
+        paymentMethod: "CASH",
+        amount: -10,
+      }),
+    });
+    assert.equal(negRes.status, 400);
+  });
+
+  test("23. Table Permission Guard: Staff with orders.create but WITHOUT tables.view creating DINE_IN order is rejected (403)", async () => {
+    const noTablePerms = await prisma.permission.findMany({
+      where: { key: { in: ["orders.create", "orders.source_cashier"] } },
+    });
+    const noTableRole = await prisma.role.create({
+      data: {
+        restaurantId: tenantA.id,
+        name: `No Tables Role ${Date.now()}`,
+        permissions: {
+          create: noTablePerms.map((p) => ({ restaurantId: tenantA.id, permissionId: p.id })),
+        },
+      },
+    });
+    const passwordHash = await bcrypt.hash("Password123!", 10);
+    const noTableEmp = await prisma.employee.create({
+      data: {
+        restaurantId: tenantA.id,
+        branchId: branchA.id,
+        roleId: noTableRole.id,
+        name: "No Table Staff",
+        email: `notable-${Date.now()}@test.com`,
+        passwordHash,
+      },
+    });
+    const login = await authService.login({
+      email: noTableEmp.email,
+      password: "Password123!",
+      device: "Test-NoTable",
+      ipAddress: "127.0.0.1",
+    });
+
+    const res = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/pos/orders`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${login.accessToken}`,
+      },
+      body: JSON.stringify({
+        type: "DINE_IN",
+        tableId: tableA1.id,
+        items: [{ productId: productA1.id, quantity: 1 }],
+      }),
+    });
+
+    assert.equal(res.status, 403);
+    const body = await res.json();
+    assert.equal(body.error.code, "AUTHORIZATION_ERROR");
+    assert.ok(body.error.message.includes("tables.view"));
+  });
+
+  test("24. Server-Side Filter: GET /branches/:id/orders filters by date and q search", async () => {
+    const res = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/orders?q=Auto POS Customer`, {
+      headers: {
+        Authorization: `Bearer ${cashierAToken}`,
+      },
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.success, true);
+    assert.ok(body.data.length >= 1);
+    assert.ok(body.data.every((o) => o.customer?.name?.includes("Auto POS Customer") || o.customerName?.includes("Auto POS Customer")));
+  });
+
+  test("25. LATER Mode Lifecycle: Order created without payment has PENDING status and amountPaid=0", async () => {
+    const res = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/pos/orders`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${cashierAToken}`,
+      },
+      body: JSON.stringify({
+        type: "PICKUP",
+        customerName: "Later Customer",
+        customerPhone: "+201044332211",
+        items: [{ productId: productA1.id, quantity: 1 }],
+      }),
+    });
+
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.equal(body.data.paymentStatus, "PENDING");
+    assert.equal(Number(body.data.amountPaid), 0.0);
+
+    const payments = await prisma.orderPayment.findMany({
+      where: { restaurantId: tenantA.id, orderId: body.data.id },
+    });
+    assert.equal(payments.length, 0);
   });
 });

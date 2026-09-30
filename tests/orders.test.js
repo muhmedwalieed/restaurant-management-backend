@@ -324,7 +324,7 @@ describe("Order Management & KDS Module Integration Tests", () => {
 
   test("1c. Order source requires a matching source permission (cashier only has CASHIER)", async () => {
     const srcPerms = await prisma.permission.findMany({
-      where: { key: { in: ["orders.create", "orders.view", "orders.source_cashier"] } },
+      where: { key: { in: ["orders.create", "orders.view", "orders.source_cashier", "tables.view"] } },
     });
     const cashierOnlyRole = await prisma.role.create({
       data: {
@@ -797,10 +797,11 @@ describe("Order Management & KDS Module Integration Tests", () => {
         Authorization: `Bearer ${ownerAToken}`,
       },
       body: JSON.stringify({
-        type: "DINE_IN",
+        type: "DELIVERY",
         source: "CASHIER",
+        customerName: "Tenant A Valid Customer",
         customerPhone: "+201088882222",
-        tableId: tableForPhone.id,
+        address: "123 Test Street",
         items: [{ productId: productA1.id, quantity: 1 }],
       }),
     });

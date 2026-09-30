@@ -4,7 +4,7 @@ import { asyncHandler } from "../../shared/utils/async-handler.js";
 
 export class OrderController {
   listOrders = asyncHandler(async (req, res) => {
-    const { page, limit, status, type, source, tableId } = req.query;
+    const { page, limit, status, type, source, tableId, date, q } = req.query;
     const { items, pagination } = await orderService.listOrders(req.tenantContext, req.params.branchId, {
       page,
       limit,
@@ -12,6 +12,8 @@ export class OrderController {
       type,
       source,
       tableId,
+      date,
+      q,
     });
     return sendSuccess(res, { data: items, pagination });
   });
@@ -128,11 +130,13 @@ export class OrderController {
   });
 
   processOrderPayment = asyncHandler(async (req, res) => {
+    const idempotencyKey = req.headers["idempotency-key"] || req.body?.idempotencyKey || null;
     const paidOrder = await orderService.processOrderPayment(
       req.tenantContext,
       req.params.branchId,
       req.params.id,
-      req.body
+      req.body,
+      idempotencyKey
     );
 
     return sendSuccess(res, {
