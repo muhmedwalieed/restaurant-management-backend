@@ -110,6 +110,7 @@ describe("Auth Module Integration & E2E Tests", () => {
       headers: {
         "Content-Type": "application/json",
         "User-Agent": "Device-Test-1",
+        "X-Restaurant-Slug": createdRestaurant.slug,
       },
       body: JSON.stringify({
         email: registeredOwner.email,
@@ -167,6 +168,7 @@ describe("Auth Module Integration & E2E Tests", () => {
       headers: {
         "Content-Type": "application/json",
         "User-Agent": "Device-Different-2",
+        "X-Restaurant-Slug": createdRestaurant.slug,
       },
       body: JSON.stringify({
         email: registeredOwner.email,
@@ -185,7 +187,10 @@ describe("Auth Module Integration & E2E Tests", () => {
   test("4. POST /api/v1/auth/refresh performs Token Rotation and returns new token pair", async () => {
     const res = await fetch(`${baseUrl}/api/v1/auth/refresh`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-Restaurant-Slug": createdRestaurant.slug,
+      },
       body: JSON.stringify({
         refreshToken,
       }),
@@ -206,7 +211,10 @@ describe("Auth Module Integration & E2E Tests", () => {
   test("5. Reusing old/invalidated Refresh Token is rejected with 401 AuthenticationError", async () => {
     const res = await fetch(`${baseUrl}/api/v1/auth/refresh`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-Restaurant-Slug": createdRestaurant.slug,
+      },
       body: JSON.stringify({
         refreshToken: "invalid_old_token_123",
       }),
@@ -266,6 +274,7 @@ describe("Auth Module Integration & E2E Tests", () => {
       headers: {
         "Content-Type": "application/json",
         "User-Agent": "Device-FL-1",
+        "X-Restaurant-Slug": createdRestaurant.slug,
       },
       body: JSON.stringify({
         email: registeredOwner.email,
@@ -280,6 +289,7 @@ describe("Auth Module Integration & E2E Tests", () => {
       headers: {
         "Content-Type": "application/json",
         "User-Agent": "Device-FL-2",
+        "X-Restaurant-Slug": createdRestaurant.slug,
       },
       body: JSON.stringify({
         email: registeredOwner.email,
@@ -293,6 +303,7 @@ describe("Auth Module Integration & E2E Tests", () => {
       headers: {
         "Content-Type": "application/json",
         "User-Agent": "Device-FL-2",
+        "X-Restaurant-Slug": createdRestaurant.slug,
       },
       body: JSON.stringify({
         email: registeredOwner.email,
@@ -310,5 +321,78 @@ describe("Auth Module Integration & E2E Tests", () => {
       },
     });
     assert.equal(oldSessionRes.status, 401);
+  });
+
+  test("9. Login is restaurant-scoped: another restaurant's host rejects the credentials with 401", async () => {
+    const res = await fetch(`${baseUrl}/api/v1/auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": "Device-Tenant-Guard",
+        "X-Restaurant-Slug": `some-other-restaurant-${Date.now()}`,
+      },
+      body: JSON.stringify({
+        email: registeredOwner.email,
+        password: registeredOwner.password,
+      }),
+    });
+
+    assert.equal(res.status, 401);
+    const body = await res.json();
+    assert.equal(body.error.code, "AUTHENTICATION_ERROR");
+    // Must not reveal that the account exists in a different restaurant.
+    assert.equal(body.error.message, "Invalid email or password");
+  });
+
+  test("10. Login without a restaurant slug is rejected with 400 VALIDATION_ERROR", async () => {
+    const res = await fetch(`${baseUrl}/api/v1/auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": "Device-No-Tenant",
+      },
+      body: JSON.stringify({
+        email: registeredOwner.email,
+        password: registeredOwner.password,
+      }),
+    });
+
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.equal(body.error.code, "VALIDATION_ERROR");
+  });
+
+  test("11. A token from one restaurant cannot be used with another restaurant's slug header", async () => {
+    const login = await fetch(`${baseUrl}/api/v1/auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": "Device-Cross-Tenant",
+        "X-Restaurant-Slug": createdRestaurant.slug,
+      },
+      body: JSON.stringify({
+        email: registeredOwner.email,
+        password: registeredOwner.password,
+        forceLogout: true,
+      }),
+    });
+    assert.equal(login.status, 200);
+    const token = (await login.json()).data.accessToken;
+
+    const sameHost = await fetch(`${baseUrl}/api/v1/auth/me`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "X-Restaurant-Slug": createdRestaurant.slug,
+      },
+    });
+    assert.equal(sameHost.status, 200);
+
+    const otherHost = await fetch(`${baseUrl}/api/v1/auth/me`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "X-Restaurant-Slug": `some-other-restaurant-${Date.now()}`,
+      },
+    });
+    assert.equal(otherHost.status, 401);
   });
 });

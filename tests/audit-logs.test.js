@@ -5,6 +5,7 @@ import bcrypt from "bcrypt";
 import app from "../src/app/app.js";
 import prisma from "../src/lib/prisma.js";
 import { authService } from "../src/modules/auth/auth.service.js";
+import { staffLogin } from "./helpers/staff-login.js";
 import { seedPermissions } from "../prisma/seed.js";
 import { disconnectRedis } from "../src/config/redis.js";
 
@@ -55,7 +56,7 @@ describe("Module 18 — Audit Logs Integration Tests", () => {
     });
     tenantA = regA.restaurant;
     branchA = await prisma.branch.findFirst({ where: { restaurantId: tenantA.id, isMain: true } });
-    const loginA = await authService.login({ email: regA.employee.email, password: "Password123!", device: "A", ipAddress: "127.0.0.1" });
+    const loginA = await staffLogin({ email: regA.employee.email, password: "Password123!", device: "A", ipAddress: "127.0.0.1" });
     ownerToken = loginA.accessToken;
 
     const cat = await prisma.category.create({ data: { restaurantId: tenantA.id, name: "Cat" } });
@@ -68,13 +69,13 @@ describe("Module 18 — Audit Logs Integration Tests", () => {
       data: { restaurantId: tenantA.id, branchId: branchA.id, roleId: basicRole.id, name: "Target Emp", email: `target-${uniq}@test.com`, passwordHash },
     });
     targetEmpId = targetEmp.id;
-    await authService.login({ email: targetEmp.email, password: "Password123!", device: "Target", ipAddress: "127.0.0.1" });
+    await staffLogin({ email: targetEmp.email, password: "Password123!", device: "Target", ipAddress: "127.0.0.1" });
 
     const noAuditRole = await prisma.role.create({ data: { restaurantId: tenantA.id, name: "No Audit Role", description: "no audit" } });
     const noAuditEmp = await prisma.employee.create({
       data: { restaurantId: tenantA.id, branchId: branchA.id, roleId: noAuditRole.id, name: "No Audit", email: `noaudit-${uniq}@test.com`, passwordHash },
     });
-    const noAuditLogin = await authService.login({ email: noAuditEmp.email, password: "Password123!", device: "NoAudit", ipAddress: "127.0.0.1" });
+    const noAuditLogin = await staffLogin({ email: noAuditEmp.email, password: "Password123!", device: "NoAudit", ipAddress: "127.0.0.1" });
     noAuditToken = noAuditLogin.accessToken;
 
     const regB = await authService.register({
@@ -85,7 +86,7 @@ describe("Module 18 — Audit Logs Integration Tests", () => {
       restaurantSlug: `audit-b-${uniq}`,
     });
     tenantB = regB.restaurant;
-    const loginB = await authService.login({ email: regB.employee.email, password: "Password123!", device: "B", ipAddress: "127.0.0.1" });
+    const loginB = await staffLogin({ email: regB.employee.email, password: "Password123!", device: "B", ipAddress: "127.0.0.1" });
     ownerBToken = loginB.accessToken;
   });
 

@@ -94,37 +94,15 @@ export class AuthRepository {
     });
   }
 
-  async findEmployeeByEmailForLogin(email, restaurantSlug = null) {
-    let restaurantId = null;
-
-    if (restaurantSlug) {
-      const rest = await prisma.restaurant.findUnique({
-        where: { slug: restaurantSlug.toLowerCase() },
-      });
-      if (rest) {
-        restaurantId = rest.id;
-      }
-    }
-
-    if (!restaurantId) {
-
-      const candidateRestaurant = await prisma.restaurant.findFirst({
-        where: {
-          employees: {
-            some: {
-              email: email.toLowerCase(),
-              deletedAt: null,
-              status: "ACTIVE",
-            },
-          },
-        },
-      });
-
-      if (!candidateRestaurant) {
-        return null;
-      }
-      restaurantId = candidateRestaurant.id;
-    }
+  /**
+   * Login lookup is strictly tenant-scoped: a staff account only exists for the
+   * restaurant whose host the login happened on. There is deliberately no
+   * cross-tenant fallback — an unknown slug and an unknown email both yield null
+   * so the endpoint cannot be used to probe which accounts exist.
+   */
+  async findEmployeeByEmailForLogin(email, restaurantSlug) {
+    const restaurantId = await this.findRestaurantIdBySlug(restaurantSlug);
+    if (!restaurantId) return null;
 
     return prisma.employee.findFirst({
       where: {
@@ -204,32 +182,35 @@ export class AuthRepository {
     });
   }
 
+  /**
+   * Resolves the restaurant id for a tenant slug; null when there is no such
+   * restaurant. The restaurant's own status is intentionally not filtered here —
+   * it gates features elsewhere, not authentication.
+   */
+  async findRestaurantIdBySlug(slug) {
+    if (!slug) return null;
+
+    const restaurant = await prisma.restaurant.findUnique({
+      where: { slug: String(slug).toLowerCase() },
+      select: { id: true },
+    });
+
+    return restaurant?.id || null;
+  }
+
+  /**
+   * Sessions are always looked up inside one restaurant. The previous
+   * "find any restaurant holding this refresh hash" fallback is gone: the tenant
+   * is part of the token, so an unscoped lookup should never happen.
+   */
   async findActiveSessionByRefreshHash(refreshTokenHash, restaurantId) {
-    let targetRestaurantId = restaurantId;
-
-    if (!targetRestaurantId) {
-      const candidateRest = await prisma.restaurant.findFirst({
-        where: {
-          sessions: {
-            some: {
-              refreshTokenHash,
-              status: "ACTIVE",
-            },
-          },
-        },
-      });
-      if (candidateRest) {
-        targetRestaurantId = candidateRest.id;
-      }
-    }
-
-    if (!targetRestaurantId) {
+    if (!restaurantId) {
       return null;
     }
 
     return prisma.session.findFirst({
       where: {
-        restaurantId: targetRestaurantId,
+        restaurantId,
         refreshTokenHash,
         status: "ACTIVE",
       },

@@ -68,6 +68,30 @@ io.on("connection", async (socket) => {
       restaurantId: payload.restaurantId,
       branchId: payload.branchId || null,
     });
+
+    // Keep the branch room aligned with the client's active branch (the JWT only
+    // carries the login branch). This makes branch switching propagate realtime
+    // events to the correct branch without re-issuing a token.
+    socket.on("branch:join", async ({ branchId } = {}) => {
+      try {
+        if (!branchId || typeof branchId !== "string") return;
+        if (branchId === socket.data.branchId) return;
+
+        const branch = await prisma.branch.findFirst({
+          where: { id: branchId, restaurantId: socket.data.restaurantId },
+          select: { id: true },
+        });
+        if (!branch) return;
+
+        for (const room of socket.rooms) {
+          if (room.startsWith("branch:")) socket.leave(room);
+        }
+        await socket.join(`branch:${branchId}`);
+        socket.data.branchId = branchId;
+      } catch (err) {
+        logger.warn({ err: err.message, socketId: socket.id }, "branch:join failed");
+      }
+    });
   } catch (err) {
     logger.warn({ socketId: socket.id, err: err.message }, "Socket auth rejected");
     socket.emit("realtime.error", { message: "Authentication failed" });

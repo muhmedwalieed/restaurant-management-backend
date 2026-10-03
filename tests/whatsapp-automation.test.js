@@ -6,6 +6,7 @@ import bcrypt from "bcrypt";
 import app from "../src/app/app.js";
 import prisma from "../src/lib/prisma.js";
 import { authService } from "../src/modules/auth/auth.service.js";
+import { staffLogin } from "./helpers/staff-login.js";
 import { disconnectRedis } from "../src/config/redis.js";
 
 describe("Module 10 — WhatsApp Automation Module Tests", () => {
@@ -56,7 +57,7 @@ describe("Module 10 — WhatsApp Automation Module Tests", () => {
       where: { restaurantId: tenantA.id, isMain: true },
     });
 
-    const loginA = await authService.login({
+    const loginA = await staffLogin({
       email: regA.employee.email,
       password: "Password123!",
       device: "Test-Runner-AutoA",
@@ -129,7 +130,7 @@ describe("Module 10 — WhatsApp Automation Module Tests", () => {
       },
     });
 
-    const managerLogin = await authService.login({
+    const managerLogin = await staffLogin({
       email: managerEmp.email,
       password: "Password123!",
       device: "Test-Runner-AutoManager",
@@ -162,7 +163,7 @@ describe("Module 10 — WhatsApp Automation Module Tests", () => {
       },
     });
 
-    const viewLogin = await authService.login({
+    const viewLogin = await staffLogin({
       email: viewEmp.email,
       password: "Password123!",
       device: "Test-Runner-AutoView",
@@ -179,7 +180,7 @@ describe("Module 10 — WhatsApp Automation Module Tests", () => {
     });
     tenantB = regB.restaurant;
 
-    const loginB = await authService.login({
+    const loginB = await staffLogin({
       email: regB.employee.email,
       password: "Password123!",
       device: "Test-Runner-AutoB",

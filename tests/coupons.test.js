@@ -5,6 +5,7 @@ import bcrypt from "bcrypt";
 import app from "../src/app/app.js";
 import prisma from "../src/lib/prisma.js";
 import { authService } from "../src/modules/auth/auth.service.js";
+import { staffLogin } from "./helpers/staff-login.js";
 import { seedPermissions } from "../prisma/seed.js";
 import { disconnectRedis } from "../src/config/redis.js";
 
@@ -52,7 +53,7 @@ describe("Module 16 — Discounts & Coupons Integration Tests", () => {
     });
     tenantA = regA.restaurant;
     branchA = await prisma.branch.findFirst({ where: { restaurantId: tenantA.id, isMain: true } });
-    const loginA = await authService.login({ email: regA.employee.email, password: "Password123!", device: "A", ipAddress: "127.0.0.1" });
+    const loginA = await staffLogin({ email: regA.employee.email, password: "Password123!", device: "A", ipAddress: "127.0.0.1" });
     ownerToken = loginA.accessToken;
 
     const cat = await prisma.category.create({ data: { restaurantId: tenantA.id, name: "Cat" } });
@@ -69,7 +70,7 @@ describe("Module 16 — Discounts & Coupons Integration Tests", () => {
     const noPermEmp = await prisma.employee.create({
       data: { restaurantId: tenantA.id, branchId: branchA.id, roleId: noPermRole.id, name: "No Coupons", email: `nocoupons-${uniq}@test.com`, passwordHash },
     });
-    const noPermLogin = await authService.login({ email: noPermEmp.email, password: "Password123!", device: "NoCoupon", ipAddress: "127.0.0.1" });
+    const noPermLogin = await staffLogin({ email: noPermEmp.email, password: "Password123!", device: "NoCoupon", ipAddress: "127.0.0.1" });
     noCouponToken = noPermLogin.accessToken;
 
     const regB = await authService.register({
@@ -80,7 +81,7 @@ describe("Module 16 — Discounts & Coupons Integration Tests", () => {
       restaurantSlug: `coupon-b-${uniq}`,
     });
     tenantB = regB.restaurant;
-    const loginB = await authService.login({ email: regB.employee.email, password: "Password123!", device: "B", ipAddress: "127.0.0.1" });
+    const loginB = await staffLogin({ email: regB.employee.email, password: "Password123!", device: "B", ipAddress: "127.0.0.1" });
     ownerBToken = loginB.accessToken;
 
     const past = new Date(Date.now() - 3600_000);

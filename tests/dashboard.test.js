@@ -5,6 +5,7 @@ import bcrypt from "bcrypt";
 import app from "../src/app/app.js";
 import prisma from "../src/lib/prisma.js";
 import { authService } from "../src/modules/auth/auth.service.js";
+import { staffLogin } from "./helpers/staff-login.js";
 import { seedPermissions } from "../prisma/seed.js";
 import { disconnectRedis } from "../src/config/redis.js";
 
@@ -53,7 +54,7 @@ describe("Module 15 — Dashboard & Analytics Integration Tests", () => {
     tenantA = regA.restaurant;
     branchA = await prisma.branch.findFirst({ where: { restaurantId: tenantA.id, isMain: true } });
     employeeAId = regA.employee.id;
-    const loginA = await authService.login({ email: regA.employee.email, password: "Password123!", device: "A", ipAddress: "127.0.0.1" });
+    const loginA = await staffLogin({ email: regA.employee.email, password: "Password123!", device: "A", ipAddress: "127.0.0.1" });
     ownerAToken = loginA.accessToken;
 
     productA = await prisma.product.create({ data: { restaurantId: tenantA.id, categoryId: (await prisma.category.create({ data: { restaurantId: tenantA.id, name: "Cat A" } })).id, name: "Burger", price: 20 } });
@@ -109,7 +110,7 @@ describe("Module 15 — Dashboard & Analytics Integration Tests", () => {
     const viewerEmp = await prisma.employee.create({
       data: { restaurantId: tenantA.id, branchId: branchA.id, roleId: viewerRole.id, name: "Dash Viewer", email: `dashviewer-${uniq}@test.com`, passwordHash },
     });
-    const viewerLogin = await authService.login({ email: viewerEmp.email, password: "Password123!", device: "Viewer", ipAddress: "127.0.0.1" });
+    const viewerLogin = await staffLogin({ email: viewerEmp.email, password: "Password123!", device: "Viewer", ipAddress: "127.0.0.1" });
     viewerToken = viewerLogin.accessToken;
 
     const noDashRole = await prisma.role.create({
@@ -118,7 +119,7 @@ describe("Module 15 — Dashboard & Analytics Integration Tests", () => {
     const noDashEmp = await prisma.employee.create({
       data: { restaurantId: tenantA.id, branchId: branchA.id, roleId: noDashRole.id, name: "No Dash", email: `nodash-${uniq}@test.com`, passwordHash },
     });
-    const noDashLogin = await authService.login({ email: noDashEmp.email, password: "Password123!", device: "NoDash", ipAddress: "127.0.0.1" });
+    const noDashLogin = await staffLogin({ email: noDashEmp.email, password: "Password123!", device: "NoDash", ipAddress: "127.0.0.1" });
     noDashToken = noDashLogin.accessToken;
 
     const regB = await authService.register({
@@ -130,7 +131,7 @@ describe("Module 15 — Dashboard & Analytics Integration Tests", () => {
     });
     tenantB = regB.restaurant;
     branchB = await prisma.branch.findFirst({ where: { restaurantId: tenantB.id, isMain: true } });
-    const loginB = await authService.login({ email: regB.employee.email, password: "Password123!", device: "B", ipAddress: "127.0.0.1" });
+    const loginB = await staffLogin({ email: regB.employee.email, password: "Password123!", device: "B", ipAddress: "127.0.0.1" });
     ownerBToken = loginB.accessToken;
 
 await prisma.order.create({

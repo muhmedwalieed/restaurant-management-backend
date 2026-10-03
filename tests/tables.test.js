@@ -5,6 +5,7 @@ import bcrypt from "bcrypt";
 import app from "../src/app/app.js";
 import prisma from "../src/lib/prisma.js";
 import { authService } from "../src/modules/auth/auth.service.js";
+import { staffLogin } from "./helpers/staff-login.js";
 import { disconnectRedis } from "../src/config/redis.js";
 
 describe("Tables & QR Module Integration Tests", () => {
@@ -56,7 +57,7 @@ describe("Tables & QR Module Integration Tests", () => {
       },
     });
 
-    const loginA = await authService.login({
+    const loginA = await staffLogin({
       email: regA.employee.email,
       password: "Password123!",
       device: "Test-Runner-TableA",
@@ -84,13 +85,13 @@ describe("Tables & QR Module Integration Tests", () => {
       },
     });
 
-    const staffLogin = await authService.login({
+    const staffLoginResult = await staffLogin({
       email: staffEmp.email,
       password: "Password123!",
       device: "Test-Runner-StaffNoTables",
       ipAddress: "127.0.0.1",
     });
-    staffAToken = staffLogin.accessToken;
+    staffAToken = staffLoginResult.accessToken;
 
     const regB = await authService.register({
       name: "Owner Table B",
@@ -104,7 +105,7 @@ describe("Tables & QR Module Integration Tests", () => {
       where: { restaurantId: tenantB.id, isMain: true },
     });
 
-    const loginB = await authService.login({
+    const loginB = await staffLogin({
       email: regB.employee.email,
       password: "Password123!",
       device: "Test-Runner-TableB",

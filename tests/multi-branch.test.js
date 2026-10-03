@@ -5,6 +5,7 @@ import bcrypt from "bcrypt";
 import app from "../src/app/app.js";
 import prisma from "../src/lib/prisma.js";
 import { authService } from "../src/modules/auth/auth.service.js";
+import { staffLogin } from "./helpers/staff-login.js";
 import { seedPermissions } from "../prisma/seed.js";
 import { disconnectRedis } from "../src/config/redis.js";
 
@@ -48,7 +49,7 @@ describe("Module 19 — Multi-Branch Management Integration Tests", () => {
     });
     tenantA = regA.restaurant;
     branchA = await prisma.branch.findFirst({ where: { restaurantId: tenantA.id, isMain: true } });
-    const loginA = await authService.login({ email: regA.employee.email, password: "Password123!", device: "A", ipAddress: "127.0.0.1" });
+    const loginA = await staffLogin({ email: regA.employee.email, password: "Password123!", device: "A", ipAddress: "127.0.0.1" });
     ownerToken = loginA.accessToken;
 
     branchB = await prisma.branch.create({
@@ -66,11 +67,11 @@ describe("Module 19 — Multi-Branch Management Integration Tests", () => {
 
     empX = await mkEmp("Emp X", `mbx-${uniq}@test.com`, branchA.id, basicRole.id);
     empY = await mkEmp("Emp Y", `mby-${uniq}@test.com`, branchB.id, basicRole.id);
-    const loginX = await authService.login({ email: empX.email, password: "Password123!", device: "X", ipAddress: "127.0.0.1" });
+    const loginX = await staffLogin({ email: empX.email, password: "Password123!", device: "X", ipAddress: "127.0.0.1" });
     empXToken = loginX.accessToken;
 
     const noPermEmp = await mkEmp("No Perm", `mbnoperm-${uniq}@test.com`, branchA.id, noPermRole.id);
-    const noPermLogin = await authService.login({ email: noPermEmp.email, password: "Password123!", device: "NoPerm", ipAddress: "127.0.0.1" });
+    const noPermLogin = await staffLogin({ email: noPermEmp.email, password: "Password123!", device: "NoPerm", ipAddress: "127.0.0.1" });
     noPermToken = noPermLogin.accessToken;
 
     const regB = await authService.register({
@@ -82,7 +83,7 @@ describe("Module 19 — Multi-Branch Management Integration Tests", () => {
     });
     tenantB = regB.restaurant;
     branchBA = await prisma.branch.findFirst({ where: { restaurantId: tenantB.id, isMain: true } });
-    const loginB = await authService.login({ email: regB.employee.email, password: "Password123!", device: "B", ipAddress: "127.0.0.1" });
+    const loginB = await staffLogin({ email: regB.employee.email, password: "Password123!", device: "B", ipAddress: "127.0.0.1" });
     ownerBToken = loginB.accessToken;
   });
 

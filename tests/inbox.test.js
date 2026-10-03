@@ -5,6 +5,7 @@ import bcrypt from "bcrypt";
 import app from "../src/app/app.js";
 import prisma from "../src/lib/prisma.js";
 import { authService } from "../src/modules/auth/auth.service.js";
+import { staffLogin } from "./helpers/staff-login.js";
 import { inboxService } from "../src/modules/inbox/inbox.service.js";
 import { disconnectRedis } from "../src/config/redis.js";
 
@@ -44,7 +45,7 @@ describe("Module 11 — Unified Inbox / Support Integration Tests", () => {
     ownerId = regA.employee.id;
     branchA = await prisma.branch.findFirst({ where: { restaurantId: tenantA.id, isMain: true } });
 
-    const loginA = await authService.login({ email: regA.employee.email, password: "Password123!", device: "A", ipAddress: "127.0.0.1" });
+    const loginA = await staffLogin({ email: regA.employee.email, password: "Password123!", device: "A", ipAddress: "127.0.0.1" });
     ownerToken = loginA.accessToken;
 
     const passwordHash = await bcrypt.hash("Password123!", 10);
@@ -83,14 +84,14 @@ describe("Module 11 — Unified Inbox / Support Integration Tests", () => {
       data: { restaurantId: tenantA.id, branchId: branchA.id, roleId: agentRole.id, name: "Agent", email: `agent-${uniq}@test.com`, passwordHash },
     });
     agentId = agentEmp.id;
-    const agentLogin = await authService.login({ email: agentEmp.email, password: "Password123!", device: "Agent", ipAddress: "127.0.0.1" });
+    const agentLogin = await staffLogin({ email: agentEmp.email, password: "Password123!", device: "Agent", ipAddress: "127.0.0.1" });
     agentToken = agentLogin.accessToken;
 
     const noChatsRole = await prisma.role.create({ data: { restaurantId: tenantA.id, name: "No Chats" } });
     const noChatsEmp = await prisma.employee.create({
       data: { restaurantId: tenantA.id, branchId: branchA.id, roleId: noChatsRole.id, name: "No Chats", email: `nochats-${uniq}@test.com`, passwordHash },
     });
-    const noChatsLogin = await authService.login({ email: noChatsEmp.email, password: "Password123!", device: "NoChats", ipAddress: "127.0.0.1" });
+    const noChatsLogin = await staffLogin({ email: noChatsEmp.email, password: "Password123!", device: "NoChats", ipAddress: "127.0.0.1" });
     noChatsToken = noChatsLogin.accessToken;
 
     const regB = await authService.register({
@@ -100,7 +101,7 @@ describe("Module 11 — Unified Inbox / Support Integration Tests", () => {
       restaurantName: "Inbox Rest B",
       restaurantSlug: `inbox-b-${uniq}`,
     });
-    const loginB = await authService.login({ email: regB.employee.email, password: "Password123!", device: "B", ipAddress: "127.0.0.1" });
+    const loginB = await staffLogin({ email: regB.employee.email, password: "Password123!", device: "B", ipAddress: "127.0.0.1" });
     ownerBToken = loginB.accessToken;
 
     inboxConv = await inboxService.createFromWhatsApp({ restaurantId: tenantA.id }, waConversation, waConversation.customerPhone);

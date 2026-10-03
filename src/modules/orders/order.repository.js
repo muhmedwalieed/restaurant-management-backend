@@ -207,20 +207,24 @@ export class OrderRepository extends BaseRepository {
   async createOrderInClient(tx, tenantContext, branchId, orderPayload, itemsPayload, idempotencyKey = null, { startNumber, dateKey } = {}) {
     const restaurantId = tenantContext.restaurantId;
 
-    if (orderPayload.tableId && !["QR", "CASHIER", "POS", "PHONE", "WHATSAPP"].includes(orderPayload.source)) {
-      const activeOrderOnTable = await tx.order.findFirst({
-        where: {
-          restaurantId,
-          branchId,
-          tableId: orderPayload.tableId,
-          status: { in: ["PENDING", "CONFIRMED", "PREPARING", "READY"] },
-        },
-        select: { id: true, orderNumber: true },
-      });
-      if (activeOrderOnTable) {
-        throw new BusinessRuleError(
-          `Table already has an active order (#${activeOrderOnTable.orderNumber}). A table can only have one active order at a time`
-        );
+    if (orderPayload.tableId) {
+      // A table legitimately holds multiple active orders: guests may order again
+      // after the first round. The table stays OCCUPIED until its last active order
+      // is delivered/cancelled (see updateOrderStatusWithHistoryTransaction).
+      if (orderPayload.source !== "QR") {
+        const activeSessionOnTable = await tx.tableSession.findFirst({
+          where: {
+            restaurantId,
+            tableId: orderPayload.tableId,
+            status: { in: ["ACTIVE", "AWAITING_CONFIRMATION", "CONFIRMED"] },
+          },
+          select: { id: true },
+        });
+        if (activeSessionOnTable) {
+          throw new BusinessRuleError(
+            `Table already has an active session. A table can only have one active session/order at a time`
+          );
+        }
       }
     }
 
@@ -492,7 +496,7 @@ export class OrderRepository extends BaseRepository {
         },
       });
 
-      if (newStatus === "DELIVERED" || newStatus === "CANCELLED") {
+        if (newStatus === "DELIVERED" || newStatus === "CANCELLED") {
         const orderData = await tx.order.findFirst({
           where: { id: orderId, branchId, restaurantId },
           select: { tableId: true, couponId: true },
@@ -512,7 +516,7 @@ export class OrderRepository extends BaseRepository {
               branchId,
               tableId: orderData.tableId,
               id: { not: orderId },
-              status: { in: ["PENDING", "CONFIRMED", "PREPARING", "READY"] },
+              status: { notIn: ["DELIVERED", "CANCELLED"] },
             },
           });
 

@@ -4,6 +4,7 @@ import http from "http";
 import app from "../src/app/app.js";
 import prisma from "../src/lib/prisma.js";
 import { authService } from "../src/modules/auth/auth.service.js";
+import { staffLogin } from "./helpers/staff-login.js";
 import { disconnectRedis } from "../src/config/redis.js";
 
 describe("Branches Module Integration Tests", () => {
@@ -41,7 +42,7 @@ describe("Branches Module Integration Tests", () => {
       where: { restaurantId: tenantA.id, isMain: true },
     });
 
-    const loginA = await authService.login({
+    const loginA = await staffLogin({
       email: regA.employee.email,
       password: "Password123!",
       device: "Test-Runner-BranchA",
@@ -58,7 +59,7 @@ describe("Branches Module Integration Tests", () => {
     });
     tenantB = regB.restaurant;
 
-    const loginB = await authService.login({
+    const loginB = await staffLogin({
       email: regB.employee.email,
       password: "Password123!",
       device: "Test-Runner-BranchB",
@@ -386,7 +387,7 @@ describe("Branches Module Integration Tests", () => {
     const empBody = await empRes.json();
     assert.equal(empBody.success, true);
 
-    const login = await authService.login({
+    const login = await staffLogin({
       email: limitedEmail,
       password: "Password123!",
       device: "Test-Runner-Limited",

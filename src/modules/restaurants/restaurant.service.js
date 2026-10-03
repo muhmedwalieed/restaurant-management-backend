@@ -2,6 +2,15 @@ import restaurantRepository from "./restaurant.repository.js";
 import { NotFoundError } from "../../shared/errors/index.js";
 
 export class RestaurantService {
+  /** Minimal public identity for the restaurant's login page — never tenant data. */
+  async getPublicRestaurant(slug) {
+    const restaurant = await restaurantRepository.findPublicBySlug(slug);
+    if (!restaurant) {
+      throw new NotFoundError("Restaurant not found");
+    }
+    return restaurant;
+  }
+
   async getRestaurantProfile(tenantContext) {
     const restaurant = await restaurantRepository.findRestaurantById(tenantContext);
     if (!restaurant) {

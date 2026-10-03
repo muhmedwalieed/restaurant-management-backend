@@ -19,6 +19,10 @@ async function invalidateMenuCache(restaurantId) {
       keys.push(`public_menu:slug:${restaurant.slug}`);
     }
     await invalidateCacheKeys(...keys);
+    try {
+      const eb = await import("../../shared/events/event-bus.js");
+      eb.emitEvent(eb.DomainEvent.MENU_UPDATED, { restaurantId });
+    } catch (_) {}
   } catch (err) {
     logger.warn({ err: err.message, restaurantId }, "Failed to invalidate menu cache");
   }
@@ -125,6 +129,7 @@ export class MenuService {
       categoryId: data.categoryId,
       name: data.name,
       description: data.description || null,
+      ingredients: Array.isArray(data.ingredients) ? data.ingredients : [],
       price: data.price,
       imageUrl: data.imageUrl || null,
       isAvailable: data.isAvailable !== undefined ? data.isAvailable : true,
@@ -156,6 +161,7 @@ export class MenuService {
       ...(data.categoryId ? { categoryId: data.categoryId } : {}),
       ...(data.name ? { name: data.name } : {}),
       ...(data.description !== undefined ? { description: data.description } : {}),
+      ...(data.ingredients !== undefined ? { ingredients: data.ingredients } : {}),
       ...(data.price !== undefined ? { price: data.price } : {}),
       ...(data.imageUrl !== undefined ? { imageUrl: data.imageUrl } : {}),
       ...(data.isAvailable !== undefined ? { isAvailable: Boolean(data.isAvailable) } : {}),
@@ -235,13 +241,24 @@ export class MenuService {
       ? `public_menu:id:${restaurantId}`
       : `public_menu:slug:${restaurantSlug}`;
 
-    return withCache(cacheKey, PUBLIC_MENU_CACHE_TTL, async () => {
-      const menu = await menuRepository.getPublicMenuBySlugOrId({ restaurantSlug, restaurantId });
-      if (!menu) {
-        throw new NotFoundError("Restaurant menu not found or restaurant is inactive");
-      }
-      return menu;
-    });
+    const altKey = restaurantId
+      ? null
+      : restaurantSlug
+        ? `public_menu:slug:${restaurantSlug}`
+        : null;
+
+    return withCache(
+      cacheKey,
+      PUBLIC_MENU_CACHE_TTL,
+      async () => {
+        const menu = await menuRepository.getPublicMenuBySlugOrId({ restaurantSlug, restaurantId });
+        if (!menu) {
+          throw new NotFoundError("Restaurant menu not found or restaurant is inactive");
+        }
+        return menu;
+      },
+      altKey ? { alternateKeys: [] } : {}
+    );
   }
 }
 

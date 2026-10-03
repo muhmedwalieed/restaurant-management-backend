@@ -5,6 +5,7 @@ import bcrypt from "bcrypt";
 import app from "../src/app/app.js";
 import prisma from "../src/lib/prisma.js";
 import { authService } from "../src/modules/auth/auth.service.js";
+import { staffLogin } from "./helpers/staff-login.js";
 import { seedPermissions } from "../prisma/seed.js";
 import { disconnectRedis } from "../src/config/redis.js";
 
@@ -58,7 +59,7 @@ describe("Module 17 — Notifications Integration Tests", () => {
     tenantA = regA.restaurant;
     ownerId = regA.employee.id;
     branchA = await prisma.branch.findFirst({ where: { restaurantId: tenantA.id, isMain: true } });
-    const loginA = await authService.login({ email: regA.employee.email, password: "Password123!", device: "A", ipAddress: "127.0.0.1" });
+    const loginA = await staffLogin({ email: regA.employee.email, password: "Password123!", device: "A", ipAddress: "127.0.0.1" });
     ownerToken = loginA.accessToken;
 
     const cat = await prisma.category.create({ data: { restaurantId: tenantA.id, name: "Cat" } });
@@ -78,14 +79,14 @@ describe("Module 17 — Notifications Integration Tests", () => {
     employeeX = await prisma.employee.create({
       data: { restaurantId: tenantA.id, branchId: branchA.id, roleId: agentRole.id, name: "Agent X", email: `agentx-${uniq}@test.com`, passwordHash },
     });
-    const loginX = await authService.login({ email: employeeX.email, password: "Password123!", device: "X", ipAddress: "127.0.0.1" });
+    const loginX = await staffLogin({ email: employeeX.email, password: "Password123!", device: "X", ipAddress: "127.0.0.1" });
     employeeXToken = loginX.accessToken;
 
     const noPermRole = await prisma.role.create({ data: { restaurantId: tenantA.id, name: "No Notif Role", description: "no notif permission" } });
     const noPermEmp = await prisma.employee.create({
       data: { restaurantId: tenantA.id, branchId: branchA.id, roleId: noPermRole.id, name: "No Notif", email: `nonotif-${uniq}@test.com`, passwordHash },
     });
-    const noPermLogin = await authService.login({ email: noPermEmp.email, password: "Password123!", device: "NoNotif", ipAddress: "127.0.0.1" });
+    const noPermLogin = await staffLogin({ email: noPermEmp.email, password: "Password123!", device: "NoNotif", ipAddress: "127.0.0.1" });
     noPermToken = noPermLogin.accessToken;
 
     const regB = await authService.register({
@@ -96,7 +97,7 @@ describe("Module 17 — Notifications Integration Tests", () => {
       restaurantSlug: `notif-b-${uniq}`,
     });
     tenantB = regB.restaurant;
-    const loginB = await authService.login({ email: regB.employee.email, password: "Password123!", device: "B", ipAddress: "127.0.0.1" });
+    const loginB = await staffLogin({ email: regB.employee.email, password: "Password123!", device: "B", ipAddress: "127.0.0.1" });
     ownerBToken = loginB.accessToken;
   });
 

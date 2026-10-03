@@ -44,6 +44,7 @@ export const createProductSchema = z.object({
     categoryId: z.string().min(1, "categoryId is required"),
     name: z.string().min(2, "Product name must be at least 2 characters"),
     description: z.string().optional(),
+    ingredients: z.array(z.string().trim().min(1).max(60)).max(30).optional(),
     price: z.coerce.number().positive("Price must be a positive number"),
     imageUrl: z
       .union([
@@ -63,6 +64,7 @@ export const updateProductSchema = z.object({
     categoryId: z.string().optional(),
     name: z.string().min(2).optional(),
     description: z.string().optional(),
+    ingredients: z.array(z.string().trim().min(1).max(60)).max(30).optional(),
     price: z.coerce.number().positive().optional(),
     imageUrl: z
       .union([

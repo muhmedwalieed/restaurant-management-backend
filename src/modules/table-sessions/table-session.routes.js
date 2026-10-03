@@ -45,6 +45,8 @@ staffRouter.post("/start", authorize("orders.create"), (req, res, next) =>
 );
 staffRouter.get("/sessions", authorize("orders.view"), (req, res, next) => tableSessionController.listBranchSessions(req, res, next));
 staffRouter.get("/table/:tableId/session", authorize("orders.view"), (req, res, next) => tableSessionController.getActiveSessionForTable(req, res, next));
+staffRouter.get("/table/:tableId/session-pin", authorize("orders.view"), (req, res, next) => tableSessionController.getActiveSessionPin(req, res, next));
+staffRouter.post("/table/:tableId/reset-pin-lockout", authorize("orders.create"), (req, res, next) => tableSessionController.resetPinLockout(req, res, next));
 staffRouter.post("/:id/confirm", authorize("orders.create"), (req, res, next) =>
   tableSessionController.confirmSession(req, res, next)
 );
@@ -73,6 +75,10 @@ staffRouter.post("/:id/items", authorize("orders.create"), (req, res, next) =>
   tableSessionController.addItemStaff(req, res, next)
 );
 staffRouter.get("/:id", authorize("orders.view"), (req, res, next) => tableSessionController.getSessionStaff(req, res, next));
+
+staffRouter.post("/table/:tableId/release", authorize("orders.create"), (req, res, next) =>
+  tableSessionController.releaseTable(req, res, next)
+);
 
 router.use("/tables", staffRouter);
 

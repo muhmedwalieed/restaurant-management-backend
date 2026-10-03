@@ -3,6 +3,11 @@ import { sendSuccess } from "../../shared/utils/response.js";
 import { asyncHandler } from "../../shared/utils/async-handler.js";
 
 export class RestaurantController {
+  getPublicProfile = asyncHandler(async (req, res) => {
+    const restaurant = await restaurantService.getPublicRestaurant(req.params.slug);
+    return sendSuccess(res, { data: restaurant });
+  });
+
   getProfile = asyncHandler(async (req, res) => {
     const restaurant = await restaurantService.getRestaurantProfile(req.tenantContext);
     return sendSuccess(res, { data: restaurant });

@@ -89,7 +89,14 @@ export class OrderService {
       WEBSITE: "orders.source_website",
     };
     const sourcePermission = SOURCE_PERMISSION[payload.source || "CASHIER"];
-    if (sourcePermission && tenantContext?.employeeId) {
+    // A cashier-source dine-in order tied to a table is a floor order. It is
+    // authorized by the tables.view check below rather than by a sales-channel
+    // source permission (e.g. a waiter adding items to a table).
+    const isFloorTableOrder =
+      payload.type === "DINE_IN" &&
+      Boolean(payload.tableId) &&
+      (payload.source || "CASHIER") === "CASHIER";
+    if (sourcePermission && tenantContext?.employeeId && !isFloorTableOrder) {
       const { isSystem, roleName, permissions } = await getEmployeePermissions(
         tenantContext.employeeId,
         tenantContext.restaurantId
@@ -327,6 +334,15 @@ export class OrderService {
       actorEmployeeId: tenantContext.employeeId || null,
     });
 
+    if (order.tableId) {
+      emitEvent(DomainEvent.TABLE_UPDATED, {
+        restaurantId,
+        branchId,
+        tableId: order.tableId,
+        action: "order_created",
+      });
+    }
+
     return {
       isCached: false,
       statusCode: 201,
@@ -370,6 +386,15 @@ export class OrderService {
       actorEmployeeId: tenantContext.employeeId || null,
     });
 
+    if (order.tableId) {
+      emitEvent(DomainEvent.TABLE_UPDATED, {
+        restaurantId: tenantContext.restaurantId,
+        branchId,
+        tableId: order.tableId,
+        action: "order_status_changed",
+      });
+    }
+
     return this.getOrderById(tenantContext, branchId, orderId);
   }
 
@@ -410,6 +435,15 @@ export class OrderService {
       tableId: order.tableId || null,
       actorEmployeeId: tenantContext.employeeId || null,
     });
+
+    if (order.tableId) {
+      emitEvent(DomainEvent.TABLE_UPDATED, {
+        restaurantId: tenantContext.restaurantId,
+        branchId,
+        tableId: order.tableId,
+        action: "order_cancelled",
+      });
+    }
 
     return this.getOrderById(tenantContext, branchId, orderId);
   }
@@ -615,6 +649,15 @@ export class OrderService {
       tableId: order.tableId || null,
       actorEmployeeId: tenantContext.employeeId || null,
     });
+
+    if (order.tableId) {
+      emitEvent(DomainEvent.TABLE_UPDATED, {
+        restaurantId: tenantContext.restaurantId,
+        branchId,
+        tableId: order.tableId,
+        action: "order_paid",
+      });
+    }
 
     return this.getOrderById(tenantContext, branchId, orderId);
   }

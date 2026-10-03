@@ -1,6 +1,17 @@
 import authService from "./auth.service.js";
 import { sendSuccess } from "../../shared/utils/response.js";
 import { asyncHandler } from "../../shared/utils/async-handler.js";
+import { ValidationError } from "../../shared/errors/index.js";
+
+/**
+ * Which restaurant's login page/host this request came from. The frontend sends
+ * it as a header on every call; the login body can also carry it explicitly.
+ */
+const resolveRestaurantSlug = (req) => {
+  const raw = req.body?.restaurantSlug || req.headers["x-restaurant-slug"] || "";
+  const slug = String(raw).trim().toLowerCase();
+  return slug || null;
+};
 
 export class AuthController {
   register = asyncHandler(async (req, res) => {
@@ -16,9 +27,15 @@ export class AuthController {
     const userAgent = req.headers["user-agent"] || "Unknown Device";
     const ipAddress = req.ip || req.socket.remoteAddress || "127.0.0.1";
 
+    const restaurantSlug = resolveRestaurantSlug(req);
+    if (!restaurantSlug) {
+      throw new ValidationError("كود المطعم مطلوب لتسجيل الدخول");
+    }
+
     const data = await authService.login({
       email: req.body.email,
       password: req.body.password,
+      restaurantSlug,
       device: userAgent,
       ipAddress,
       forceLogout: req.body.forceLogout,
@@ -42,13 +59,19 @@ export class AuthController {
 
     return sendSuccess(res, {
       message: "Login successful",
-      data: publicData,
+      data: {
+        ...publicData,
+        refreshToken,
+      },
     });
   });
 
   refresh = asyncHandler(async (req, res) => {
     const token = req.body.refreshToken || req.cookies?.refreshToken;
-    const data = await authService.refresh({ refreshToken: token });
+    const data = await authService.refresh({
+      refreshToken: token,
+      restaurantSlug: resolveRestaurantSlug(req),
+    });
 
     res.cookie("accessToken", data.accessToken, {
       httpOnly: true,

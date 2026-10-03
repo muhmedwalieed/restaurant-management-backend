@@ -5,6 +5,7 @@ import bcrypt from "bcrypt";
 import app from "../src/app/app.js";
 import prisma from "../src/lib/prisma.js";
 import { authService } from "../src/modules/auth/auth.service.js";
+import { staffLogin } from "./helpers/staff-login.js";
 import { disconnectRedis } from "../src/config/redis.js";
 
 describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
@@ -53,7 +54,7 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
       where: { restaurantId: tenantA.id, isMain: true },
     });
 
-    const loginA = await authService.login({
+    const loginA = await staffLogin({
       email: regA.employee.email,
       password: "Password123!",
       device: "Test-Runner-POSA",
@@ -146,7 +147,7 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
       },
     });
 
-    const cashierLogin = await authService.login({
+    const cashierLogin = await staffLogin({
       email: cashierEmp.email,
       password: "Password123!",
       device: "Test-Runner-Cashier",
@@ -179,7 +180,7 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
       },
     });
 
-    const viewLogin = await authService.login({
+    const viewLogin = await staffLogin({
       email: viewEmp.email,
       password: "Password123!",
       device: "Test-Runner-ViewOnly",
@@ -200,7 +201,7 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
       where: { restaurantId: tenantB.id, isMain: true },
     });
 
-    const loginB = await authService.login({
+    const loginB = await staffLogin({
       email: regB.employee.email,
       password: "Password123!",
       device: "Test-Runner-POSB",
@@ -297,7 +298,7 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
     assert.equal(table.status, "OCCUPIED");
   });
 
-  test("3. Multiple Orders Per Table for Cashier: Creating a second order on an OCCUPIED table succeeds for Cashier (201)", async () => {
+  test("3. Multiple Orders Per Table: Creating a second order on an OCCUPIED table succeeds (201)", async () => {
     const res = await fetch(`${baseUrl}/api/v1/branches/${branchA.id}/pos/orders`, {
       method: "POST",
       headers: {
@@ -313,7 +314,17 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
 
     assert.equal(res.status, 201);
     const body = await res.json();
-    assert.equal(body.success, true);
+    assert.equal(body.data.tableId, tableA1.id);
+
+    const activeOnTable = await prisma.order.count({
+      where: {
+        restaurantId: tenantA.id,
+        branchId: branchA.id,
+        tableId: tableA1.id,
+        status: { notIn: ["DELIVERED", "CANCELLED"] },
+      },
+    });
+    assert.ok(activeOnTable >= 2, `expected >= 2 active orders on the table, got ${activeOnTable}`);
   });
 
   test("3a. New order on a table AFTER its active order is cancelled succeeds (201)", async () => {
@@ -944,7 +955,7 @@ describe("Staff/POS Ordering & Payment/Refund Module Integration Tests", () => {
         passwordHash,
       },
     });
-    const login = await authService.login({
+    const login = await staffLogin({
       email: noTableEmp.email,
       password: "Password123!",
       device: "Test-NoTable",

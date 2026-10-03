@@ -4,6 +4,7 @@ import http from "http";
 import app from "../src/app/app.js";
 import prisma from "../src/lib/prisma.js";
 import { authService } from "../src/modules/auth/auth.service.js";
+import { staffLogin } from "./helpers/staff-login.js";
 import { disconnectRedis } from "../src/config/redis.js";
 
 describe("Module 14 — Phone Ordering Integration Tests", () => {
@@ -36,7 +37,7 @@ describe("Module 14 — Phone Ordering Integration Tests", () => {
     });
     tenantA = regA.restaurant;
     branchA = await prisma.branch.findFirst({ where: { restaurantId: tenantA.id, isMain: true } });
-    const loginA = await authService.login({ email: regA.employee.email, password: "Password123!", device: "A", ipAddress: "127.0.0.1" });
+    const loginA = await staffLogin({ email: regA.employee.email, password: "Password123!", device: "A", ipAddress: "127.0.0.1" });
     ownerToken = loginA.accessToken;
     const auth = { "Content-Type": "application/json", Authorization: `Bearer ${ownerToken}` };
 

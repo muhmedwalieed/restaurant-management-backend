@@ -4,6 +4,7 @@ import http from "http";
 import app from "../src/app/app.js";
 import prisma from "../src/lib/prisma.js";
 import { authService } from "../src/modules/auth/auth.service.js";
+import { staffLogin } from "./helpers/staff-login.js";
 import { disconnectRedis } from "../src/config/redis.js";
 
 describe("Employees Module Integration & Security Tests", () => {
@@ -40,7 +41,7 @@ describe("Employees Module Integration & Security Tests", () => {
     restaurantA = regA.restaurant;
     ownerA = regA.employee;
 
-    const loginA = await authService.login({
+    const loginA = await staffLogin({
       email: regA.employee.email,
       password: "Password123!",
       device: "Test-Runner-A",
@@ -58,7 +59,7 @@ describe("Employees Module Integration & Security Tests", () => {
     restaurantB = regB.restaurant;
     ownerB = regB.employee;
 
-    const loginB = await authService.login({
+    const loginB = await staffLogin({
       email: regB.employee.email,
       password: "Password123!",
       device: "Test-Runner-B",

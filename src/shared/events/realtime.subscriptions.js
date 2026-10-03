@@ -11,6 +11,9 @@ export function registerRealtimeSubscriptions() {
   onEvent(DomainEvent.ORDER_PAID, (p) =>
     broadcastToRestaurant(p.restaurantId, "order.paid", p, { branchId: p.branchId })
   );
+  onEvent(DomainEvent.TABLE_UPDATED, (p) =>
+    broadcastToRestaurant(p.restaurantId, "table.updated", p, { branchId: p.branchId })
+  );
   onEvent(DomainEvent.CHAT_ASSIGNED, (p) =>
     broadcastToRestaurant(p.restaurantId, "conversation.assigned", p)
   );
@@ -22,6 +25,15 @@ export function registerRealtimeSubscriptions() {
   );
   onEvent(DomainEvent.TABLE_SESSION_UPDATED, (p) =>
     broadcastToRestaurant(p.restaurantId, "tableSession.updated", p, { branchId: p.branchId })
+  );
+  onEvent(DomainEvent.MENU_UPDATED, (p) =>
+    broadcastToRestaurant(p.restaurantId, "menu.updated", p)
+  );
+  onEvent(DomainEvent.PRODUCT_UPDATED, (p) =>
+    broadcastToRestaurant(p.restaurantId, "product.updated", p)
+  );
+  onEvent(DomainEvent.CATEGORY_UPDATED, (p) =>
+    broadcastToRestaurant(p.restaurantId, "category.updated", p)
   );
 }
 

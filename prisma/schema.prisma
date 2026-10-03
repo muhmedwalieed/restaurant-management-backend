@@ -254,6 +254,7 @@ model Product {
   categoryId   String     @map("category_id")
   name         String
   description  String?
+  ingredients  String[]   @default([])
   price        Decimal    @db.Decimal(10, 2)
   imageUrl     String?    @map("image_url")
   isAvailable  Boolean    @default(true) @map("is_available")

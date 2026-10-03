@@ -5,8 +5,14 @@ import { authenticate } from "../auth/authenticate.middleware.js";
 import { authorize } from "../auth/authorize.middleware.js";
 import { requireTenantContext } from "../../shared/middleware/tenant-context.js";
 import { validate } from "../../shared/middleware/validate.js";
+import { authRateLimiter } from "../../shared/middleware/rate-limiters.js";
 
 const router = Router();
+
+// Public: brands a restaurant's staff login page (name + logo for the slug in the host).
+router.get("/public/:slug", authRateLimiter, (req, res, next) => {
+  restaurantController.getPublicProfile(req, res, next);
+});
 
 router.use(authenticate, requireTenantContext);
 

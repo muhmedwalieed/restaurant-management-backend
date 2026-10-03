@@ -133,6 +133,22 @@ async function main() {
     },
   });
 
+  const waiterPermKeys = ["orders.create", "orders.view", "tables.view", "menu.view"];
+  const waiterPermissions = allPermissions.filter((p) => waiterPermKeys.includes(p.key));
+  await prisma.role.create({
+    data: {
+      restaurantId: restaurant.id,
+      name: "waiter",
+      description: "Waiter — dine-in table orders only",
+      permissions: {
+        create: waiterPermissions.map((p) => ({
+          restaurantId: restaurant.id,
+          permissionId: p.id,
+        })),
+      },
+    },
+  });
+
   // 6. Create Employees
   await prisma.employee.create({
     data: {
@@ -210,7 +226,7 @@ async function main() {
         branchId: branch.id,
         label: `طاولة ${i}`,
         capacity: i <= 2 ? 2 : i <= 4 ? 4 : 6,
-        qrToken: `qr-prime-table-${i}`,
+        qrToken: crypto.randomBytes(16).toString("hex"),
         status: i === 1 || i === 2 ? "OCCUPIED" : "AVAILABLE",
       },
     });
@@ -238,6 +254,7 @@ async function main() {
       restaurantId: restaurant.id,
       categoryId: burgerCat.id,
       name: "Classic Burger",
+      ingredients: ["لحمة بقري", "خس", "طماطم", "بصل", "صوص خاص"],
       price: 250.0,
       imageUrl: "/uploads/ae315db5-674a-4357-8aed-9458f70b3a68.jpg",
     },
@@ -248,6 +265,7 @@ async function main() {
       restaurantId: restaurant.id,
       categoryId: burgerCat.id,
       name: "Cheese Burger",
+      ingredients: ["لحمة بقري", "جبنة شيدر", "خس", "طماطم", "صوص خاص"],
       price: 280.0,
       imageUrl: "/uploads/b826f7cb-7c2a-4b17-be10-5ce2ce2ac53e.jpg",
     },
@@ -258,6 +276,7 @@ async function main() {
       restaurantId: restaurant.id,
       categoryId: burgerCat.id,
       name: "Double Beef Burger",
+      ingredients: ["دبل لحمة بقري", "جبنة شيدر", "خس", "طماطم", "بصل", "صوص خاص"],
       price: 350.0,
       imageUrl: "/uploads/ab8f623d-4a3e-4b19-a1b5-f8cfba5947c4.jpg",
     },
@@ -268,6 +287,7 @@ async function main() {
       restaurantId: restaurant.id,
       categoryId: pizzaCat.id,
       name: "Margherita Pizza",
+      ingredients: ["عجينة إيطالي", "صوص طماطم", "موتزاريلا", "ريحان"],
       price: 300.0,
       imageUrl: "/uploads/50ac0748-61af-4348-a760-abbbe528da22.jpg",
     },
@@ -278,6 +298,7 @@ async function main() {
       restaurantId: restaurant.id,
       categoryId: pizzaCat.id,
       name: "Chicken Pizza",
+      ingredients: ["عجينة إيطالي", "صوص طماطم", "فراخ مشوية", "فلفل ألوان", "موتزاريلا"],
       price: 350.0,
       imageUrl: "/uploads/5bd492ac-a1f2-4009-bf13-2d3769890d6e.jpg",
     },
@@ -289,8 +310,8 @@ async function main() {
   const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 19, 30);
   const yesterdayKey = getCalendarDateStr(yesterday);
 
-  const pinHash1 = crypto.createHash("sha256").update("1234").digest("hex");
-  const pinHash2 = crypto.createHash("sha256").update("5678").digest("hex");
+  const pinHash1 = await bcrypt.hash("1234", 10);
+  const pinHash2 = await bcrypt.hash("5678", 10);
 
   // Table 1 Session (Active Occupied)
   const session1 = await prisma.tableSession.create({

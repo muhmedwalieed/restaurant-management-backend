@@ -4,10 +4,12 @@ import menuService from "../menu/menu.service.js";
 import { ConflictError, NotFoundError } from "../../shared/errors/index.js";
 import { paginateResponse } from "../../shared/utils/pagination.js";
 import { assertBranchInTenant } from "../../shared/utils/assert-branch.js";
+import { emitEvent, DomainEvent } from "../../shared/events/event-bus.js";
 import env from "../../config/env.js";
 
+// Short, opaque, unguessable public token (12 random bytes → 16 url-safe chars).
 function generateQrToken() {
-  return crypto.randomBytes(16).toString("hex");
+  return crypto.randomBytes(12).toString("base64url");
 }
 
 function buildQrUrl(qrToken) {
@@ -67,6 +69,14 @@ export class TableService {
       qrToken,
     });
 
+    emitEvent(DomainEvent.TABLE_UPDATED, {
+      restaurantId: tenantContext.restaurantId,
+      branchId,
+      tableId: table.id,
+      action: "table_created",
+      status: table.status,
+    });
+
     return {
       ...table,
       qrUrl: buildQrUrl(table.qrToken),
@@ -90,12 +100,32 @@ export class TableService {
     };
 
     await tableRepository.updateTable(tenantContext, branchId, tableId, updatePayload);
+
+    if (updatePayload.status) {
+      emitEvent(DomainEvent.TABLE_UPDATED, {
+        restaurantId: tenantContext.restaurantId,
+        branchId,
+        tableId,
+        action: "table_updated",
+        status: updatePayload.status,
+      });
+    }
+
     return this.getTableById(tenantContext, branchId, tableId);
   }
 
   async deleteTable(tenantContext, branchId, tableId) {
     const table = await this.getTableById(tenantContext, branchId, tableId);
     await tableRepository.softDeleteTable(tenantContext, branchId, tableId);
+
+    emitEvent(DomainEvent.TABLE_UPDATED, {
+      restaurantId: tenantContext.restaurantId,
+      branchId,
+      tableId,
+      action: "table_deleted",
+      status: "MAINTENANCE",
+    });
+
     return { message: `Table '${table.label}' deleted successfully` };
   }
 
@@ -120,6 +150,7 @@ export class TableService {
     }
 
     const table = await tableRepository.findTableByQrToken(qrToken);
+
     if (!table || !table.branch || table.branch.status !== "ACTIVE" || table.restaurant.status !== "ACTIVE") {
       throw new NotFoundError("Invalid or expired QR code token");
     }

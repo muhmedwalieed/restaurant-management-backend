@@ -4,6 +4,7 @@ import http from "http";
 import app from "../src/app/app.js";
 import prisma from "../src/lib/prisma.js";
 import { authService } from "../src/modules/auth/auth.service.js";
+import { staffLogin } from "./helpers/staff-login.js";
 import { disconnectRedis } from "../src/config/redis.js";
 
 describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
@@ -36,7 +37,7 @@ describe("Table Self-Ordering Sessions (Multi-Round Orders)", () => {
     tenant = reg.restaurant;
     branch = await prisma.branch.findFirst({ where: { restaurantId: tenant.id, isMain: true } });
 
-    const login = await authService.login({
+    const login = await staffLogin({
       email: reg.employee.email,
       password: "Password123!",
       device: "Test-Runner-Sessions",

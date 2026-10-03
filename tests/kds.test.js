@@ -5,6 +5,7 @@ import bcrypt from "bcrypt";
 import app from "../src/app/app.js";
 import prisma from "../src/lib/prisma.js";
 import { authService } from "../src/modules/auth/auth.service.js";
+import { staffLogin } from "./helpers/staff-login.js";
 import { disconnectRedis } from "../src/config/redis.js";
 
 describe("Kitchen Display System (KDS) Integration Tests", () => {
@@ -53,7 +54,7 @@ describe("Kitchen Display System (KDS) Integration Tests", () => {
       where: { restaurantId: tenantA.id, isMain: true },
     });
 
-    const loginA = await authService.login({
+    const loginA = await staffLogin({
       email: regA.employee.email,
       password: "Password123!",
       device: "Test-Runner-KDSA",
@@ -107,13 +108,13 @@ describe("Kitchen Display System (KDS) Integration Tests", () => {
       },
     });
 
-    const staffLogin = await authService.login({
+    const staffLoginResult = await staffLogin({
       email: staffEmp.email,
       password: "Password123!",
       device: "Test-Runner-StaffNoKdsOrders",
       ipAddress: "127.0.0.1",
     });
-    staffAToken = staffLogin.accessToken;
+    staffAToken = staffLoginResult.accessToken;
 
     const regB = await authService.register({
       name: "Owner KDS B",
@@ -128,7 +129,7 @@ describe("Kitchen Display System (KDS) Integration Tests", () => {
       where: { restaurantId: tenantB.id, isMain: true },
     });
 
-    const loginB = await authService.login({
+    const loginB = await staffLogin({
       email: regB.employee.email,
       password: "Password123!",
       device: "Test-Runner-KDSB",

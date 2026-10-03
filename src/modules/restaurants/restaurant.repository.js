@@ -4,6 +4,21 @@ import { BaseRepository } from "../../shared/repositories/base.repository.js";
 
 export class RestaurantRepository extends BaseRepository {
 
+  /** Public, tenant-free lookup used to brand a restaurant's staff login page. */
+  async findPublicBySlug(slug) {
+    if (!slug) return null;
+
+    return prisma.restaurant.findFirst({
+      where: { slug: String(slug).toLowerCase(), status: "ACTIVE" },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        logoUrl: true,
+      },
+    });
+  }
+
   async findRestaurantById(tenantContext) {
     this.assertTenant(tenantContext);
 

@@ -32,10 +32,42 @@ app.use(
 );
 
 app.use(helmet());
+
+// Staff URLs are per-restaurant subdomains (prime-restaurant.example.com), so the
+// allowed origin is not a single string any more: the configured host plus any of
+// its subdomains, plus *.localhost in development.
+const CLIENT_ORIGIN = (() => {
+  try {
+    return new URL(env.CLIENT_URL || "http://localhost:5173").origin.toLowerCase();
+  } catch {
+    return "http://localhost:5173";
+  }
+})();
+const CLIENT_HOST = new URL(CLIENT_ORIGIN).hostname;
+
+const isAllowedOrigin = (origin) => {
+  if (!origin) return true; // same-origin, curl, server-to-server
+
+  let parsed;
+  try {
+    parsed = new URL(origin);
+  } catch {
+    return false;
+  }
+  if (parsed.origin.toLowerCase() === CLIENT_ORIGIN) return true;
+
+  const host = parsed.hostname.toLowerCase();
+  if (host !== CLIENT_HOST && host.endsWith(`.${CLIENT_HOST}`)) return true;
+  if (host === "localhost" || host === "127.0.0.1" || host.endsWith(".localhost")) return true;
+
+  return false;
+};
+
 app.use(
   cors({
-    origin: env.CLIENT_URL || "http://localhost:5173",
+    origin: (origin, callback) => callback(null, isAllowedOrigin(origin)),
     credentials: true,
+    allowedHeaders: ["Content-Type", "Authorization", "X-Branch-Id", "X-Restaurant-Slug"],
   })
 );
 

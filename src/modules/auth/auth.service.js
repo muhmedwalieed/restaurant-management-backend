@@ -46,11 +46,12 @@ export class AuthService {
     };
   }
 
-  async login({ email, password, device, ipAddress, forceLogout = false }) {
-    const employee = await authRepository.findEmployeeByEmailForLogin(email);
+  async login({ email, password, restaurantSlug, device, ipAddress, forceLogout = false }) {
+    // The tenant comes from the host the login was made on — never from the email.
+    const employee = await authRepository.findEmployeeByEmailForLogin(email, restaurantSlug);
 
     if (!employee) {
-      logger.warn({ email, ipAddress }, "Login failed: employee not found or inactive");
+      logger.warn({ email, restaurantSlug, ipAddress }, "Login failed: employee not found or inactive");
       throw new AuthenticationError("Invalid email or password");
     }
 
@@ -200,6 +201,7 @@ export class AuthService {
         name: true,
         email: true,
         status: true,
+        restaurantId: true,
         branchId: true,
         branch: {
           select: { id: true, name: true, code: true, isMain: true },
@@ -268,7 +270,7 @@ export class AuthService {
     };
   }
 
-  async refresh({ refreshToken }) {
+  async refresh({ refreshToken, restaurantSlug }) {
     if (!refreshToken) {
       throw new AuthenticationError("Refresh token is required");
     }
@@ -287,6 +289,15 @@ export class AuthService {
     );
 
     if (!session || session.status !== "ACTIVE") {
+      throw new AuthenticationError("Invalid or revoked refresh token");
+    }
+
+    // The refresh cookie is host-scoped to the shared API origin, so it is
+    // technically readable from every tenant subdomain. Requiring the session to
+    // belong to the restaurant that asked for the refresh is what stops one
+    // tenant's cookie from being replayed on another tenant's host.
+    const requestedRestaurantId = await authRepository.findRestaurantIdBySlug(restaurantSlug);
+    if (!requestedRestaurantId || requestedRestaurantId !== session.restaurantId) {
       throw new AuthenticationError("Invalid or revoked refresh token");
     }
 

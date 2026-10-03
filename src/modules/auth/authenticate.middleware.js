@@ -41,6 +41,21 @@ export const authenticate = asyncHandler(async (req, res, next) => {
     throw new AuthenticationError("Session expired or force logged out");
   }
 
+  // A request that says which restaurant host it came from must belong to the
+  // restaurant that issued the token — a token from one tenant is never usable
+  // on another tenant's host.
+  const requestedSlug = String(req.headers["x-restaurant-slug"] || "").trim().toLowerCase();
+  if (requestedSlug) {
+    const hostRestaurant = await prisma.restaurant.findUnique({
+      where: { slug: requestedSlug },
+      select: { id: true, status: true },
+    });
+
+    if (!hostRestaurant || hostRestaurant.status !== "ACTIVE" || hostRestaurant.id !== payload.restaurantId) {
+      throw new AuthenticationError("This session does not belong to this restaurant");
+    }
+  }
+
   const requestedBranchId = req.headers["x-branch-id"] || req.headers["x-branchid"] || null;
   const activeBranchId = requestedBranchId || payload.branchId || null;
 

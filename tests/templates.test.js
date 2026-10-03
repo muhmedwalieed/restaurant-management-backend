@@ -5,6 +5,7 @@ import app from "../src/app/app.js";
 import prisma from "../src/lib/prisma.js";
 import redis, { disconnectRedis } from "../src/config/redis.js";
 import { authService } from "../src/modules/auth/auth.service.js";
+import { staffLogin } from "./helpers/staff-login.js";
 import { renderTemplate } from "../src/modules/templates/template.engine.js";
 import { templateService } from "../src/modules/templates/template.service.js";
 import { parseFeedbackRating, isExplicitFeedbackText } from "../src/modules/whatsapp-automation/feedback.parser.js";
@@ -38,7 +39,7 @@ describe("Templates & Softcoding Engine Integration Tests", () => {
     });
     restaurantA = regA.restaurant;
 
-    const loginA = await authService.login({
+    const loginA = await staffLogin({
       email: regA.employee.email,
       password: "Password123!",
       device: "Test-Runner-Templ",
@@ -56,7 +57,7 @@ describe("Templates & Softcoding Engine Integration Tests", () => {
     });
     restaurantB = regB.restaurant;
 
-    const loginB = await authService.login({
+    const loginB = await staffLogin({
       email: regB.employee.email,
       password: "Password123!",
       device: "Test-Runner-Templ",

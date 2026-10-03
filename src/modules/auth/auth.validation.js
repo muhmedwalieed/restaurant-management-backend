@@ -17,6 +17,9 @@ export const loginSchema = z.object({
     email: z.email("Invalid email address"),
     password: z.string().min(1, "Password is required"),
     forceLogout: z.boolean().optional().default(false),
+    // Which restaurant's login page this is. Optional here so the controller can
+    // answer with a clear message instead of a generic schema error.
+    restaurantSlug: z.string().min(2).regex(/^[a-z0-9-]+$/, "Invalid restaurant code").optional(),
   }),
 });
 

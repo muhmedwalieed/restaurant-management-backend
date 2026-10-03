@@ -5,6 +5,7 @@ import bcrypt from "bcrypt";
 import app from "../src/app/app.js";
 import prisma from "../src/lib/prisma.js";
 import { authService } from "../src/modules/auth/auth.service.js";
+import { staffLogin } from "./helpers/staff-login.js";
 import { disconnectRedis } from "../src/config/redis.js";
 
 describe("Menu Module Integration & Security Tests", () => {
@@ -42,7 +43,7 @@ describe("Menu Module Integration & Security Tests", () => {
     });
     tenantA = regA.restaurant;
 
-    const loginA = await authService.login({
+    const loginA = await staffLogin({
       email: regA.employee.email,
       password: "Password123!",
       device: "Test-Runner-MenuA",
@@ -72,13 +73,13 @@ describe("Menu Module Integration & Security Tests", () => {
       },
     });
 
-    const staffLogin = await authService.login({
+    const staffLoginResult = await staffLogin({
       email: staffEmp.email,
       password: "Password123!",
       device: "Test-Runner-StaffNoMenu",
       ipAddress: "127.0.0.1",
     });
-    staffAToken = staffLogin.accessToken;
+    staffAToken = staffLoginResult.accessToken;
 
     const regB = await authService.register({
       name: "Owner Menu B",
@@ -89,7 +90,7 @@ describe("Menu Module Integration & Security Tests", () => {
     });
     tenantB = regB.restaurant;
 
-    const loginB = await authService.login({
+    const loginB = await staffLogin({
       email: regB.employee.email,
       password: "Password123!",
       device: "Test-Runner-MenuB",

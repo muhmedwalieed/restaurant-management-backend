@@ -5,6 +5,7 @@ import bcrypt from "bcrypt";
 import app from "../src/app/app.js";
 import prisma from "../src/lib/prisma.js";
 import { authService } from "../src/modules/auth/auth.service.js";
+import { staffLogin } from "./helpers/staff-login.js";
 import { disconnectRedis } from "../src/config/redis.js";
 
 describe("Customer Management & CRM Module Integration Tests", () => {
@@ -48,7 +49,7 @@ describe("Customer Management & CRM Module Integration Tests", () => {
       where: { restaurantId: tenantA.id, isMain: true },
     });
 
-    const loginA = await authService.login({
+    const loginA = await staffLogin({
       email: regA.employee.email,
       password: "Password123!",
       device: "Test-Runner-CustA",
@@ -84,7 +85,7 @@ describe("Customer Management & CRM Module Integration Tests", () => {
       },
     });
 
-    const viewOnlyLogin = await authService.login({
+    const viewOnlyLogin = await staffLogin({
       email: viewOnlyEmp.email,
       password: "Password123!",
       device: "Test-Runner-ViewOnlyStaff",
@@ -111,7 +112,7 @@ describe("Customer Management & CRM Module Integration Tests", () => {
       },
     });
 
-    const noCustLogin = await authService.login({
+    const noCustLogin = await staffLogin({
       email: noCustEmp.email,
       password: "Password123!",
       device: "Test-Runner-NoCustStaff",
@@ -132,7 +133,7 @@ describe("Customer Management & CRM Module Integration Tests", () => {
       where: { restaurantId: tenantB.id, isMain: true },
     });
 
-    const loginB = await authService.login({
+    const loginB = await staffLogin({
       email: regB.employee.email,
       password: "Password123!",
       device: "Test-Runner-CustB",

@@ -6,6 +6,7 @@ import bcrypt from "bcrypt";
 import app from "../src/app/app.js";
 import prisma from "../src/lib/prisma.js";
 import { authService } from "../src/modules/auth/auth.service.js";
+import { staffLogin } from "./helpers/staff-login.js";
 import { MockProvider } from "../src/modules/whatsapp/providers/mock_provider.js";
 import { metaProvider } from "../src/modules/whatsapp/providers/meta_provider.js";
 import { encrypt, decrypt } from "../src/shared/utils/crypto.js";
@@ -51,7 +52,7 @@ describe("Module 9 — WhatsApp Integration Module Tests", () => {
     });
     tenantA = regA.restaurant;
 
-    const loginA = await authService.login({
+    const loginA = await staffLogin({
       email: regA.employee.email,
       password: "Password123!",
       device: "Test-Runner-WAA",
@@ -90,7 +91,7 @@ describe("Module 9 — WhatsApp Integration Module Tests", () => {
       },
     });
 
-    const managerLogin = await authService.login({
+    const managerLogin = await staffLogin({
       email: managerEmp.email,
       password: "Password123!",
       device: "Test-Runner-WAManager",
@@ -123,7 +124,7 @@ describe("Module 9 — WhatsApp Integration Module Tests", () => {
       },
     });
 
-    const viewLogin = await authService.login({
+    const viewLogin = await staffLogin({
       email: viewEmp.email,
       password: "Password123!",
       device: "Test-Runner-WAView",
@@ -140,7 +141,7 @@ describe("Module 9 — WhatsApp Integration Module Tests", () => {
     });
     tenantB = regB.restaurant;
 
-    const loginB = await authService.login({
+    const loginB = await staffLogin({
       email: regB.employee.email,
       password: "Password123!",
       device: "Test-Runner-WAB",

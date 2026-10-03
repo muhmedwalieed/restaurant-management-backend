@@ -18,9 +18,56 @@ const PIN_LENGTH = 4;
 // can't create two active sessions (the unique partial index is the hard guard).
 const sessionStartLocks = new Map();
 
-const LOCKOUT_LEVELS = [
-  { failAfter: 3, baseSeconds: 60 },
+// Wrong-PIN policy: every tier allows PIN_ATTEMPTS_PER_TIER attempts, then locks the
+// table for the matching duration and escalates to the next tier (capped at the last).
+const PIN_ATTEMPTS_PER_TIER = 5;
+const PIN_LOCKOUT_SECONDS = [
+  60, // 1 minute
+  120, // 2 minutes
+  300, // 5 minutes
+  600, // 10 minutes
+  1800, // 30 minutes
+  3600, // 1 hour
+  6 * 3600, // 6 hours
+  24 * 3600, // 24 hours
+  48 * 3600, // 48 hours
 ];
+
+// Arabic-aware name key so the same guest joining twice is not counted as two
+// people: unifies alef/ya/ta-marbuta variants, casing and extra spaces.
+function normalizeMemberName(name) {
+  return String(name || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/[أإآٱ]/g, "ا")
+    .replace(/ى/g, "ي")
+    .replace(/ة/g, "ه")
+    .toLowerCase();
+}
+
+function formatLockoutDuration(totalSeconds) {
+  const seconds = Math.max(1, Math.round(totalSeconds));
+  if (seconds < 60) return `${seconds} ثانية`;
+
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) {
+    if (minutes === 1) return "دقيقة";
+    if (minutes === 2) return "دقيقتين";
+    return `${minutes} دقيقة`;
+  }
+
+  const hours = Math.round(seconds / 3600);
+  if (hours < 24) {
+    if (hours === 1) return "ساعة";
+    if (hours === 2) return "ساعتين";
+    return `${hours} ساعات`;
+  }
+
+  const days = Math.round(seconds / 86400);
+  if (days === 1) return "يوم";
+  if (days === 2) return "يومين";
+  return `${days} أيام`;
+}
 
 const APPENDABLE_ORDER_STATUSES = ["PENDING", "CONFIRMED", "PREPARING", "READY"];
 
@@ -82,6 +129,18 @@ export class TableSessionService {
       if (existing) {
         throw new BusinessRuleError("This table already has an active session");
       }
+      const activeOrderOnTable = await prisma.order.findFirst({
+        where: {
+          restaurantId: tenantContext.restaurantId,
+          branchId: table.branchId,
+          tableId: table.id,
+          status: { in: ["PENDING", "CONFIRMED", "PREPARING", "READY"] },
+        },
+        select: { id: true },
+      });
+      if (activeOrderOnTable) {
+        throw new BusinessRuleError("This table already has an active POS order. Close or deliver it first.");
+      }
 
       const pin = String(randomInt(0, 10000)).padStart(PIN_LENGTH, "0");
       const pinHash = await bcrypt.hash(pin, 10);
@@ -102,6 +161,12 @@ export class TableSessionService {
         tableId: table.id,
         action: "started",
       });
+      emitEvent(DomainEvent.TABLE_UPDATED, {
+        restaurantId: tenantContext.restaurantId,
+        branchId: table.branchId,
+        tableId: table.id,
+        action: "session_started",
+      });
 
       return { sessionId: session.id, pin, qrToken: table.qrToken, tableId: table.id };
     })();
@@ -113,44 +178,53 @@ export class TableSessionService {
     }
   }
 
-  async joinSession(restaurantId, tableId, { name, pin }) {
-    const table = await tableSessionRepository.findTableByQrToken(tableId, restaurantId);
+  async joinSession(restaurantId, qrToken, { name, pin }) {
+    const table = await tableSessionRepository.findTableByQrToken(qrToken, restaurantId);
     if (!table) throw new NotFoundError("Table not found");
 
     const session = await tableSessionRepository.findActiveSessionByTable(restaurantId, table.id);
-    if (!session) throw new BusinessRuleError("لا توجد جلسة مفتوحة لهذه الطاولة حالياً. يرجى من الويتر فتح الجلسة أولاً وإعطائك رمز الـ PIN.");
+    if (!session) throw new BusinessRuleError("مفيش جلسة مفتوحة على الطاولة دي دلوقتي. اطلب من الويتر يفتح الجلسة ويديك رمز الدخول (PIN).");
 
     const now = Date.now();
     if (session.lockoutUntil && new Date(session.lockoutUntil).getTime() > now) {
-      const wait = Math.ceil((new Date(session.lockoutUntil).getTime() - now) / 1000);
-      throw new BusinessRuleError(`Too many wrong PIN attempts. Try again in ${wait} seconds`);
+      const waitSeconds = Math.ceil((new Date(session.lockoutUntil).getTime() - now) / 1000);
+      throw new BusinessRuleError(
+        `تم إدخال رمز الدخول غلط عدة مرات. الطاولة مقفولة، جرّب تاني بعد ${formatLockoutDuration(waitSeconds)}.`
+      );
     }
 
     const ok = await bcrypt.compare(pin, session.pinHash);
     if (!ok) {
-      const failed = session.failedAttempts + 1;
-      const level = LOCKOUT_LEVELS.find((l) => failed >= l.failAfter);
-      let lockoutUntil = null;
-      let levelIndex = 0;
-      if (level) {
-        levelIndex = Math.floor(failed / level.failAfter);
-        lockoutUntil = new Date(now + level.baseSeconds * Math.pow(2, levelIndex) * 1000);
+      const failed = (session.failedAttempts || 0) + 1;
+      const currentLevel = Math.min(session.lockoutLevel || 0, PIN_LOCKOUT_SECONDS.length - 1);
+      const remaining = PIN_ATTEMPTS_PER_TIER - failed;
+
+      // This tier's attempt quota is used up → lock the table and escalate the tier.
+      if (remaining <= 0) {
+        const lockoutSeconds = PIN_LOCKOUT_SECONDS[currentLevel];
+        const lockoutUntil = new Date(now + lockoutSeconds * 1000);
+        const nextLevel = Math.min(currentLevel + 1, PIN_LOCKOUT_SECONDS.length - 1);
+        // Reset the per-tier counter so the next tier starts a fresh block of attempts.
+        await tableSessionRepository.lockout(session.id, restaurantId, 0, nextLevel, lockoutUntil);
+        throw new BusinessRuleError(
+          `تم إدخال رمز الدخول غلط ${PIN_ATTEMPTS_PER_TIER} مرات. الطاولة مقفولة لمدة ${formatLockoutDuration(lockoutSeconds)}.`
+        );
       }
-      await tableSessionRepository.lockout(session.id, restaurantId, failed, levelIndex, lockoutUntil);
-      const threshold = LOCKOUT_LEVELS[0].failAfter;
-      const remaining = Math.max(0, threshold - failed);
-      throw new ValidationError(`Wrong PIN. ${remaining} attempt(s) remaining`);
+
+      await tableSessionRepository.lockout(session.id, restaurantId, failed, currentLevel, null);
+      throw new ValidationError(`رمز الدخول غلط. فاضل ${remaining} محاولة.`);
     }
 
+    // Correct PIN → clear the counter and drop back to the lowest tier.
     await tableSessionRepository.lockout(session.id, restaurantId, 0, 0, null);
 
-    const trimmedName = (name || '').trim();
-    let member = await prisma.tableSessionMember.findFirst({
-      where: {
-        sessionId: session.id,
-        name: { equals: trimmedName, mode: 'insensitive' },
-      },
+    const trimmedName = (name || '').trim().replace(/\s+/g, " ");
+    const nameKey = normalizeMemberName(trimmedName);
+    const existingMembers = await prisma.tableSessionMember.findMany({
+      where: { sessionId: session.id },
+      select: { id: true, name: true },
     });
+    let member = existingMembers.find((m) => normalizeMemberName(m.name) === nameKey) || null;
 
     if (!member) {
       member = await tableSessionRepository.addMember(restaurantId, session.id, trimmedName);
@@ -628,15 +702,114 @@ export class TableSessionService {
       orderId: realOrderId,
       orderNumber: pendingOrderNumber,
     });
+    emitEvent(DomainEvent.TABLE_UPDATED, {
+      restaurantId,
+      branchId: session.branchId,
+      tableId: session.tableId,
+      action: "session_confirmed",
+    });
     return this.publicSession(restaurantId, sessionId);
   }
 
+  /**
+   * Release a table directly from POS without needing a QR session.
+   * Marks all active DINE_IN orders as COMPLETED + sets table status → AVAILABLE.
+   * Requires only `orders.create` permission (cashier-level).
+   */
+  async releaseTable(tenantContext, tableId, options = {}) {
+    // Verify table belongs to this restaurant
+    const table = await prisma.restaurantTable.findFirst({
+      where: { id: tableId, restaurantId: tenantContext.restaurantId, deletedAt: null },
+    });
+    if (!table) throw new NotFoundError("Table not found");
+
+    const paymentMethod = options.paymentMethod || "CASH";
+    const now = new Date();
+
+    // Find all active DINE_IN orders for this table (not yet delivered/cancelled)
+    const activeOrders = await prisma.order.findMany({
+      where: {
+        tableId,
+        restaurantId: tenantContext.restaurantId,
+        type: "DINE_IN",
+        status: { notIn: ["DELIVERED", "CANCELLED"] },
+      },
+    });
+
+    for (const order of activeOrders) {
+      // Settle payment if unpaid
+      if (order.paymentStatus !== "PAID") {
+        const remaining = Math.max(0, Number(order.total) - Number(order.amountPaid || 0));
+        if (remaining > 0) {
+          await prisma.order.updateMany({
+            where: { id: order.id, restaurantId: tenantContext.restaurantId },
+            data: {
+              amountPaid: Number(order.total),
+              paymentStatus: "PAID",
+              paymentMethod,
+              paidAt: now,
+              paidByEmployeeId: tenantContext.employeeId || null,
+              version: { increment: 1 },
+              updatedAt: now,
+            },
+          });
+          try {
+            await prisma.orderPayment.create({
+              data: {
+                restaurantId: tenantContext.restaurantId,
+                orderId: order.id,
+                type: "PAYMENT",
+                amount: remaining,
+                paymentMethod,
+                status: "PAID",
+                employeeId: tenantContext.employeeId || null,
+              },
+            });
+          } catch (_) {}
+        }
+        emitEvent(DomainEvent.ORDER_PAID, {
+          restaurantId: tenantContext.restaurantId,
+          branchId: table.branchId,
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          total: Number(order.total),
+          tableId,
+          actorEmployeeId: tenantContext.employeeId || null,
+        });
+      }
+      // Mark order delivered (COMPLETED is not a valid OrderStatus)
+      await prisma.order.updateMany({
+        where: { id: order.id, restaurantId: tenantContext.restaurantId },
+        data: { status: "DELIVERED", version: { increment: 1 }, updatedAt: now },
+      });
+    }
+
+    // Set table → AVAILABLE using the repo helper (same as closeSession)
+    await tableSessionRepository.setTableStatus(tableId, tenantContext.restaurantId, "AVAILABLE");
+
+    emitEvent(DomainEvent.TABLE_SESSION_UPDATED, {
+      restaurantId: tenantContext.restaurantId,
+      branchId: table.branchId,
+      tableId,
+      action: "released",
+    });
+    emitEvent(DomainEvent.TABLE_UPDATED, {
+      restaurantId: tenantContext.restaurantId,
+      branchId: table.branchId,
+      tableId,
+      action: "table_released",
+    });
+
+    return { tableId, releasedOrders: activeOrders.length };
+  }
+
   async closeSession(tenantContext, sessionId, options = {}) {
+
     const session = await tableSessionRepository.findSessionById(tenantContext.restaurantId, sessionId);
     if (!session) throw new NotFoundError("Session not found");
     if (session.status === "CLOSED") throw new BusinessRuleError("Session is closed");
 
-    // Collect all order IDs linked to this session
+    // Collect all order IDs linked to this session or currently active on this table
     const sessionOrderIds = new Set();
     if (session.confirmedOrderId) sessionOrderIds.add(session.confirmedOrderId);
     if (Array.isArray(session.orders)) {
@@ -645,54 +818,103 @@ export class TableSessionService {
       }
     }
 
-    if (sessionOrderIds.size > 0) {
-      const unpaidOrders = await prisma.order.findMany({
-        where: {
-          id: { in: Array.from(sessionOrderIds) },
-          restaurantId: tenantContext.restaurantId,
-          paymentStatus: "PENDING",
-          status: { not: "CANCELLED" },
-        },
-      });
+    // Find any active DINE_IN orders for this table (not yet delivered/cancelled)
+    const activeTableOrders = await prisma.order.findMany({
+      where: {
+        tableId: session.tableId,
+        restaurantId: tenantContext.restaurantId,
+        type: "DINE_IN",
+        status: { notIn: ["DELIVERED", "CANCELLED"] },
+      },
+    });
+    for (const ato of activeTableOrders) {
+      sessionOrderIds.add(ato.id);
+    }
 
-      if (unpaidOrders.length > 0) {
-        if (options?.settlePayment || options?.autoSettle) {
-          const method = options.paymentMethod || "CASH";
-          for (const uOrder of unpaidOrders) {
-            await prisma.order.updateMany({
-              where: { id: uOrder.id, restaurantId: tenantContext.restaurantId },
-              data: {
-                paymentStatus: "PAID",
-                paymentMethod: method,
-                paidAt: new Date(),
-                paidByEmployeeId: tenantContext.employeeId || null,
-                version: { increment: 1 },
-                updatedAt: new Date(),
-              },
-            });
-            await prisma.orderStatusHistory.create({
-              data: {
-                restaurantId: tenantContext.restaurantId,
-                orderId: uOrder.id,
-                fromStatus: uOrder.status,
-                toStatus: uOrder.status,
-                changedById: tenantContext.employeeId || null,
-                reason: `Payment settled on table session close (${method})`,
-              },
-            });
-            emitEvent(DomainEvent.ORDER_PAID, {
-              restaurantId: tenantContext.restaurantId,
-              branchId: session.branchId,
-              orderId: uOrder.id,
-              orderNumber: uOrder.orderNumber,
-              total: Number(uOrder.total),
-              tableId: uOrder.tableId || session.tableId,
-              actorEmployeeId: tenantContext.employeeId || null,
-            });
+    const allOrdersToClose = sessionOrderIds.size > 0
+      ? await prisma.order.findMany({
+          where: {
+            id: { in: Array.from(sessionOrderIds) },
+            restaurantId: tenantContext.restaurantId,
+            status: { not: "CANCELLED" },
+          },
+        })
+      : [];
+
+    const unpaidOrders = allOrdersToClose.filter((o) => o.paymentStatus === "PENDING");
+
+    if (unpaidOrders.length > 0) {
+      if (options?.settlePayment || options?.autoSettle) {
+        const method = options.paymentMethod || "CASH";
+        const now = new Date();
+        for (const uOrder of unpaidOrders) {
+          const remaining = Math.max(0, Number(uOrder.total) - Number(uOrder.amountPaid || 0));
+          await prisma.order.updateMany({
+            where: { id: uOrder.id, restaurantId: tenantContext.restaurantId },
+            data: {
+              amountPaid: Number(uOrder.total),
+              paymentStatus: "PAID",
+              paymentMethod: method,
+              paidAt: now,
+              paidByEmployeeId: tenantContext.employeeId || null,
+              status: "DELIVERED",
+              version: { increment: 1 },
+              updatedAt: now,
+            },
+          });
+          if (remaining > 0) {
+            try {
+              await prisma.orderPayment.create({
+                data: {
+                  restaurantId: tenantContext.restaurantId,
+                  orderId: uOrder.id,
+                  type: "PAYMENT",
+                  amount: remaining,
+                  paymentMethod: method,
+                  status: "PAID",
+                  employeeId: tenantContext.employeeId || null,
+                },
+              });
+            } catch (_) {}
           }
-        } else {
-          throw new BusinessRuleError("Cannot close session while linked confirmed order is unpaid");
+          await prisma.orderStatusHistory.create({
+            data: {
+              restaurantId: tenantContext.restaurantId,
+              orderId: uOrder.id,
+              fromStatus: uOrder.status,
+              toStatus: "DELIVERED",
+              changedById: tenantContext.employeeId || null,
+              reason: `Payment settled and order delivered on table session close (${method})`,
+            },
+          });
+          emitEvent(DomainEvent.ORDER_PAID, {
+            restaurantId: tenantContext.restaurantId,
+            branchId: session.branchId,
+            orderId: uOrder.id,
+            orderNumber: uOrder.orderNumber,
+            total: Number(uOrder.total),
+            tableId: uOrder.tableId || session.tableId,
+            actorEmployeeId: tenantContext.employeeId || null,
+          });
         }
+      } else {
+        throw new BusinessRuleError("Cannot close session while linked confirmed order is unpaid");
+      }
+    }
+
+    // Mark remaining paid orders as DELIVERED as well
+    const remainingPaidOrders = allOrdersToClose.filter((o) => o.paymentStatus !== "PENDING" && o.status !== "DELIVERED");
+    if (remainingPaidOrders.length > 0) {
+      const now = new Date();
+      for (const pOrder of remainingPaidOrders) {
+        await prisma.order.updateMany({
+          where: { id: pOrder.id, restaurantId: tenantContext.restaurantId },
+          data: {
+            status: "DELIVERED",
+            version: { increment: 1 },
+            updatedAt: now,
+          },
+        });
       }
     }
 
@@ -705,6 +927,12 @@ export class TableSessionService {
       sessionId,
       tableId: session.tableId,
       action: "closed",
+    });
+    emitEvent(DomainEvent.TABLE_UPDATED, {
+      restaurantId: tenantContext.restaurantId,
+      branchId: session.branchId,
+      tableId: session.tableId,
+      action: "session_closed",
     });
     return this.publicSession(tenantContext.restaurantId, sessionId);
   }
@@ -774,6 +1002,88 @@ export class TableSessionService {
     return this.publicSession(tenantContext.restaurantId, sessionId);
   }
 
+  /**
+   * Staff-only: reveal the entry PIN of a table's active session on demand, so
+   * the waiter can re-read/print it for a guest who forgot it.
+   * The PIN stays out of every general session payload.
+   */
+  async getActiveSessionPin(tenantContext, tableId) {
+    const table = await prisma.restaurantTable.findFirst({
+      where: {
+        id: tableId,
+        restaurantId: tenantContext.restaurantId,
+        deletedAt: null,
+      },
+      select: { id: true, branchId: true, label: true },
+    });
+    if (!table) throw new NotFoundError("Table not found");
+
+    const session = await tableSessionRepository.findActiveSessionByTable(
+      tenantContext.restaurantId,
+      table.id
+    );
+    if (!session) {
+      throw new BusinessRuleError("مفيش جلسة مفتوحة على الطاولة دي دلوقتي.");
+    }
+    if (!session.pin) {
+      throw new BusinessRuleError("مفيش رمز دخول محفوظ للجلسة دي. اعمل توليد رمز جديد.");
+    }
+
+    return {
+      sessionId: session.id,
+      tableId: table.id,
+      tableLabel: table.label,
+      pin: session.pin,
+      failedAttempts: session.failedAttempts || 0,
+      lockoutUntil: session.lockoutUntil || null,
+      isLocked: Boolean(session.lockoutUntil && new Date(session.lockoutUntil).getTime() > Date.now()),
+      attemptsPerTier: PIN_ATTEMPTS_PER_TIER,
+    };
+  }
+
+  /**
+   * Staff-only: clear the wrong-PIN counter and any active lockout for the table's
+   * active session, so guests can start a fresh block of attempts.
+   */
+  async resetPinLockout(tenantContext, tableId) {
+    const table = await prisma.restaurantTable.findFirst({
+      where: {
+        id: tableId,
+        restaurantId: tenantContext.restaurantId,
+        deletedAt: null,
+      },
+      select: { id: true, branchId: true, label: true },
+    });
+    if (!table) throw new NotFoundError("Table not found");
+
+    const session = await tableSessionRepository.findActiveSessionByTable(
+      tenantContext.restaurantId,
+      table.id
+    );
+    if (!session) {
+      throw new BusinessRuleError("مفيش جلسة مفتوحة على الطاولة دي دلوقتي.");
+    }
+
+    await tableSessionRepository.lockout(session.id, tenantContext.restaurantId, 0, 0, null);
+
+    emitEvent(DomainEvent.TABLE_SESSION_UPDATED, {
+      restaurantId: tenantContext.restaurantId,
+      branchId: table.branchId,
+      sessionId: session.id,
+      tableId: table.id,
+      action: "pin_lockout_reset",
+    });
+
+    return {
+      sessionId: session.id,
+      tableId: table.id,
+      tableLabel: table.label,
+      failedAttempts: 0,
+      lockoutUntil: null,
+      isLocked: false,
+    };
+  }
+
   async listBranchSessions(tenantContext, branchId) {
     const sessions = await tableSessionRepository.findSessionsByBranch(tenantContext.restaurantId, branchId);
     return sessions.map((s) => {
@@ -794,6 +1104,8 @@ export class TableSessionService {
         tableLabel: s.table?.label || null,
         tableNumber: s.table?.label || null,
         qrToken: s.table?.qrToken || null,
+        createdAt: s.createdAt,
+        openedAt: s.createdAt,
         members: s.members || [],
         itemCount: currentItems.length,
         total: confirmedOrdersTotal,
@@ -802,6 +1114,10 @@ export class TableSessionService {
         draftTotal,
         grandTotal: confirmedOrdersTotal,
         confirmedOrderId: s.confirmedOrderId,
+        failedAttempts: s.failedAttempts || 0,
+        lockoutUntil: s.lockoutUntil || null,
+        isLocked: Boolean(s.lockoutUntil && new Date(s.lockoutUntil).getTime() > Date.now()),
+        attemptsPerTier: PIN_ATTEMPTS_PER_TIER,
         orders: ordersProjection,
         waiterCalls: (s.waiterCalls || []).map((c) => this.waiterCallProjection(c)),
         activeWaiterCall: this.waiterCallProjection((s.waiterCalls || [])[0] || null),

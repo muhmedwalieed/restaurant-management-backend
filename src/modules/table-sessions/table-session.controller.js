@@ -35,6 +35,16 @@ export class TableSessionController {
     return sendSuccess(res, { data: result });
   });
 
+  getActiveSessionPin = asyncHandler(async (req, res) => {
+    const result = await tableSessionService.getActiveSessionPin(req.tenantContext, req.params.tableId);
+    return sendSuccess(res, { data: result });
+  });
+
+  resetPinLockout = asyncHandler(async (req, res) => {
+    const result = await tableSessionService.resetPinLockout(req.tenantContext, req.params.tableId);
+    return sendSuccess(res, { message: "تم إعادة تعيين محاولات رمز الدخول", data: result });
+  });
+
   addItem = asyncHandler(async (req, res) => {
     const body = req.body ?? {};
     const { restaurantId, sessionId, memberId } = req.memberContext;
@@ -147,6 +157,12 @@ export class TableSessionController {
   getActiveSessionForTable = asyncHandler(async (req, res) => {
     const result = await tableSessionService.getActiveSessionForTable(req.tenantContext, req.params.tableId);
     return sendSuccess(res, { data: result });
+  });
+
+  releaseTable = asyncHandler(async (req, res) => {
+    const { tableId } = req.params;
+    const result = await tableSessionService.releaseTable(req.tenantContext, tableId, req.body ?? {});
+    return sendSuccess(res, { message: "Table released", data: result });
   });
 }
 
