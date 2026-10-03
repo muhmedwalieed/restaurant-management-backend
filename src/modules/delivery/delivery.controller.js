@@ -3,9 +3,10 @@ import deliveryService from "./delivery.service.js";
 export class DeliveryController {
   async getDeliveryOrders(req, res, next) {
     try {
+      const tenantContext = req.tenantContext || req.tenant;
       const { branchId } = req.params;
       const { status } = req.query;
-      const result = await deliveryService.getDeliveryOrders(req.tenant, branchId, { status });
+      const result = await deliveryService.getDeliveryOrders(tenantContext, branchId, { status });
       res.json({ success: true, data: result });
     } catch (err) {
       next(err);
@@ -14,8 +15,9 @@ export class DeliveryController {
 
   async pickupOrder(req, res, next) {
     try {
+      const tenantContext = req.tenantContext || req.tenant;
       const { branchId, orderId } = req.params;
-      const result = await deliveryService.pickupOrder(req.tenant, branchId, orderId, req.body);
+      const result = await deliveryService.pickupOrder(tenantContext, branchId, orderId, req.body);
       res.json({ success: true, data: result });
     } catch (err) {
       next(err);
@@ -24,8 +26,9 @@ export class DeliveryController {
 
   async deliverOrder(req, res, next) {
     try {
+      const tenantContext = req.tenantContext || req.tenant;
       const { branchId, orderId } = req.params;
-      const result = await deliveryService.deliverOrder(req.tenant, branchId, orderId, req.body);
+      const result = await deliveryService.deliverOrder(tenantContext, branchId, orderId, req.body);
       res.json({ success: true, data: result });
     } catch (err) {
       next(err);
@@ -34,8 +37,9 @@ export class DeliveryController {
 
   async failDelivery(req, res, next) {
     try {
+      const tenantContext = req.tenantContext || req.tenant;
       const { branchId, orderId } = req.params;
-      const result = await deliveryService.failDelivery(req.tenant, branchId, orderId, req.body);
+      const result = await deliveryService.failDelivery(tenantContext, branchId, orderId, req.body);
       res.json({ success: true, data: result });
     } catch (err) {
       next(err);
@@ -44,9 +48,10 @@ export class DeliveryController {
 
   async getDriverWallet(req, res, next) {
     try {
+      const tenantContext = req.tenantContext || req.tenant;
       const { branchId } = req.params;
       const { driverId } = req.query;
-      const result = await deliveryService.getDriverWallet(req.tenant, branchId, driverId);
+      const result = await deliveryService.getDriverWallet(tenantContext, branchId, driverId);
       res.json({ success: true, data: result });
     } catch (err) {
       next(err);
@@ -55,8 +60,9 @@ export class DeliveryController {
 
   async settleDriverCash(req, res, next) {
     try {
+      const tenantContext = req.tenantContext || req.tenant;
       const { branchId } = req.params;
-      const result = await deliveryService.settleDriverCash(req.tenant, branchId, req.body);
+      const result = await deliveryService.settleDriverCash(tenantContext, branchId, req.body);
       res.json({ success: true, data: result });
     } catch (err) {
       next(err);
@@ -65,8 +71,9 @@ export class DeliveryController {
 
   async getBranchDrivers(req, res, next) {
     try {
+      const tenantContext = req.tenantContext || req.tenant;
       const { branchId } = req.params;
-      const result = await deliveryService.getBranchDrivers(req.tenant, branchId);
+      const result = await deliveryService.getBranchDrivers(tenantContext, branchId);
       res.json({ success: true, data: result });
     } catch (err) {
       next(err);
