@@ -69,6 +69,11 @@ export const MODULE_METADATA = {
     title: "Restaurant Settings",
     titleAr: "إعدادات المطعم الرئيسية",
   },
+  delivery: {
+    key: "delivery",
+    title: "Delivery & Drivers",
+    titleAr: "إدارة التوصيل ومندوبي التوصيل",
+  },
 };
 
 export const GLOBAL_PERMISSIONS = [
@@ -418,6 +423,31 @@ export const GLOBAL_PERMISSIONS = [
     description: "Manage restaurant profile and settings",
     descriptionAr: "تعديل اسم المطعم وبيانات الاتصال والعملة والهوية البصرية والقوالب",
     module: "restaurants",
+  },
+  // --- Delivery & Drivers ---
+  {
+    key: "delivery.view",
+    name: "View Delivery Orders",
+    nameAr: "عرض طلبات التوصيل ومحفظة العهدة",
+    description: "View delivery orders and driver cash wallet",
+    descriptionAr: "عرض قائمة طلبات التوصيل المسندة ومتابعة محفظة النقدية للطيار",
+    module: "delivery",
+  },
+  {
+    key: "delivery.update_status",
+    name: "Update Delivery Status",
+    nameAr: "تحديث حالة التوصيل (استلام / تسليم)",
+    description: "Update order delivery progress (pickup, deliver, fail)",
+    descriptionAr: "استلام الطلب من المطعم وتأكيد تسليمه للعميل أو تسجيل تعذر التسليم",
+    module: "delivery",
+  },
+  {
+    key: "delivery.settle",
+    name: "Settle Driver Cash",
+    nameAr: "تصفية واستلام عهدة التوصيل (COD)",
+    description: "Settle cash collected by delivery drivers at cashier",
+    descriptionAr: "تصفية المبالغ النقدية المحصلة مع الطيارين واستلامها في درج الكاشير",
+    module: "delivery",
   },
 ];
 
