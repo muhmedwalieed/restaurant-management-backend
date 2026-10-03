@@ -40,6 +40,16 @@ enum Weekday {
   SUN
 }
 
+enum ShiftStatus {
+  OPEN
+  CLOSED
+}
+
+enum CashMovementType {
+  CASH_IN
+  CASH_OUT
+}
+
 enum MenuStatus {
   ACTIVE
   INACTIVE
@@ -149,6 +159,7 @@ model Restaurant {
   notifications          Notification[]
   notificationPreferences NotificationPreference[]
   auditLogs              AuditLog[]
+  shifts                 Shift[]
 
   @@index([status])
   @@map("restaurants")
@@ -183,6 +194,7 @@ model Branch {
   coupons        Coupon[]
   notifications  Notification[]
   auditLogs      AuditLog[]
+  shifts         Shift[]
 
   @@unique([restaurantId, code])
   @@index([restaurantId])
@@ -457,12 +469,14 @@ model Order {
   refundedAt     DateTime?     @map("refunded_at")
   refundReason   String?       @map("refund_reason")
   refundedByEmployeeId String? @map("refunded_by_employee_id")
+  shiftId        String?       @map("shift_id")
   version        Int           @default(1)
   createdAt      DateTime      @default(now()) @map("created_at")
   updatedAt      DateTime      @updatedAt @map("updated_at")
 
   restaurant    Restaurant           @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
   branch        Branch               @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  shift         Shift?               @relation(fields: [shiftId], references: [id], onDelete: SetNull)
   table         RestaurantTable?     @relation(fields: [tableId], references: [id], onDelete: SetNull)
   customer      Customer?            @relation(fields: [customerId], references: [id], onDelete: SetNull)
   coupon        Coupon?              @relation(fields: [couponId], references: [id], onDelete: SetNull)
@@ -475,6 +489,7 @@ model Order {
   @@index([restaurantId])
   @@index([branchId])
   @@index([restaurantId, branchId, status])
+  @@index([restaurantId, shiftId])
   @@index([branchId, createdAt])
   @@index([restaurantId, createdAt])
   @@index([customerId])
@@ -492,14 +507,17 @@ model OrderPayment {
   idempotencyKey String?          @map("idempotency_key")
   paidAt         DateTime         @default(now()) @map("paid_at")
   employeeId     String?          @map("employee_id")
+  shiftId        String?          @map("shift_id")
   createdAt      DateTime         @default(now()) @map("created_at")
 
   restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
   order      Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  shift      Shift?     @relation(fields: [shiftId], references: [id], onDelete: SetNull)
 
   @@unique([restaurantId, idempotencyKey])
   @@index([restaurantId])
   @@index([orderId])
+  @@index([restaurantId, shiftId])
   @@map("order_payments")
 }
 
@@ -634,6 +652,7 @@ model Employee {
   notifications              Notification[]      @relation("notification_target")
   notificationPreference NotificationPreference? @relation("notification_pref")
   auditLogs      AuditLog[] @relation("audit_actor")
+  shifts         Shift[]    @relation("EmployeeShifts")
 
   @@unique([restaurantId, email])
   @@index([restaurantId])
@@ -1123,3 +1142,71 @@ model AuditLog {
   @@index([restaurantId, createdAt])
   @@map("audit_logs")
 }
+
+model Shift {
+  id                   String      @id @default(cuid())
+  restaurantId         String      @map("restaurant_id")
+  branchId             String      @map("branch_id")
+  employeeId           String      @map("employee_id")
+  shiftNumber          Int         @map("shift_number")
+  status               ShiftStatus @default(OPEN)
+  
+  openedAt             DateTime    @default(now()) @map("opened_at")
+  closedAt             DateTime?   @map("closed_at")
+  
+  startingCash         Decimal     @default(0.00) @map("starting_cash") @db.Decimal(10, 2)
+  expectedCash         Decimal     @default(0.00) @map("expected_cash") @db.Decimal(10, 2)
+  actualCash           Decimal?    @map("actual_cash") @db.Decimal(10, 2)
+  cashDifference       Decimal?    @map("cash_difference") @db.Decimal(10, 2)
+  
+  totalSales           Decimal     @default(0.00) @map("total_sales") @db.Decimal(10, 2)
+  cashSales            Decimal     @default(0.00) @map("cash_sales") @db.Decimal(10, 2)
+  cardSales            Decimal     @default(0.00) @map("card_sales") @db.Decimal(10, 2)
+  instaPaySales        Decimal     @default(0.00) @map("instapay_sales") @db.Decimal(10, 2)
+  walletSales          Decimal     @default(0.00) @map("wallet_sales") @db.Decimal(10, 2)
+  
+  driverSettlementCash Decimal     @default(0.00) @map("driver_settlement_cash") @db.Decimal(10, 2)
+  cashIn               Decimal     @default(0.00) @map("cash_in") @db.Decimal(10, 2)
+  cashOut              Decimal     @default(0.00) @map("cash_out") @db.Decimal(10, 2)
+  
+  ordersCount          Int         @default(0) @map("orders_count")
+  refundsCount         Int         @default(0) @map("refunds_count")
+  totalRefunds         Decimal     @default(0.00) @map("total_refunds") @db.Decimal(10, 2)
+  totalDiscounts       Decimal     @default(0.00) @map("total_discounts") @db.Decimal(10, 2)
+  
+  openNotes            String?     @map("open_notes")
+  closeNotes           String?     @map("close_notes")
+  openedByEmployeeId   String      @map("opened_by_employee_id")
+  closedByEmployeeId   String?     @map("closed_by_employee_id")
+  
+  restaurant           Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  branch               Branch      @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  employee             Employee    @relation("EmployeeShifts", fields: [employeeId], references: [id])
+  orders               Order[]
+  payments             OrderPayment[]
+  cashMovements        ShiftCashMovement[]
+
+  createdAt            DateTime    @default(now()) @map("created_at")
+  updatedAt            DateTime    @updatedAt @map("updated_at")
+
+  @@index([restaurantId, branchId, status])
+  @@index([restaurantId, employeeId, status])
+  @@index([restaurantId, branchId, openedAt])
+  @@map("shifts")
+}
+
+model ShiftCashMovement {
+  id           String           @id @default(cuid())
+  restaurantId String           @map("restaurant_id")
+  shiftId      String           @map("shift_id")
+  type         CashMovementType
+  amount       Decimal          @db.Decimal(10, 2)
+  reason       String
+  employeeId   String           @map("employee_id")
+  createdAt    DateTime         @default(now()) @map("created_at")
+
+  shift        Shift            @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+
+  @@index([restaurantId, shiftId])
+  @@map("shift_cash_movements")
+}

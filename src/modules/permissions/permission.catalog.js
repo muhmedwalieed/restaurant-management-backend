@@ -449,6 +449,39 @@ export const GLOBAL_PERMISSIONS = [
     descriptionAr: "تصفية المبالغ النقدية المحصلة مع الطيارين واستلامها في درج الكاشير",
     module: "delivery",
   },
+  // --- Shifts & Cash Drawer Management ---
+  {
+    key: "shifts.view",
+    name: "View Shifts & Reports",
+    nameAr: "عرض الورديات والتقارير المالية (X/Z Report)",
+    description: "View active shift status, X-Report, and past shift archives",
+    descriptionAr: "استعراض حالة الوردية المفتوحة والتقرير اللحظي وسجل الورديات السابقة",
+    module: "shifts",
+  },
+  {
+    key: "shifts.open",
+    name: "Open Shift",
+    nameAr: "فتح وردية عمل جديدة",
+    description: "Start a new shift and register opening cash float",
+    descriptionAr: "بدء وردية جديدة وتحديد رصيد العهدة الافتتاحي للدرج",
+    module: "shifts",
+  },
+  {
+    key: "shifts.close",
+    name: "Close Shift (Z-Report)",
+    nameAr: "إغلاق الوردية وإصدار تقرير Z-Report",
+    description: "Close active shift, count drawer cash, and generate Z-Report",
+    descriptionAr: "إنهاء الوردية وتدقيق النقدية الفعلية وحساب الفارق وطباعة تقرير الإغلاق",
+    module: "shifts",
+  },
+  {
+    key: "shifts.manage_cash",
+    name: "Manage Drawer Cash Movements",
+    nameAr: "تسجيل حركات النقدية (إيداع / سحب مصروفات)",
+    description: "Record Pay-In and Pay-Out cash movements during shift",
+    descriptionAr: "إدخال مبالغ إضافية للدرج أو سحب نقدية للمصروفات النثرية أثناء الوردية",
+    module: "shifts",
+  },
 ];
 
 export default GLOBAL_PERMISSIONS;

@@ -242,12 +242,27 @@ export class OrderRepository extends BaseRepository {
     }
     const total = Math.max(0, subtotal - discountAmount);
 
+    let activeShiftId = orderPayload.shiftId || null;
+    if (!activeShiftId && tenantContext.employeeId) {
+      const activeShift = await tx.shift.findFirst({
+        where: {
+          restaurantId,
+          branchId,
+          employeeId: tenantContext.employeeId,
+          status: "OPEN",
+        },
+        select: { id: true },
+      });
+      activeShiftId = activeShift?.id || null;
+    }
+
     const order = await tx.order.create({
       data: {
         orderNumber,
         orderDate: dateKey,
         restaurantId,
         branchId,
+        shiftId: activeShiftId,
         source: orderPayload.source || "CASHIER",
         type: orderPayload.type || "DINE_IN",
         status: orderPayload.status || "PENDING",
@@ -266,6 +281,21 @@ export class OrderRepository extends BaseRepository {
         version: 1,
       },
     });
+
+    if (orderPayload.paymentStatus === "PAID" && total > 0) {
+      await tx.orderPayment.create({
+        data: {
+          restaurantId,
+          orderId: order.id,
+          type: "PAYMENT",
+          amount: total,
+          paymentMethod: orderPayload.paymentMethod || "CASH",
+          status: "PAID",
+          employeeId: tenantContext.employeeId || null,
+          shiftId: activeShiftId,
+        },
+      });
+    }
 
     const itemsToCreate = itemsPayload.map((item) => ({
       restaurantId,
@@ -612,6 +642,20 @@ export class OrderRepository extends BaseRepository {
       const isFullPayment = newAmountPaid >= total - 0.001;
       const newPaymentStatus = isFullPayment ? "PAID" : "PARTIAL";
 
+      let activeShiftId = payload.shiftId || null;
+      if (!activeShiftId && tenantContext.employeeId) {
+        const activeShift = await tx.shift.findFirst({
+          where: {
+            restaurantId,
+            branchId,
+            employeeId: tenantContext.employeeId,
+            status: "OPEN",
+          },
+          select: { id: true },
+        });
+        activeShiftId = activeShift?.id || null;
+      }
+
       // 3. Create OrderPayment record
       await tx.orderPayment.create({
         data: {
@@ -623,6 +667,7 @@ export class OrderRepository extends BaseRepository {
           status: isFullPayment ? "PAID" : "PARTIAL",
           idempotencyKey,
           employeeId: tenantContext.employeeId || null,
+          shiftId: activeShiftId,
         },
       });
 
@@ -642,6 +687,7 @@ export class OrderRepository extends BaseRepository {
           paymentMethod: payload.paymentMethod,
           paidAt: new Date(),
           paidByEmployeeId: tenantContext.employeeId || null,
+          shiftId: activeShiftId || orderBefore.shiftId || null,
           version: currentVersion + 1,
           updatedAt: new Date(),
         },
@@ -717,7 +763,19 @@ export class OrderRepository extends BaseRepository {
         throw new BusinessRuleError("Only paid or partially paid orders can be refunded");
       }
 
-      const refundAmount = Number(orderBefore.amountPaid || orderBefore.total);
+      let activeShiftId = payload.shiftId || null;
+      if (!activeShiftId && tenantContext.employeeId) {
+        const activeShift = await tx.shift.findFirst({
+          where: {
+            restaurantId,
+            branchId,
+            employeeId: tenantContext.employeeId,
+            status: "OPEN",
+          },
+          select: { id: true },
+        });
+        activeShiftId = activeShift?.id || null;
+      }
 
       // Create REFUND OrderPayment record
       await tx.orderPayment.create({
@@ -729,6 +787,7 @@ export class OrderRepository extends BaseRepository {
           paymentMethod: orderBefore.paymentMethod || "CASH",
           status: "REFUNDED",
           employeeId: tenantContext.employeeId || null,
+          shiftId: activeShiftId,
         },
       });
 
