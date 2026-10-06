@@ -19,6 +19,13 @@ export const BRANCH_SUMMARY_SELECT = Object.freeze({
   code: true,
   isMain: true,
   status: true,
+  settings: {
+    select: {
+      currency: true,
+      timezone: true,
+      dailyOrderStartNumber: true,
+    },
+  },
 });
 
 export function buildDateRangeFilter(from, to) {

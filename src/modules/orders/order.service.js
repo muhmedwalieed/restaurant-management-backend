@@ -55,7 +55,7 @@ export class OrderService {
     return paginateResponse(items, total, page, limit);
   }
 
-  async listAllOrders(tenantContext, { page = 1, limit = 20, status, type, source, branchId, tableId } = {}) {
+  async listAllOrders(tenantContext, { page = 1, limit = 20, status, type, source, branchId, tableId, date, q } = {}) {
     const { items, total } = await orderRepository.findOrdersByTenant(tenantContext, {
       page,
       limit,
@@ -64,6 +64,8 @@ export class OrderService {
       source,
       branchId,
       tableId,
+      date,
+      q,
     });
     return paginateResponse(items, total, page, limit);
   }
@@ -133,6 +135,16 @@ export class OrderService {
       });
       if (customer) {
         payload.customerId = customer.id;
+        if (payload.customerName && payload.customerName.trim() && payload.customerName.trim() !== customer.name) {
+          await prisma.customer.update({
+            where: { id: customer.id },
+            data: {
+              name: payload.customerName.trim(),
+              firstName: payload.customerName.trim().split(/\s+/)[0],
+              lastName: payload.customerName.trim().split(/\s+/).slice(1).join(" ") || null,
+            },
+          });
+        }
       }
     } else if (payload.customerId) {
       const customer = await prisma.customer.findFirst({
@@ -144,6 +156,46 @@ export class OrderService {
       });
       if (!customer) {
         throw new NotFoundError("Customer not found or access denied");
+      }
+      if (payload.customerName && payload.customerName.trim() && payload.customerName.trim() !== customer.name) {
+        await prisma.customer.update({
+          where: { id: customer.id },
+          data: {
+            name: payload.customerName.trim(),
+            firstName: payload.customerName.trim().split(/\s+/)[0],
+            lastName: payload.customerName.trim().split(/\s+/).slice(1).join(" ") || null,
+          },
+        });
+      }
+    }
+
+    if (payload.type === "DELIVERY" && payload.address && payload.customerId) {
+      try {
+        const addrClean = payload.address.trim();
+        const existingAddr = await prisma.customerAddress.findFirst({
+          where: {
+            customerId: payload.customerId,
+            restaurantId,
+            deletedAt: null,
+            street: addrClean,
+          },
+        });
+        if (!existingAddr) {
+          const count = await prisma.customerAddress.count({
+            where: { customerId: payload.customerId, restaurantId, deletedAt: null },
+          });
+          await prisma.customerAddress.create({
+            data: {
+              restaurantId,
+              customerId: payload.customerId,
+              label: count === 0 ? "المنزل" : `عنوان ${count + 1}`,
+              street: addrClean,
+              isDefault: count === 0,
+            },
+          });
+        }
+      } catch (err) {
+        // Non-blocking address save
       }
     }
 
@@ -296,10 +348,15 @@ export class OrderService {
       throw new BusinessRuleError("صلاحيات الويتر مقتصرة على طلبات الطاولات داخل الصالة فقط");
     }
 
+    const isStaffOrder =
+      Boolean(tenantContext?.employeeId) ||
+      ["CASHIER", "PHONE", "POS"].includes(payload.source) ||
+      isWaiter;
+
     const orderPayload = {
       source: payload.source || "CASHIER",
       type: payload.type || "DINE_IN",
-      status: payload.status || (isWaiter ? "CONFIRMED" : "PENDING"),
+      status: payload.status || "PENDING",
       tableId: payload.tableId || null,
       customerId: payload.customerId || null,
       couponId: payload.couponId || null,
@@ -357,12 +414,40 @@ export class OrderService {
 
     const order = await this.getOrderById(tenantContext, branchId, orderId);
 
+    if (tenantContext?.employeeId && tenantContext?.restaurantId) {
+      const { roleName, isSystem } = await getEmployeePermissions(
+        tenantContext.employeeId,
+        tenantContext.restaurantId
+      );
+      const isCallCenter =
+        roleName === "call_center" ||
+        roleName === "كول سنتر" ||
+        roleName?.toLowerCase() === "call_center" ||
+        roleName?.toLowerCase() === "callcenter";
+
+      if (isCallCenter && !(isSystem && roleName === "owner")) {
+        throw new AuthorizationError("غير مسموح لموظف الكول سنتر بتغيير حالات الطلب التشغيلية، فقط إلغاء الطلب متاح");
+      }
+    }
+
     const isWaiter = tenantContext?.role === "ويتر" || tenantContext?.role?.toLowerCase() === "waiter";
     if (isWaiter && (order.type !== "DINE_IN" || !order.tableId)) {
       throw new BusinessRuleError("صلاحيات الويتر مقتصرة على طلبات الطاولات داخل الصالة فقط");
     }
 
     validateStateTransition(order.status, newStatus, order.type);
+
+    // Business Guard: Cannot deliver or complete order without full payment settled (DINE_IN can be served/delivered to table prior to bill settlement at departure)
+    if ((newStatus === "DELIVERED" && order.type !== "DINE_IN") || newStatus === "COMPLETED") {
+      const totalAmt = Number(order.totalAmount ?? order.total ?? 0);
+      const paidAmt = Number(order.amountPaid ?? order.paidAmount ?? 0);
+      const remainingAmt = Math.max(0, totalAmt - paidAmt);
+      const isPaid = order.paymentStatus === "PAID" || remainingAmt <= 0;
+
+      if (!isPaid) {
+        throw new BusinessRuleError("لا يمكن إنهاء وتسليم الطلب قبل تحصيل المبلغ بالكامل. يرجى تسجيل الدفعة أولاً.");
+      }
+    }
 
     await orderRepository.updateOrderStatusWithHistoryTransaction(
       tenantContext,
@@ -398,7 +483,7 @@ export class OrderService {
     return this.getOrderById(tenantContext, branchId, orderId);
   }
 
-  async cancelOrder(tenantContext, branchId, orderId, { expectedVersion, reason }) {
+  async cancelOrder(tenantContext, branchId, orderId, { expectedVersion, reason, refund, refundMethod, refundAmount }) {
     if (!reason || reason.trim().length === 0) {
       throw new BusinessRuleError("Cancellation reason is required");
     }
@@ -414,6 +499,15 @@ export class OrderService {
       throw new BusinessRuleError(`Order is in terminal state '${order.status}' and cannot be cancelled`);
     }
 
+    const isPaidOrPartial = Number(order.amountPaid) > 0 || order.paymentStatus === "PAID" || order.paymentStatus === "PARTIAL";
+    const shouldRefund = refund === true && isPaidOrPartial;
+
+    const refundOptions = shouldRefund ? {
+      refund: true,
+      amount: refundAmount !== undefined ? Number(refundAmount) : Number(order.amountPaid || order.total),
+      refundMethod: refundMethod || order.paymentMethod || "CASH",
+    } : null;
+
     await orderRepository.updateOrderStatusWithHistoryTransaction(
       tenantContext,
       branchId,
@@ -422,7 +516,8 @@ export class OrderService {
       order.status,
       "CANCELLED",
       tenantContext.employeeId || null,
-      reason
+      reason,
+      refundOptions
     );
 
     emitEvent(DomainEvent.ORDER_STATUS_CHANGED, {
@@ -434,6 +529,7 @@ export class OrderService {
       previousStatus: order.status,
       tableId: order.tableId || null,
       actorEmployeeId: tenantContext.employeeId || null,
+      refunded: shouldRefund,
     });
 
     if (order.tableId) {
@@ -665,8 +761,13 @@ export class OrderService {
   async processOrderRefund(tenantContext, branchId, orderId, payload) {
     const order = await this.getOrderById(tenantContext, branchId, orderId);
 
-    if (order.paymentStatus !== "PAID" && order.paymentStatus !== "PARTIAL") {
+    const isPaidOrPartial = order.paymentStatus === "PAID" || order.paymentStatus === "PARTIAL" || Number(order.amountPaid) > 0;
+    if (!isPaidOrPartial) {
       throw new BusinessRuleError("Only paid or partially paid orders can be refunded");
+    }
+
+    if (order.paymentStatus === "REFUNDED") {
+      throw new BusinessRuleError("This order has already been refunded");
     }
 
     await orderRepository.updateOrderRefundWithHistoryTransaction(
@@ -676,6 +777,17 @@ export class OrderService {
       payload.expectedVersion,
       payload
     );
+
+    emitEvent(DomainEvent.ORDER_STATUS_CHANGED, {
+      restaurantId: tenantContext.restaurantId,
+      branchId,
+      orderId,
+      orderNumber: order.orderNumber,
+      status: order.status,
+      paymentStatus: "REFUNDED",
+      actorEmployeeId: tenantContext.employeeId || null,
+      refunded: true,
+    });
 
     return this.getOrderById(tenantContext, branchId, orderId);
   }

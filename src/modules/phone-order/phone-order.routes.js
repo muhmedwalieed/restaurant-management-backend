@@ -11,11 +11,16 @@ const router = Router();
 
 router.use(authenticate, requireTenantContext);
 
-router.post("/lookup", authorize("orders.create"), validate(phoneLookupSchema), (req, res, next) => {
-  phoneOrderController.lookup(req, res, next);
-});
+router.post(
+  "/lookup",
+  authorize("callcenter.view", "callcenter.manage", "orders.create", "orders.view", "pos.view", "customers.view"),
+  validate(phoneLookupSchema),
+  (req, res, next) => {
+    phoneOrderController.lookup(req, res, next);
+  }
+);
 
-router.post("/branches/:branchId/orders", requireBranchAccess(), authorize("orders.create"), validate(createPhoneOrderSchema), (req, res, next) => {
+router.post("/branches/:branchId/orders", requireBranchAccess(), authorize("callcenter.manage"), validate(createPhoneOrderSchema), (req, res, next) => {
   phoneOrderController.createPhoneOrder(req, res, next);
 });
 

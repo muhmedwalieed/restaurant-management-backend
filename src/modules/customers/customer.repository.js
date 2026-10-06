@@ -78,8 +78,11 @@ export class CustomerRepository extends BaseRepository {
     return prisma.customer.findFirst({
       where: {
         restaurantId: tenantContext.restaurantId,
-        phone,
         deletedAt: null,
+        OR: [
+          { phone },
+          { phones: { some: { phone, deletedAt: null } } },
+        ],
       },
     });
   }

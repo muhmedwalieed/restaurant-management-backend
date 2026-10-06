@@ -15,7 +15,18 @@ export class PhoneOrderRepository extends BaseRepository {
         status: true,
         type: true,
         total: true,
+        address: true,
         createdAt: true,
+        items: {
+          select: {
+            id: true,
+            productName: true,
+            unitPrice: true,
+            quantity: true,
+            subtotal: true,
+            notes: true,
+          },
+        },
       },
     });
   }
@@ -24,7 +35,8 @@ export class PhoneOrderRepository extends BaseRepository {
     this.assertTenant(tenantContext);
 
     return prisma.customerAddress.findFirst({
-      where: { restaurantId: tenantContext.restaurantId, customerId, isDefault: true, deletedAt: null },
+      where: { restaurantId: tenantContext.restaurantId, customerId, deletedAt: null },
+      orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }],
     });
   }
 }

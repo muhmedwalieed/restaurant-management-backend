@@ -12,13 +12,52 @@ export class PhoneOrderService {
     if (!customer) {
       return {
         customer: null,
+        addresses: [],
         defaultAddress: null,
         recentOrders: [],
       };
     }
 
     const orders = await phoneOrderRepository.findRecentOrdersByCustomer(tenantContext, customer.id, 5);
-    const defaultAddress = await phoneOrderRepository.findDefaultAddress(tenantContext, customer.id);
+    const savedAddresses = (await customerRepository.findAddresses(tenantContext, customer.id)) || [];
+    const defaultAddress = savedAddresses.find((a) => a.isDefault) || savedAddresses[0] || null;
+
+    const labelMap = {
+      HOME: "المنزل",
+      WORK: "العمل",
+      OTHER: "أخرى",
+    };
+
+    const formattedSaved = savedAddresses.map((a, idx) => ({
+      id: a.id,
+      label: labelMap[a.label] || a.label || (idx === 0 ? "المنزل" : `عنوان ${idx + 1}`),
+      street: a.street,
+      city: a.city,
+      state: a.state,
+      isDefault: a.isDefault,
+      formatted: [a.street, a.city, a.state].filter(Boolean).join("، ") || a.street || "",
+    }));
+
+    const savedTexts = new Set(formattedSaved.map((a) => a.formatted.trim().toLowerCase()));
+    const orderAddresses = [];
+    for (const ord of orders) {
+      if (ord.address && ord.address.trim()) {
+        const clean = ord.address.trim();
+        if (!savedTexts.has(clean.toLowerCase())) {
+          savedTexts.add(clean.toLowerCase());
+          orderAddresses.push({
+            id: `ord_${ord.id}`,
+            label: null,
+            street: clean,
+            isDefault: false,
+            formatted: clean,
+            isFromRecentOrder: true,
+          });
+        }
+      }
+    }
+
+    const allAddresses = [...formattedSaved, ...orderAddresses];
 
     return {
       customer: {
@@ -29,6 +68,10 @@ export class PhoneOrderService {
         phone: customer.phone,
         notes: customer.notes,
       },
+      addresses: allAddresses,
+      address: defaultAddress
+        ? [defaultAddress.street, defaultAddress.city, defaultAddress.state].filter(Boolean).join("، ") || defaultAddress.street
+        : orders[0]?.address || (allAddresses[0]?.formatted || null),
       defaultAddress: defaultAddress
         ? {
             id: defaultAddress.id,

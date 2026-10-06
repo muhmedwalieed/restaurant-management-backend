@@ -95,15 +95,18 @@ export class MultiBranchService {
       if (!(error instanceof AuthorizationError)) throw error;
     }
 
+    let rawBranches;
     if (canManageAll) {
-      return multiBranchRepository.findAllBranches(tenantContext);
+      rawBranches = await multiBranchRepository.findAllBranches(tenantContext);
+    } else {
+      rawBranches = await multiBranchRepository.findEmployeeBranches(tenantContext, employeeId);
     }
 
-    const branches = await multiBranchRepository.findEmployeeBranches(tenantContext, employeeId);
-    if (!branches) {
+    if (!rawBranches) {
       throw new NotFoundError("Employee not found or access denied");
     }
-    return branches;
+
+    return rawBranches;
   }
 
   async verifyBranch(tenantContext, branchId) {

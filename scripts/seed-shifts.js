@@ -35,7 +35,9 @@ async function main() {
     });
 
     for (const role of roles) {
+      const isCashierRole = ["cashier", "Cashier", "كاشير"].includes(role.name);
       for (const p of shiftPerms) {
+        if (isCashierRole && p.key === "shifts.view") continue;
         const permDef = await prisma.permission.findUnique({ where: { key: p.key } });
         const existing = await prisma.rolePermission.findFirst({
           where: {

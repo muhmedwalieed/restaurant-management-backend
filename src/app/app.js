@@ -67,7 +67,18 @@ app.use(
   cors({
     origin: (origin, callback) => callback(null, isAllowedOrigin(origin)),
     credentials: true,
-    allowedHeaders: ["Content-Type", "Authorization", "X-Branch-Id", "X-Restaurant-Slug"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Branch-Id",
+      "X-Restaurant-Slug",
+      "Idempotency-Key",
+      "idempotency-key",
+      "X-Request-Id",
+      "x-request-id",
+      "X-Correlation-Id",
+      "x-correlation-id",
+    ],
   })
 );
 

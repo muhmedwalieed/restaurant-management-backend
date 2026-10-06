@@ -482,6 +482,23 @@ export const GLOBAL_PERMISSIONS = [
     descriptionAr: "إدخال مبالغ إضافية للدرج أو سحب نقدية للمصروفات النثرية أثناء الوردية",
     module: "shifts",
   },
+  // --- Call Center / Phone Orders ---
+  {
+    key: "callcenter.view",
+    name: "View Call Center Portal",
+    nameAr: "عرض واجهة استقبال طلبات الكول سنتر",
+    description: "Access phone and online orders call center portal",
+    descriptionAr: "الوصول لواجهة الكول سنتر واستعراض ومتابعة طلبات التليفون والأونلاين",
+    module: "callcenter",
+  },
+  {
+    key: "callcenter.manage",
+    name: "Manage Call Center Orders",
+    nameAr: "إنشاء وإدارة طلبات الكول سنتر",
+    description: "Create and update phone and online orders in call center",
+    descriptionAr: "تسجيل طلبات جديدة لعملاء الهاتف والأونلاين وتحديث حالاتها",
+    module: "callcenter",
+  },
 ];
 
 export default GLOBAL_PERMISSIONS;

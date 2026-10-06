@@ -121,11 +121,11 @@ export class ShiftRepository extends BaseRepository {
       where: {
         restaurantId: tenantContext.restaurantId,
         shiftId,
-        status: "PAID",
+        status: { in: ["PAID", "REFUNDED", "COMPLETED"] },
       },
       include: {
         order: {
-          select: { id: true, orderNumber: true, total: true, discountAmount: true },
+          select: { id: true, orderNumber: true, total: true, discountAmount: true, status: true },
         },
       },
     });
@@ -135,6 +135,7 @@ export class ShiftRepository extends BaseRepository {
     let instaPaySales = 0;
     let walletSales = 0;
     let totalRefunds = 0;
+    let cashRefunds = 0;
     let refundsCount = 0;
 
     for (const p of payments) {
@@ -142,6 +143,9 @@ export class ShiftRepository extends BaseRepository {
       if (p.type === "REFUND") {
         totalRefunds += amount;
         refundsCount += 1;
+        if (p.paymentMethod === "CASH" || !p.paymentMethod) {
+          cashRefunds += amount;
+        }
       } else {
         switch (p.paymentMethod) {
           case "CASH":
@@ -172,12 +176,16 @@ export class ShiftRepository extends BaseRepository {
         id: true,
         discountAmount: true,
         total: true,
+        status: true,
       },
     });
 
-    const ordersCount = orders.length;
-    const totalDiscounts = orders.reduce((sum, o) => sum + (Number(o.discountAmount) || 0), 0);
+    const activeOrders = orders.filter((o) => o.status !== "CANCELLED");
+    const cancelledOrdersCount = orders.filter((o) => o.status === "CANCELLED").length;
+    const ordersCount = activeOrders.length;
+    const totalDiscounts = activeOrders.reduce((sum, o) => sum + (Number(o.discountAmount) || 0), 0);
     const totalSales = cashSales + cardSales + instaPaySales + walletSales;
+    const netSales = totalSales - totalRefunds;
 
     // 3. Cash Movements during shift (Pay In / Pay Out)
     const cashMovements = await prisma.shiftCashMovement.findMany({
@@ -215,7 +223,7 @@ export class ShiftRepository extends BaseRepository {
     }
 
     const startingCash = Number(shift.startingCash) || 0;
-    const expectedCash = startingCash + cashSales + driverSettlementCash + cashIn - totalRefunds - cashOut;
+    const expectedCash = startingCash + cashSales + driverSettlementCash + cashIn - cashRefunds - cashOut;
 
     return {
       startingCash,
@@ -224,13 +232,16 @@ export class ShiftRepository extends BaseRepository {
       instaPaySales,
       walletSales,
       totalSales,
+      netSales,
       totalDiscounts,
       driverSettlementCash,
       cashIn,
       cashOut,
       totalRefunds,
+      cashRefunds,
       refundsCount,
       ordersCount,
+      cancelledOrdersCount,
       expectedCash,
       cashMovements,
     };

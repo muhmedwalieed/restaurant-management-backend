@@ -76,6 +76,9 @@ export const cancelOrderSchema = z.object({
   body: z.object({
     expectedVersion: z.coerce.number().int().min(1, "expectedVersion is required for optimistic locking"),
     reason: z.string().min(1, "Cancellation reason is required"),
+    refund: z.boolean().optional(),
+    refundMethod: z.enum(["CASH", "CARD", "INSTAPAY", "WALLET"]).optional(),
+    refundAmount: z.coerce.number().positive().optional(),
   }),
 });
 
@@ -168,6 +171,8 @@ export const paymentSchema = z.object({
 export const refundSchema = z.object({
   body: z.object({
     reason: z.string().min(1, "Refund reason is required"),
-    expectedVersion: z.coerce.number().int().min(1, "expectedVersion is required for optimistic locking"),
+    expectedVersion: z.coerce.number().int().min(1, "expectedVersion is required for optimistic locking").optional(),
+    amount: z.coerce.number().positive().optional(),
+    paymentMethod: z.enum(["CASH", "CARD", "INSTAPAY", "WALLET"]).optional(),
   }),
 });

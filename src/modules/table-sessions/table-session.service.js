@@ -1018,15 +1018,43 @@ export class TableSessionService {
     });
     if (!table) throw new NotFoundError("Table not found");
 
-    const session = await tableSessionRepository.findActiveSessionByTable(
+    let session = await tableSessionRepository.findActiveSessionByTable(
       tenantContext.restaurantId,
       table.id
     );
     if (!session) {
-      throw new BusinessRuleError("مفيش جلسة مفتوحة على الطاولة دي دلوقتي.");
+      const activeOrder = await prisma.order.findFirst({
+        where: {
+          restaurantId: tenantContext.restaurantId,
+          branchId: table.branchId,
+          tableId: table.id,
+          status: { in: ["PENDING", "CONFIRMED", "PREPARING", "READY"] },
+        },
+      });
+      if (activeOrder) {
+        const pin = String(randomInt(0, 10000)).padStart(PIN_LENGTH, "0");
+        const pinHash = await bcrypt.hash(pin, 10);
+        session = await tableSessionRepository.createSession(
+          tenantContext.restaurantId,
+          table.branchId,
+          table.id,
+          pinHash,
+          pin,
+          tenantContext.employeeId || null
+        );
+        await tableSessionRepository.setTableStatus(table.id, tenantContext.restaurantId, "OCCUPIED");
+      } else {
+        throw new BusinessRuleError("مفيش جلسة مفتوحة على الطاولة دي دلوقتي.");
+      }
     }
     if (!session.pin) {
-      throw new BusinessRuleError("مفيش رمز دخول محفوظ للجلسة دي. اعمل توليد رمز جديد.");
+      const pin = String(randomInt(0, 10000)).padStart(PIN_LENGTH, "0");
+      const pinHash = await bcrypt.hash(pin, 10);
+      await prisma.tableSession.update({
+        where: { id: session.id },
+        data: { pin, pinHash },
+      });
+      session.pin = pin;
     }
 
     return {

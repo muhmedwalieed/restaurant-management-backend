@@ -1,3 +1,5 @@
+import bcrypt from "bcrypt";
+import { randomInt } from "crypto";
 import prisma from "../../lib/prisma.js";
 import { ConflictError, NotFoundError, BusinessRuleError } from "../../shared/errors/index.js";
 import { BaseRepository, assertTenantContext, getPaginationOffset } from "../../shared/repositories/base.repository.js";
@@ -115,9 +117,35 @@ export class OrderRepository extends BaseRepository {
     return { items, total };
   }
 
-  async findOrdersByTenant(tenantContext, { page = 1, limit = 20, status, type, source, branchId, tableId } = {}) {
+  async findOrdersByTenant(tenantContext, { page = 1, limit = 20, status, type, source, branchId, tableId, date, q } = {}) {
     assertTenantContext(tenantContext);
     const { skip, take } = getPaginationOffset(page, limit);
+
+    const andConditions = [];
+    if (date) {
+      andConditions.push({
+        OR: [
+          { orderDate: date },
+          {
+            createdAt: {
+              gte: new Date(`${date}T00:00:00.000Z`),
+              lte: new Date(`${date}T23:59:59.999Z`),
+            },
+          },
+        ],
+      });
+    }
+    if (q && q.trim()) {
+      const trimmed = q.trim();
+      andConditions.push({
+        OR: [
+          ...(Number.isInteger(Number(trimmed)) ? [{ orderNumber: Number(trimmed) }] : []),
+          { id: { contains: trimmed, mode: "insensitive" } },
+          { customer: { name: { contains: trimmed, mode: "insensitive" } } },
+          { customer: { phone: { contains: trimmed, mode: "insensitive" } } },
+        ],
+      });
+    }
 
     const where = {
       restaurantId: tenantContext.restaurantId,
@@ -126,6 +154,7 @@ export class OrderRepository extends BaseRepository {
       ...(type ? { type } : {}),
       ...(source ? { source } : {}),
       ...(tableId ? { tableId } : {}),
+      ...(andConditions.length ? { AND: andConditions } : {}),
     };
 
     const [items, total] = await Promise.all([
@@ -135,6 +164,9 @@ export class OrderRepository extends BaseRepository {
         take,
         include: {
           items: true,
+          payments: {
+            orderBy: { createdAt: "asc" },
+          },
           table: {
             select: {
               id: true,
@@ -208,23 +240,33 @@ export class OrderRepository extends BaseRepository {
     const restaurantId = tenantContext.restaurantId;
 
     if (orderPayload.tableId) {
-      // A table legitimately holds multiple active orders: guests may order again
-      // after the first round. The table stays OCCUPIED until its last active order
-      // is delivered/cancelled (see updateOrderStatusWithHistoryTransaction).
-      if (orderPayload.source !== "QR") {
-        const activeSessionOnTable = await tx.tableSession.findFirst({
-          where: {
+      // Ensure an active TableSession exists for this table regardless of order source
+      let activeSession = await tx.tableSession.findFirst({
+        where: {
+          restaurantId,
+          tableId: orderPayload.tableId,
+          status: { in: ["ACTIVE", "AWAITING_CONFIRMATION", "CONFIRMED"] },
+        },
+      });
+
+      if (!activeSession) {
+        const pin = String(randomInt(0, 10000)).padStart(4, "0");
+        const pinHash = await bcrypt.hash(pin, 10);
+        await tx.tableSession.create({
+          data: {
             restaurantId,
+            branchId,
             tableId: orderPayload.tableId,
-            status: { in: ["ACTIVE", "AWAITING_CONFIRMATION", "CONFIRMED"] },
+            pinHash,
+            pin,
+            status: "CONFIRMED",
+            createdByEmployeeId: tenantContext.employeeId || null,
           },
-          select: { id: true },
         });
-        if (activeSessionOnTable) {
-          throw new BusinessRuleError(
-            `Table already has an active session. A table can only have one active session/order at a time`
-          );
-        }
+        await tx.restaurantTable.updateMany({
+          where: { id: orderPayload.tableId, restaurantId },
+          data: { status: "OCCUPIED" },
+        });
       }
     }
 
@@ -491,11 +533,41 @@ export class OrderRepository extends BaseRepository {
     currentStatus,
     newStatus,
     changedById,
-    reason = null
+    reason = null,
+    refundOptions = null
   ) {
     const restaurantId = tenantContext.restaurantId;
 
     return prisma.$transaction(async (tx) => {
+      let activeShiftId = null;
+      if (refundOptions && changedById) {
+        const activeShift = await tx.shift.findFirst({
+          where: {
+            restaurantId,
+            branchId,
+            employeeId: changedById,
+            status: "OPEN",
+          },
+          select: { id: true },
+        });
+        activeShiftId = activeShift?.id || null;
+      }
+
+      const updateData = {
+        status: newStatus,
+        version: expectedVersion + 1,
+        ...(newStatus === "CANCELLED" && reason ? { cancelReason: reason } : {}),
+        updatedAt: new Date(),
+      };
+
+      if (refundOptions) {
+        updateData.amountPaid = 0.00;
+        updateData.paymentStatus = "REFUNDED";
+        updateData.refundedAt = new Date();
+        updateData.refundReason = reason || "استرجاع فوري مع إلغاء الطلب";
+        updateData.refundedByEmployeeId = changedById || null;
+      }
+
       const updateResult = await tx.order.updateMany({
         where: {
           id: orderId,
@@ -503,16 +575,26 @@ export class OrderRepository extends BaseRepository {
           restaurantId,
           version: expectedVersion,
         },
-        data: {
-          status: newStatus,
-          version: expectedVersion + 1,
-          ...(newStatus === "CANCELLED" && reason ? { cancelReason: reason } : {}),
-          updatedAt: new Date(),
-        },
+        data: updateData,
       });
 
       if (updateResult.count === 0) {
         throw new ConflictError("Order was modified by another request. Please refresh and retry.");
+      }
+
+      if (refundOptions) {
+        await tx.orderPayment.create({
+          data: {
+            restaurantId,
+            orderId,
+            type: "REFUND",
+            amount: refundOptions.amount,
+            paymentMethod: refundOptions.refundMethod || "CASH",
+            status: "REFUNDED",
+            employeeId: changedById || null,
+            shiftId: activeShiftId,
+          },
+        });
       }
 
       await tx.orderStatusHistory.create({
@@ -522,11 +604,13 @@ export class OrderRepository extends BaseRepository {
           fromStatus: currentStatus,
           toStatus: newStatus,
           changedById: changedById || null,
-          reason: reason || `Status updated from ${currentStatus} to ${newStatus}`,
+          reason: refundOptions
+            ? `Order cancelled with refund (${refundOptions.amount} ${refundOptions.refundMethod}): ${reason}`
+            : (reason || `Status updated from ${currentStatus} to ${newStatus}`),
         },
       });
 
-        if (newStatus === "DELIVERED" || newStatus === "CANCELLED") {
+      if (newStatus === "DELIVERED" || newStatus === "CANCELLED") {
         const orderData = await tx.order.findFirst({
           where: { id: orderId, branchId, restaurantId },
           select: { tableId: true, couponId: true },
@@ -759,9 +843,18 @@ export class OrderRepository extends BaseRepository {
         throw new NotFoundError("Order not found");
       }
 
-      if (orderBefore.paymentStatus !== "PAID" && orderBefore.paymentStatus !== "PARTIAL") {
+      const isPaidOrPartial = orderBefore.paymentStatus === "PAID" || orderBefore.paymentStatus === "PARTIAL" || Number(orderBefore.amountPaid) > 0;
+      if (!isPaidOrPartial) {
         throw new BusinessRuleError("Only paid or partially paid orders can be refunded");
       }
+
+      if (orderBefore.paymentStatus === "REFUNDED") {
+        throw new BusinessRuleError("This order has already been refunded");
+      }
+
+      const refundAmount = payload.amount !== undefined && Number(payload.amount) > 0
+        ? Number(payload.amount)
+        : Number(orderBefore.amountPaid || orderBefore.total);
 
       let activeShiftId = payload.shiftId || null;
       if (!activeShiftId && tenantContext.employeeId) {
@@ -784,7 +877,7 @@ export class OrderRepository extends BaseRepository {
           orderId,
           type: "REFUND",
           amount: refundAmount,
-          paymentMethod: orderBefore.paymentMethod || "CASH",
+          paymentMethod: payload.paymentMethod || orderBefore.paymentMethod || "CASH",
           status: "REFUNDED",
           employeeId: tenantContext.employeeId || null,
           shiftId: activeShiftId,
@@ -821,7 +914,7 @@ export class OrderRepository extends BaseRepository {
           fromStatus: orderBefore.status,
           toStatus: orderBefore.status,
           changedById: tenantContext.employeeId || null,
-          reason: `Payment refunded: ${payload.reason}`,
+          reason: `Payment refunded (${refundAmount} ${payload.paymentMethod || orderBefore.paymentMethod || "CASH"}): ${payload.reason}`,
         },
       });
 

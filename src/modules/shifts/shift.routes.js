@@ -55,14 +55,26 @@ shiftRouter.post(
 // 6. Get shift details by ID
 shiftRouter.get(
   "/:shiftId",
-  authorize(["shifts.view", "reports.view", "orders.source_cashier"]),
+  authorize([
+    "shifts.view",
+    "reports.view",
+    "dashboard.view",
+    "orders.source_cashier",
+    "orders.create",
+  ]),
   (req, res, next) => shiftController.getShiftDetails(req, res, next)
 );
 
 // 7. List past shifts archive
 shiftRouter.get(
   "/",
-  authorize(["shifts.view", "reports.view", "orders.source_cashier"]),
+  authorize([
+    "shifts.view",
+    "reports.view",
+    "dashboard.view",
+    "orders.source_cashier",
+    "orders.create",
+  ]),
   validate(listShiftsQuerySchema),
   (req, res, next) => shiftController.listShifts(req, res, next)
 );

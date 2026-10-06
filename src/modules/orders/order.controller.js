@@ -19,7 +19,7 @@ export class OrderController {
   });
 
   listAllOrders = asyncHandler(async (req, res) => {
-    const { page, limit, status, type, source, branchId, tableId } = req.query;
+    const { page, limit, status, type, source, branchId, tableId, date, q } = req.query;
     const { items, pagination } = await orderService.listAllOrders(req.tenantContext, {
       page,
       limit,
@@ -28,6 +28,8 @@ export class OrderController {
       source,
       branchId,
       tableId,
+      date,
+      q,
     });
     return sendSuccess(res, { data: items, pagination });
   });
@@ -72,7 +74,7 @@ export class OrderController {
   });
 
   cancelOrder = asyncHandler(async (req, res) => {
-    const { expectedVersion, reason } = req.body;
+    const { expectedVersion, reason, refund, refundMethod, refundAmount } = req.body;
     const cancelledOrder = await orderService.cancelOrder(
       req.tenantContext,
       req.params.branchId,
@@ -80,6 +82,9 @@ export class OrderController {
       {
         expectedVersion,
         reason,
+        refund,
+        refundMethod,
+        refundAmount,
       }
     );
 
